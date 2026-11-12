@@ -28,7 +28,7 @@ lms-agent = "lms_agent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lms_agent = ["web/*.html"]
+lms_agent = ["web/*.html", "web/characters/ku/*.gif", "web/characters/ku/NOTICE.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -71,8 +71,10 @@ def cmd_demo(args) -> None:
     gmock, gbase = start_mock_google()  # 데모의 '구글 캘린더 연결'은 가짜 구글로 간다
     home = Path(tempfile.mkdtemp(prefix="lms-agent-demo-"))
     cfg = {"canvas_url": base, "token": DEMO_TOKEN}
+    from . import mock_ai  # 데모의 [AI로 정리]는 가짜 AI(실제 서비스로 글을 보내지 않음)
     app = App(_store(home), home, cfg=cfg, demo=True,
-              google=(DEMO_CLIENT_ID, DEMO_CLIENT_SECRET), google_urls=urls(gbase))
+              google=(DEMO_CLIENT_ID, DEMO_CLIENT_SECRET), google_urls=urls(gbase),
+              ai_runner=mock_ai.runner, ai_command=mock_ai.DEMO_COMMAND)
     app.do_sync()
     _out("데모 모드: 가짜 Canvas·가짜 구글로 실행합니다. 실제 계정에는 접속하지 않습니다.")
     try:
@@ -107,15 +109,59 @@ def cmd_sync(args) -> None:
     cfg = load_config(home)
     _need_config(cfg)
     store = _store(home)
+    by = "background" if args.background else "cli"
+    stamp = time.strftime("%Y-%m-%d %H:%M")
     try:
-        r = core.sync(Canvas(cfg["canvas_url"], cfg["token"]), store)
-    except CanvasError as e:
-        _out(f"동기화 실패: {e}")
+        # 백그라운드로 도는 동안 앱에서 로그아웃하면 저장하지 않는다(설정 파일의 토큰이 바뀌었는지 본다)
+        r = core.sync(Canvas(cfg["canvas_url"], cfg["token"]), store, by=by,
+                      still_valid=lambda: load_config(home).get("token") == cfg["token"],
+                      **core.sync_options(store))
+    except core.SyncCancelled as e:
+        _out(f"[{stamp}] {e}")
+        return
+    except (CanvasError, TimeoutError) as e:
+        _out(f"[{stamp}] 동기화 실패: {e}")
         sys.exit(1)
-    _out(f"과목 {r['courses']} · 과제 {r['assignments']} · 공지 {r['announcements']} · 메시지 {r['messages']}"
-         f" → 찾은 마감 {r['candidates']}개(검토 필요 {r['needs_review']}), 마감 근거 없는 과제 {r['no_deadline']}개")
+    _out(f"[{stamp}] 확인 {r['checked']}곳 · 건너뜀 {r['skipped']}곳 → 찾은 마감 {r['candidates']}개"
+         f"(검토 필요 {r['needs_review']}), 신규 {len(r['new_items'])}개")
     for e in r["errors"]:
         _out(f"  경고: {e}")
+    if args.background and store.data["settings"].get("notify", True):  # 앱을 안 열어도 알 수 있게
+        from .notify import new_deadlines_message, toast
+        view = store.view()
+        core.annotate(view, core.semester_info(store.data.get("cache"), view), store.data.get("cache"))
+        msg = new_deadlines_message(r, view)
+        if msg and toast(*msg):
+            _out(f"  알림: {msg[0]}")
+    if args.push:  # 구글 캘린더에 반영(연결돼 있을 때만)
+        from .config import google_client
+        from .gcal import GoogleError
+        from .gsync import GoogleLink
+
+        link = GoogleLink(cfg, home, google_client())
+        try:
+            g = link.push(store)
+        except GoogleError as e:
+            _out(f"  구글 반영 실패: {e}")
+            sys.exit(1)
+        _out("  구글: 연결 안 됨(건너뜀)" if g is None else
+             f"  구글: 새로 {g['created']} · 수정 {g['updated']} · 삭제 {g['deleted']} · 그대로 {g['unchanged']}")
+
+
+def cmd_ai_eval(args) -> None:
+    """AI CLI 하네스 평가 묶음(evals)을 실제 CLI로 돌린다. 데모 문장만 보낸다(내 강의 글은 보내지 않음)."""
+    from . import agent_cli
+
+    if not agent_cli.detect():
+        _out("AI CLI(claude)를 찾지 못했습니다. 설치했다면 LMS_AGENT_AI_CLI에 전체 경로를 넣어 보세요.")
+        sys.exit(2)
+    r = agent_cli.run_evals()
+    for c in r["cases"]:
+        mark = "통과" if c["passed"] else "실패"
+        why = "" if c["passed"] else f" — {c.get('problem') or c.get('error')}"
+        _out(f"  [{mark}] {c['name']} ({c['task']}, {c['attempts']}회, {c['duration_ms']}ms){why}")
+    _out(f"{r['cli']}: {r['passed']}/{r['total']} 통과")
+    sys.exit(0 if r["passed"] == r["total"] else 1)
 
 
 def cmd_list(args) -> None:
@@ -164,11 +210,15 @@ def main(argv: list[str] | None = None) -> None:
     sp = sub.add_parser("setup", help="Canvas 주소와 토큰 설정")
     sp.add_argument("--url")
     sp.set_defaults(fn=cmd_setup)
-    sub.add_parser("sync", help="Canvas에서 다시 읽기").set_defaults(fn=cmd_sync)
+    sp = sub.add_parser("sync", help="Canvas에서 바뀐 곳만 다시 읽기")
+    sp.add_argument("--push", action="store_true", help="끝나면 구글 캘린더에 반영")
+    sp.add_argument("--background", action="store_true", help="작업 스케줄러가 실행할 때(실행 기록에 표시)")
+    sp.set_defaults(fn=cmd_sync)
     sub.add_parser("list", help="찾은 마감 보기").set_defaults(fn=cmd_list)
     sp = sub.add_parser("google-test", help="구글 캘린더 연결 시험(데모 일정으로)")
     sp.add_argument("--mine", action="store_true", help="데모 대신 내 승인된 일정으로 시험")
     sp.set_defaults(fn=lambda a: sys.exit(__import__("lms_agent.gtest", fromlist=["run"]).run(mine=a.mine, out=_out)))
+    sub.add_parser("ai-eval", help="AI CLI 하네스 평가(데모 문장으로 실제 CLI 시험)").set_defaults(fn=cmd_ai_eval)
     sp = sub.add_parser("export", help="캘린더 파일(.ics) 저장")
     sp.add_argument("-o", "--output", default="lms-deadlines.ics")
     sp.set_defaults(fn=cmd_export)

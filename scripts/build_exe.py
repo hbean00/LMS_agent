@@ -17,9 +17,11 @@ cmd = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
     "--name", "lms-agent",
     "--paths", str(SRC),
-    # features/는 이름으로 불러오므로(import_module) PyInstaller가 못 찾는다 → 하위 모듈을 모두 넣는다
+    # 기능 모듈을 빠뜨리지 않게 하위 모듈을 모두 넣는다(features/__init__.py도 직접 import)
     "--collect-submodules", "lms_agent",
     "--add-data", f"{SRC / 'lms_agent' / 'web' / 'index.html'}{sep}lms_agent/web",
+    # 고려대 기본 캐릭터 팩(GIF + NOTICE.md, 고려대학교 자산 — MIT 아님)
+    "--add-data", f"{SRC / 'lms_agent' / 'web' / 'characters' / 'ku'}{sep}lms_agent/web/characters/ku",
     "--distpath", str(ROOT / "dist"), "--workpath", str(ROOT / "build"), "--specpath", str(ROOT / "build"),
     str(SRC / "lms_agent" / "__main__.py"),
 ]

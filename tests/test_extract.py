@@ -167,6 +167,44 @@ def test_hard_html_table_syllabus():
     ]
 
 
+def test_hard_table_row_method_does_not_leak_to_other_rows():
+    """강의계획서 표: 과제 2 줄의 '이메일 제출'이 옆 줄(기말고사)에 옮겨 붙으면 안 된다."""
+    html = ("<table><tr><td>과제 2</td><td>11월 24일까지 이메일 제출</td></tr>"
+            "<tr><td>기말고사</td><td>12월 12일 15:00</td></tr></table>")
+    hw, final = find_deadlines(html, REF, is_html=True)
+    assert hw.method == "email"
+    assert final.method == "unknown" and final.email_to is None
+
+
+def test_hard_context_line_without_date_still_gives_method():
+    """날짜 없는 옆 줄('제출: 주소')은 그 마감의 설명이므로 제출 방법을 가져온다."""
+    f = one("LAB4 보고서 마감: 11월 18일(수) 23:59\n제출: ta@x.ac.kr 로 PDF 첨부")
+    assert (f.method, f.email_to) == ("email", "ta@x.ac.kr")
+
+
+@pytest.mark.parametrize("html,due,hint", [
+    # 실제 고려대 ASIC LearningX 과제 게시판 글 형식(사용자 확인, 2026-11)
+    ("<p>Lab3 Assignment</p><p>Submit as a PDF(report) via email : ta@korea.ac.kr</p><p>(due : 23:59 on 11/18)</p>",
+     (2026, 11, 18, 23, 59), "LAB 3"),
+    ("<p>Midterm Project</p><p>Submit as a PDF via email : ta@korea.ac.kr (with your verilog zip file)</p>"
+     "<p>(due : 23:59 on 11/5)</p>", (2026, 11, 5, 23, 59), None),
+    ("<p>Lab1 Assignment</p><p>Submit as a PDF via email : ta@korea.ac.kr</p><p>(due : 13:30 on 10/13)</p>",
+     (2026, 10, 13, 13, 30), "LAB 1"),
+])
+def test_real_learningx_assignment_posts(html, due, hint):
+    (f,) = find_deadlines(html, datetime(2026, 10, 1, 9, 0, tzinfo=KST) if due[1] == 10 else REF, is_html=True)
+    assert f.due == at(*due)
+    assert (f.method, f.email_to, f.confidence) == ("email", "ta@korea.ac.kr", "high")
+    if hint:
+        assert f.title_hint == hint
+
+
+def test_score_announcement_is_not_a_deadline():
+    html = ("<p><b>Scores for Lab0 and Lab1 have been re-announced due to an error in the score file.</b></p>"
+            "<p>For any score inquiries or feedback requests, please email ta@korea.ac.kr.</p>")
+    assert find_deadlines(html, REF, is_html=True) == []
+
+
 def test_hard_paren_weekday_numeric():
     f = one("12/24(목) 까지 프로젝트 제출")
     assert f.due == at(2026, 12, 24)

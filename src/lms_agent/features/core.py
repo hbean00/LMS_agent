@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 from importlib import resources
-from urllib.parse import urlparse
 
 from .. import __version__
 from .. import core
 from ..api import ApiError, Response, router
-from ..canvas import Canvas, CanvasError
-from ..config import is_configured, normalize_url, save_config
+from ..canvas import CanvasError
+from ..config import is_configured
 from ..ics import validate_ics
 from ..timeutil import iso, now_local
 
 CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
        "img-src 'self' data:; frame-ancestors 'none'")
-SETTINGS = ("include_canvas", "weekly_summary")
+SETTINGS = {"include_canvas": True, "weekly_summary": True, "review_reminder": False,  # 키: 기본값
+            "tutorial_done": False, "notify": True}
 
 
 def items(ctx):
@@ -45,7 +45,7 @@ def base_state(app, ctx) -> dict:
         "configured": is_configured(app.cfg), "canvas_url": app.cfg.get("canvas_url"),
         "last_sync": d.get("last_sync"), "syncing": app.syncing, "sync_error": app.sync_error,
         "report": d.get("report"),
-        "settings": {k: bool(d["settings"].get(k, True)) for k in SETTINGS},
+        "settings": {k: bool(d["settings"].get(k, default)) for k, default in SETTINGS.items()},
         "semester": semester(ctx), "courses": courses(ctx), "items": items(ctx),
         "runs": list(reversed((d.get("runs") or [])[-10:])),   # 최근 실행 기록, 최신 먼저
         "last_export": (d.get("last_export") or {}).get("at"),
@@ -121,17 +121,9 @@ def settings(app, body):
 
 @router.route("POST", r"/api/setup")
 def setup(app, body):
+    """예전 연결 API(계약 3장). 새 화면은 /api/account/login을 쓴다(같은 확인·저장)."""
     if app.demo:
         raise ApiError(400, "데모 모드에서는 설정을 바꿀 수 없습니다")
-    url, token = normalize_url(str(body.get("canvas_url") or "")), str(body.get("token") or "").strip()
-    if not url or not token:
-        raise ApiError(400, "Canvas 주소와 토큰을 모두 입력하세요")
-    if not urlparse(url).netloc:
-        raise ApiError(400, "Canvas 주소가 올바르지 않습니다")
-    try:
-        Canvas(url, token).whoami()  # 실제로 되는지 먼저 확인
-    except CanvasError as e:
-        raise ApiError(400, f"연결 확인 실패: {e}") from None
-    app.cfg.update(canvas_url=url, token=token)
-    save_config(app.cfg, app.home)
+    from .account import _connect
+    _connect(app, str(body.get("canvas_url") or ""), str(body.get("token") or ""))
     return {"ok": True}

@@ -38,6 +38,7 @@ class App:
         self.lock = threading.Lock()
         self.syncing = False
         self.sync_error: str | None = None
+        self.session_gen = 0          # 로그인·로그아웃마다 1씩: 그 전에 시작한 동기화는 저장하지 않는다
         for hook in router.init_hooks:
             hook(self, options)
 
@@ -64,9 +65,18 @@ class App:
             raise ValueError("먼저 Canvas 주소와 토큰을 설정하세요")
         with self.lock:
             self.syncing = True
+            gen = self.session_gen
             try:
-                report = core.sync(self.canvas(), self.store, full=full)
+                if not is_configured(self.cfg):  # 잠금을 기다리는 사이 로그아웃됐다
+                    return {}
+                opts = core.sync_options(self.store, demo_home=self.home if self.demo else None)
+                report = core.sync(self.canvas(), self.store, full=full,
+                                   still_valid=lambda: self.session_gen == gen and is_configured(self.cfg),
+                                   ai_runner=getattr(self, "ai_runner", None),
+                                   ai_command=getattr(self, "ai_command", None), **opts)
                 self.sync_error = None
+            except core.SyncCancelled:
+                return {}
             except CanvasError as e:
                 self.sync_error = str(e)
                 raise
@@ -137,6 +147,7 @@ def make_handler(app: App):
                 return self._error(403, "허용되지 않은 호스트입니다")
             parsed = urlparse(self.path)
             body = {k: v[0] for k, v in parse_qs(parsed.query).items()} if method == "GET" else None
+            app.store.reload_if_changed()  # 백그라운드 동기화가 저장했으면 따라간다
             try:
                 for route, groups in router.match(method, parsed.path):
                     if route.auth and not self._token_ok():

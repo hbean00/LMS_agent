@@ -13,3 +13,9 @@ state.json
 .env
 .env.*
 !.env.example
+# 내 PC 전용 캐릭터 팩·원본 자료(루트의 characters/, 원본 PDF 등)는 올리지 않는다.
+# 앱에 넣는 고려대 기본 팩(src/lms_agent/web/characters/ku/, NOTICE.md 포함)은 사용자 허락에 따라 올린다(비상업).
+/characters/
+*호이*
+*쿠이*
+*KU*BUDDY*

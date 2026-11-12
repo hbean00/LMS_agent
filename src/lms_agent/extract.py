@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 # 마감 찾기 규칙이 바뀌면 올린다. 저장된 값과 다르면 다음 동기화 때 모든 글을 다시 읽는다.
-RULES_VERSION = "2026.11.12-1"
+RULES_VERSION = "2026.11.12-2"  # -2: 표의 다른 행·다른 마감에서 제출 방법을 끌어오지 않음
 
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -405,6 +405,9 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
     msg_method, msg_email = detect_method(plain)
     ref_day = ref.date()
     found: dict[datetime, Found] = {}
+    # 자기 날짜가 있는 줄(표의 다른 행, 다른 마감)은 옆 마감의 제출 방법 근거로 쓰지 않는다.
+    dated = [bool(find_dates(ln, ref_day)) for ln in lines]
+    deadline_lines = sum(1 for ln, d in zip(lines, dated) if d and deadline_kind(ln))
 
     for i, s in enumerate(lines):
         kind = deadline_kind(s)
@@ -424,14 +427,16 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
             t = time(23, 59)
             notes.append("시간 미기재 → 23:59로 둠")
 
-        window = " ".join(lines[max(0, i - 2):i + 3])
+        window = " ".join(ln for j, ln in enumerate(lines[max(0, i - 2):i + 3], start=max(0, i - 2))
+                          if j == i or not dated[j])
+        single = deadline_lines <= 1  # 글 전체를 근거로 삼는 것은 마감이 하나뿐인 글일 때만
         method, email_to = detect_method(s)
         if method == "unknown":
             method, email_to = detect_method(window)
-        if method == "unknown" and msg_method != "unknown":
+        if method == "unknown" and msg_method != "unknown" and single:
             method, email_to = msg_method, msg_email
         if method == "email" and not email_to:
-            addr = EMAIL_ADDR.search(window) or EMAIL_ADDR.search(plain)
+            addr = EMAIL_ADDR.search(window) or (EMAIL_ADDR.search(plain) if single else None)
             email_to = addr.group(0) if addr else None
 
         hint = title_hint(s) or title_hint(" ".join(lines[max(0, i - 2):i]))

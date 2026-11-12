@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 from .timeutil import iso, now_local, parse_iso, parse_local_input
@@ -20,39 +22,104 @@ def _default() -> dict:
         "manual": [],           # 직접 붙여 넣은 글
         "report": None,
         "last_sync": None,
-        "settings": {"include_canvas": True, "weekly_summary": True, "lookback_days": 120},
+        "settings": {"include_canvas": True, "weekly_summary": True, "tutorial_done": False, "lookback_days": 120},
     }
 
 
+LOCK_WAIT = 10.0     # 다른 프로세스(백그라운드 동기화)가 저장 중이면 기다리는 최대 시간(초)
+LOCK_STALE = 60.0    # 이보다 오래된 잠금 파일은 죽은 프로세스가 남긴 것으로 보고 지운다
+
+
 class Store:
+    """state.json 하나. 앱 화면 서버와 백그라운드 동기화가 같은 파일을 쓴다:
+    저장은 잠금 파일로 한 번에 하나씩, 읽는 쪽은 reload_if_changed()로 다른 프로세스의 저장을 따라간다."""
+
     def __init__(self, path: Path):
         self.path = Path(path)
+        self.mtime: int | None = None
         self.data = _default()
+        self._load()
+
+    def _load(self) -> None:
+        data = _default()
         if self.path.exists():
             try:
                 loaded = json.loads(self.path.read_text("utf-8"))
                 if isinstance(loaded, dict):
-                    self.data.update(loaded)
-                    self.data["settings"] = {**_default()["settings"], **(loaded.get("settings") or {})}
+                    data.update(loaded)
+                    data["settings"] = {**_default()["settings"], **(loaded.get("settings") or {})}
+                self.mtime = self.path.stat().st_mtime_ns
             except (OSError, ValueError):
                 broken = self.path.with_suffix(".broken.json")
                 try:
                     os.replace(self.path, broken)  # 깨진 파일은 지우지 않고 옆으로 치운다
                 except OSError:
                     pass
+        self.data = data
+
+    def reload_if_changed(self) -> bool:
+        """다른 프로세스가 저장했으면 다시 읽는다. 읽었으면 True."""
+        try:
+            m = self.path.stat().st_mtime_ns
+        except OSError:
+            return False
+        if m == self.mtime:
+            return False
+        self._load()
+        return True
+
+    @contextmanager
+    def locked(self):
+        lock = self.path.with_suffix(".lock")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        end = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError:
+                try:
+                    if time.time() - lock.stat().st_mtime > LOCK_STALE:
+                        os.remove(lock)
+                        continue
+                except OSError:
+                    continue
+                if time.monotonic() > end:
+                    raise TimeoutError("다른 동기화가 저장 중입니다. 잠시 뒤 다시 시도하세요")
+                time.sleep(0.05)
+        try:
+            os.close(fd)
+            yield
+        finally:
+            try:
+                os.remove(lock)
+            except OSError:
+                pass
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.locked():
+            self.write()
+
+    def write(self) -> None:
+        """잠금을 이미 잡은 상태에서 쓴다(locked() 안에서만). 평소에는 save()."""
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=1), "utf-8")
         os.replace(tmp, self.path)
+        self.mtime = self.path.stat().st_mtime_ns
 
     # ------------------------------------------------------------ 사용자 결정
 
-    def update_user(self, item_id: str, changes: dict) -> None:
+    def update_user(self, item_id: str, changes: dict, by: str = "user", reason: str | None = None) -> None:
+        """사용자 결정(또는 AI 에이전트의 결정, by="ai"·reason). 누가 결정했는지 근거 사슬에 남는다(계약 12장).
+        AI가 바꾼 항목을 사용자가 다시 손대면 decided_by는 "user"가 된다."""
+        if by not in ("user", "ai"):
+            raise ValueError("by는 user 또는 ai")
         if not any(it["id"] == item_id for it in self.data["items"]):
             raise KeyError(item_id)
         u = dict(self.data["user"].get(item_id) or {})
+        if changes:
+            u["decided_by"] = by
+            u["ai_reason"] = (str(reason)[:300] if reason else None) if by == "ai" else None
         if "decision" in changes:
             d = changes["decision"]
             if d not in DECISIONS:
@@ -144,6 +211,7 @@ class Store:
                 "edited": bool(u.get("title") or u.get("due")),
                 # 근거 사슬: 처음 발견 → 승인 → 캘린더 파일 포함(받은 뒤 바뀌었으면 export_stale)
                 "first_seen": seen.get(it["id"]), "decided_at": u.get("decided_at"),
+                "decided_by": u.get("decided_by"), "ai_reason": u.get("ai_reason"),
                 "exported_at": export["at"] if it["id"] in export["items"] else None,
                 "export_stale": (it["id"] in export["items"]
                                  and export["items"][it["id"]] != f"{due}|{title}"),

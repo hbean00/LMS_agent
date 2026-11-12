@@ -67,7 +67,7 @@ def load_config(home: Path | None = None) -> dict:
     path = home / CONFIG_FILE
     if path.exists():
         try:
-            cfg = json.loads(path.read_text("utf-8"))
+            cfg = _decrypt_secrets(json.loads(path.read_text("utf-8")))
         except (OSError, ValueError):
             cfg = {}
     if os.environ.get("LMS_AGENT_CANVAS_URL"):
@@ -83,12 +83,50 @@ def save_config(cfg: dict, home: Path | None = None) -> Path:
     home = home or data_dir()
     home.mkdir(parents=True, exist_ok=True)
     path = home / CONFIG_FILE
-    path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), "utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(_encrypt_secrets(cfg), ensure_ascii=False, indent=2), "utf-8")
     try:
-        os.chmod(path, 0o600)  # 토큰이 들어 있으므로 본인만 읽게
+        os.chmod(tmp, 0o600)  # 암호화를 못 하는 OS에서는 본인만 읽게라도
     except OSError:
         pass
+    os.replace(tmp, path)
     return path
+
+
+# 파일에 저장할 때만 비밀값을 Windows 암호화로 바꾼다. 앱 안의 cfg는 평소처럼 평문 키(token, google.tokens)를 쓴다.
+def _encrypt_secrets(cfg: dict) -> dict:
+    from . import vault
+    if not vault.available():
+        return cfg
+    out = dict(cfg)
+    if out.get("token"):
+        out["token_enc"] = vault.encrypt_text(out.pop("token"))
+    g = out.get("google")
+    if isinstance(g, dict) and g.get("tokens"):
+        g = dict(g)
+        g["tokens_enc"] = vault.encrypt_text(json.dumps(g.pop("tokens")))
+        out["google"] = g
+    return out
+
+
+def _decrypt_secrets(cfg: dict) -> dict:
+    from . import vault
+    if not isinstance(cfg, dict):
+        return {}
+    out = dict(cfg)
+    try:
+        if out.get("token_enc"):
+            out["token"] = vault.decrypt_text(out.pop("token_enc"))
+        g = out.get("google")
+        if isinstance(g, dict) and g.get("tokens_enc"):
+            g = dict(g)
+            g["tokens"] = json.loads(vault.decrypt_text(g.pop("tokens_enc")))
+            out["google"] = g
+    except OSError:  # 다른 PC·계정에서 옮겨 온 설정: 다시 로그인하게 비운다
+        out.pop("token_enc", None)
+        if isinstance(out.get("google"), dict):
+            out["google"].pop("tokens_enc", None)
+    return out
 
 
 def is_configured(cfg: dict) -> bool:

@@ -9,9 +9,14 @@
 """
 from __future__ import annotations
 
+import copy
 import hashlib
+import os
 import re
+import urllib.error
+import urllib.request
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
 from .canvas import Canvas, CanvasError
 from .extract import RULES_VERSION, Found, detect_method, find_deadlines, html_to_text, same_task, title_hint
@@ -81,9 +86,103 @@ def collect(canvas: Canvas, now: datetime | None = None, lookback_days: int = 12
         if not cache["conversations"]:
             cache["conversations"] = list((prev or {}).get("conversations", []))
         errors.append(f"메시지함을 읽지 못했습니다: {e}")
-    cache["probe"] ={"requests": canvas.request_count - start_requests,
-                      "conversations_fetched": fetched, "conversations_reused": reused}
+    cache["boards"], cache["lx_tools"], lx_requests, posts_fetched = _collect_boards(canvas, cache["courses"], prev,
+                                                                                  full, errors)
+    cache["boards"] += _announcement_files(canvas, cache["announcements"], prev, errors)
+    cache["pdf_texts"] = dict((prev or {}).get("pdf_texts") or {})  # sync가 다운로드 뒤 새 글자를 더한다
+    cache["probe"] = {"requests": canvas.request_count - start_requests + lx_requests,
+                      "conversations_fetched": fetched, "conversations_reused": reused,
+                      "board_posts_fetched": posts_fetched}
     return cache
+
+
+_FILE_LINK = re.compile(r"/(?:api/v1/)?(?:courses/\d+/)?files/(\d+)")
+
+
+def _announcement_files(canvas: Canvas, announcements: list[dict], prev: dict | None, errors: list[str]) -> list[dict]:
+    """Canvas 공지 본문에 링크된 파일(예: 'Lab0_score-1.pdf', 'Update Grading Policy.pdf')을 첨부처럼 모은다.
+    다운로드(materials)가 같은 모양으로 처리하도록 과목마다 가상 게시판 '공지'(source="canvas")로 묶는다.
+    공지 본문은 announcement 출처가 이미 읽으므로 board 출처에서는 건너뛴다. 새 파일만 파일 API로 이름·크기를 묻는다."""
+    known = {a.get("canvas_file_id"): a for b in (prev or {}).get("boards", []) if b.get("source") == "canvas"
+             for p in b.get("posts", []) for a in p.get("attachments", [])}
+    by_course: dict[str, list[dict]] = {}
+    for n in announcements:
+        ids = list(dict.fromkeys(int(m.group(1)) for m in _FILE_LINK.finditer(str(n.get("message") or ""))))
+        if not ids:
+            continue
+        attachments = []
+        for fid in ids:
+            if fid in known:
+                attachments.append(known[fid])
+                continue
+            try:
+                info = canvas._get_one(f"/api/v1/files/{fid}")
+            except CanvasError as e:
+                errors.append(f"공지 '{n.get('title')}'의 첨부를 확인하지 못했습니다: {e}")
+                continue
+            attachments.append({"id": f"cf{fid}", "filename": info.get("display_name") or info.get("filename"),
+                                "filesize": info.get("size"), "canvas_file_id": fid, "url": info.get("url")})
+        if attachments:
+            cid = str(n.get("context_code", "")).replace("course_", "")
+            by_course.setdefault(cid, []).append({
+                "id": n["id"], "title": n.get("title") or "공지", "content": "", "created_at": n.get("posted_at"),
+                "updated_at": n.get("posted_at"), "post_url": n.get("html_url"), "attachments": attachments})
+    return [{"course_id": cid, "tool_id": None, "board_id": "announcements", "board_title": "공지",
+             "source": "canvas", "posts": posts} for cid, posts in by_course.items()]
+
+
+def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full: bool, errors: list[str]):
+    """LearningX 게시판(계약 10장). 글 목록에는 본문이 같이 오므로 매번 받고, 첨부 상세는
+    새 글·바뀐 글에만 요청한다. 게시판 도구가 없는 과목은 기억해 두고 '전체 다시 확인' 때만 다시 본다."""
+    from .learningx import LearningX, LearningXError
+
+    prev = prev or {}
+    prev_boards = {(b["course_id"], b["board_id"]): b for b in prev.get("boards", [])}
+    known_tools = {} if full else dict(prev.get("lx_tools") or {})
+    out, tools, requests, fetched = [], {}, 0, 0
+    for c in courses:
+        cid = c["id"]
+        if cid in known_tools:
+            tool_id = known_tools[cid]
+        else:
+            tool = LearningX.board_tool(canvas, cid)
+            tool_id = tool["id"] if tool else None
+        tools[cid] = tool_id
+        if tool_id is None:
+            continue
+        lx = LearningX(canvas, cid)
+        try:
+            lx.launch(tool_id)
+            for b in lx.boards():
+                old_posts = {p["id"]: p for p in (prev_boards.get((cid, b["id"])) or {}).get("posts", [])}
+                posts = []
+                for p in lx.posts(b["id"], max_pages=3):
+                    o = old_posts.get(p.get("id"))
+                    same = (o and not full and o.get("updated_at") == p.get("updated_at")
+                            and o.get("content") == p.get("content"))
+                    if same:
+                        attachments, post_url = o.get("attachments") or [], o.get("post_url")
+                    elif p.get("attachment_count"):
+                        d = lx.post(b["id"], p["id"])
+                        fetched += 1
+                        attachments = [{k: a.get(k) for k in ("id", "filename", "filesize", "canvas_file_id", "url")}
+                                       for a in d.get("attachments") or []]
+                        post_url = d.get("post_url")
+                    else:
+                        attachments, post_url = [], p.get("post_url")
+                    if post_url and str(post_url).startswith("/"):
+                        post_url = canvas.base_url + post_url
+                    posts.append({"id": p.get("id"), "title": p.get("title") or "제목 없음",
+                                  "content": p.get("content") or "", "created_at": p.get("created_at"),
+                                  "updated_at": p.get("updated_at"), "post_url": post_url,
+                                  "attachments": attachments})
+                out.append({"course_id": cid, "tool_id": tool_id, "board_id": b["id"],
+                            "board_title": b.get("title") or "게시판", "posts": posts})
+        except LearningXError as e:
+            errors.append(f"'{c['name']}' LearningX 게시판을 읽지 못해 지난번 내용을 씁니다: {e}")
+            out += [b for b in prev.get("boards", []) if b["course_id"] == cid]
+        requests += lx.requests
+    return out, tools, requests, fetched
 
 
 # ================================================================ 정리
@@ -138,6 +237,22 @@ def inbox_source(cache, manual, now):
                              cv.get("subject") or "메시지", m.get("body"), False, m.get("created_at"), now,
                              course_name=cv.get("context_name")))
     return out
+
+
+@source
+def board_source(cache, manual, now):
+    """LearningX 게시판 글(과제 안내·강의자료실 등). 제목은 '<게시판>: <글 제목>'."""
+    return [_text(b["course_id"], "board", f"{b['board_id']}-{p['id']}", f"{b['board_title']}: {p['title']}",
+                  p.get("content"), True, p.get("created_at"), now, p.get("post_url"))
+            for b in cache.get("boards", []) if b.get("source") != "canvas" for p in b.get("posts", [])]
+
+
+@source
+def pdf_source(cache, manual, now):
+    """내려받은 첨부 PDF에서 뽑은 글자(materials가 채운 pdf_texts)."""
+    return [_text(t.get("course_id"), "pdf", key, f"첨부 '{t.get('filename')}'", t.get("text"), False,
+                  t.get("posted_at"), now)
+            for key, t in (cache.get("pdf_texts") or {}).items() if t.get("text")]
 
 
 @source
@@ -231,7 +346,7 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
                           "hint": f.title_hint, "kind": f.kind, "method": f.method, "email_to": f.email_to,
                           "confidence": f.confidence, "notes": list(f.notes),
                           "own": own["id"] if own else None,
-                          "source_title": s["title"] if s["type"] in ("announcement", "inbox") else None,
+                          "source_title": s["title"] if s["type"] in ("announcement", "inbox", "board") else None,
                           "evidence": [{"text": f.sentence, "source_type": s["type"], "source_title": s["title"],
                                         "url": s["url"], "posted_at": iso(s["posted_at"])}]})
 
@@ -343,10 +458,10 @@ def _found_from(d: dict) -> Found:
 
 MAX_RUNS = 20
 RUN_KEYS = ("finished_at", "mode", "reason", "checked", "skipped", "requests", "conversations_fetched",
-            "candidates", "errors")
+            "candidates", "errors", "by")
 
 
-def rebuild(store, mode: str = "incremental", reason: str | None = None) -> dict:
+def rebuild(store, mode: str = "incremental", reason: str | None = None, by: str = "app") -> dict:
     """저장된 원본으로 항목을 다시 만든다. incremental이면 바뀐 글만 읽는다."""
     extracted = None if mode == "full" else store.data.get("extracted")
     items, report, new_extracted = build_items(
@@ -358,7 +473,7 @@ def rebuild(store, mode: str = "incremental", reason: str | None = None) -> dict
     new_ids = [it["id"] for it in items if it["id"] not in seen]
     for it in items:
         seen.setdefault(it["id"], stamp)  # 처음 발견한 실행 시각
-    report.update(mode=mode, reason=reason, new_items=new_ids)
+    report.update(mode=mode, reason=reason, new_items=new_ids, by=by)
     store.data.update(items=items, report=report, extracted=new_extracted)
     run = {k: report.get(k) for k in RUN_KEYS}
     run.update(targets=report["targets"][:10], new_items=len(new_ids))
@@ -366,8 +481,159 @@ def rebuild(store, mode: str = "incremental", reason: str | None = None) -> dict
     return report
 
 
-def sync(canvas: Canvas, store, full: bool = False) -> dict:
-    """켤 때마다·버튼을 누를 때마다 부른다. 처음 실행이나 규칙이 바뀐 뒤, 또는 full이면 전부 읽는다."""
+def sync_options(store, demo_home: Path | None = None) -> dict:
+    """앱·CLI·백그라운드가 같은 방식으로 sync에 넘길 선택 사항(다운로드 폴더, PDF 읽기, AI CLI).
+    다운로드 폴더 우선순위: 환경 변수 LMS_AGENT_DOWNLOADS > 설정 download_dir > (데모) <home>/downloads > 문서/LMS Agent."""
+    settings = store.data["settings"]
+    opts: dict = {"ai_enabled": bool(settings.get("ai_cli"))}
+    if settings.get("auto_download", True):
+        folder = os.environ.get("LMS_AGENT_DOWNLOADS") or settings.get("download_dir")
+        if folder:
+            opts["downloads_to"] = Path(folder)
+        elif demo_home is not None:
+            opts["downloads_to"] = Path(demo_home) / "downloads"
+        else:
+            try:
+                from .materials import default_folder
+                opts["downloads_to"] = default_folder()
+            except ImportError:
+                pass
+    try:
+        from .pdftext import extract_text
+        def read_pdf(data: bytes) -> dict:  # materials.fetch가 받는 모양({text, notes, ok})으로
+            r = extract_text(data)
+            return {"text": r.text, "notes": list(r.notes), "ok": r.ok}
+        opts["pdf_reader"] = read_pdf
+    except ImportError:
+        pass
+    return opts
+
+
+def _attachment_bytes(canvas: Canvas, att: dict, max_bytes: int = 50_000_000) -> bytes:
+    """첨부 받기: Canvas 파일 주소(확인값 포함)를 인증 헤더 없이 → 안 되면 Canvas 파일 API의 주소."""
+    from .canvas import origin
+
+    def get(url: str) -> bytes:
+        if url.startswith("/"):
+            url = canvas.base_url + url
+        if origin(url) != origin(canvas.base_url):
+            raise ValueError("첨부 주소가 Canvas와 다른 서버입니다")
+        req = urllib.request.Request(url, headers={"User-Agent": "lms-agent"})  # 인증 헤더 없음
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = r.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError("파일이 너무 큽니다")
+        return data
+
+    try:
+        return get(str(att.get("url") or ""))
+    except (OSError, ValueError, urllib.error.URLError):
+        if not att.get("canvas_file_id"):
+            raise
+    info = canvas._get_one(f"/api/v1/files/{att['canvas_file_id']}")
+    return get(str(info.get("url") or ""))
+
+
+def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) -> tuple[dict, dict, list[str]]:
+    """새 첨부만 내려받고 PDF는 글자를 뽑는다(materials 모듈). 잠금 없이(네트워크) 실행한다."""
+    try:
+        from .materials import fetch, plan
+    except ImportError:
+        return {}, {}, []
+    shorts = {c["id"]: short_course_name(c["name"]) for c in cache.get("courses", [])}
+    jobs = plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder))
+    if not jobs:
+        return {}, {}, []
+    return fetch(jobs, lambda att: _attachment_bytes(canvas, att), pdf_reader=pdf_reader)
+
+
+def _auto_weights(store, ai_enabled: bool, session=None) -> list[str]:
+    """평가 비중 자동 찾기(gradebook.auto_fill). AI CLI는 오래 걸릴 수 있어 잠금 밖에서 부른다."""
+    try:
+        from .gradebook import auto_fill
+    except ImportError:
+        return []
+    srcs = _sources(store.data.get("cache"), store.data.get("manual", []), now_local())
+    return auto_fill(store, srcs, ai_enabled, session=session) or []
+
+
+_AI_KEYS = ("user", "grades", "weights_auto")  # 자동 단계(평가 비중·AI 정리)가 바꾸는 칸: id → 값
+
+
+def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_valid=None) -> dict:
+    """동기화 뒤 자동 단계: 평가 비중 찾기, (켜져 있으면) AI 확인함 정리. 한 번의 AiSession을 나눠 써서 호출 한도가 함께 적용된다.
+    AI는 몇십 초 걸릴 수 있어 잠금 밖에서 돌리고, 저장할 때 파일을 다시 읽어 **그 사이 사용자가 손대지 않은 칸만** 덮는다
+    (백그라운드 동기화가 앱에서 방금 한 사용자 결정을 지우지 않게)."""
+    out: dict = {}
+    before = {k: copy.deepcopy(store.data.get(k) or {}) for k in _AI_KEYS}
+    runs_before = list(store.data.get("ai_runs") or [])
+    session = None
+    if ai_enabled:
+        try:
+            from .agent_cli import AiSession
+            session = AiSession(store, runner=ai_runner, command=ai_command)
+        except ImportError:
+            session = None
+    logs = _auto_weights(store, ai_enabled, session)
+    if logs:
+        out["auto_weights"] = logs
+    triage = None
+    if session is not None and store.data["settings"].get("ai_auto_triage"):
+        from .agent_cli import auto_triage
+        triage = auto_triage(store, session=session)
+        out["ai_triage"] = {k: triage.get(k) for k in ("ok", "applied", "error")}
+    changed = {}
+    for k in _AI_KEYS:
+        now_k = store.data.get(k) or {}
+        diff = {i: copy.deepcopy(v) for i, v in now_k.items() if before[k].get(i) != v}
+        diff.update({i: None for i in before[k] if i not in now_k})  # None = 지워짐
+        if diff:
+            changed[k] = diff
+    new_runs = [r for r in store.data.get("ai_runs") or [] if r not in runs_before]
+    if not changed and not new_runs and triage is None:
+        return out
+    with store.locked():
+        reloaded = store.reload_if_changed()
+        if still_valid is not None and not still_valid():
+            if not reloaded:
+                store._load()  # 메모리의 자동 변경을 버리고 로그아웃이 남긴 상태로
+            return {}
+        if reloaded:  # 다른 프로세스가 그 사이 저장했다 → 손대지 않은 칸에만 자동 결과를 다시 얹는다
+            skipped = 0
+            for k, diff in changed.items():
+                disk = store.data.setdefault(k, {})
+                for i, v in diff.items():
+                    if disk.get(i) != before[k].get(i):
+                        skipped += 1  # 사용자가 먼저 바꿨다: 사용자 쪽이 이긴다
+                        continue
+                    if v is None:
+                        disk.pop(i, None)
+                    else:
+                        disk[i] = v
+            if skipped:
+                out["ai_skipped_user_changed"] = skipped
+            runs = store.data.setdefault("ai_runs", [])
+            runs.extend(r for r in new_runs if r not in runs)
+            from .agent_cli import RUN_LOG_KEEP
+            del runs[:-RUN_LOG_KEEP]
+            if triage is not None:
+                store.data["ai_triage"] = triage
+        store.write()
+    return out
+
+
+class SyncCancelled(Exception):
+    """동기화 도중 로그아웃(또는 다른 계정으로 로그인)됐다. 읽은 것은 저장하지 않는다."""
+
+
+def sync(canvas: Canvas, store, full: bool = False, by: str = "app", downloads_to: Path | None = None,
+         pdf_reader=None, ai_enabled: bool = False, still_valid=None, ai_runner=None, ai_command=None) -> dict:
+    """켤 때마다·버튼을 누를 때마다·백그라운드(by="background")로 부른다.
+    처음 실행이나 규칙이 바뀐 뒤, 또는 full이면 전부 읽는다.
+    Canvas 읽기·첨부 다운로드(몇 초~)는 잠금 없이 하고, 저장 직전에 잠금을 잡고 파일을 다시 읽어 그 사이의
+    사용자 결정(다른 프로세스가 저장한 것) 위에 합친다. downloads_to가 없으면(테스트 기본) 내려받지 않는다.
+    still_valid(): 저장 직전(잠금 안)에 부른다. False면 그 사이 로그아웃된 것 — 지운 기록을 되살리지 않게
+    아무것도 저장하지 않고 SyncCancelled를 낸다(내려받은 파일은 문서 폴더에 남는다)."""
     prev = store.data.get("cache")
     if prev is None:
         mode, reason = "full", "처음 실행"
@@ -379,11 +645,27 @@ def sync(canvas: Canvas, store, full: bool = False) -> dict:
         mode, reason = "incremental", None
     cache = collect(canvas, lookback_days=store.data["settings"].get("lookback_days", 120),
                     prev=prev, full=(mode == "full"))
-    store.data["cache"] = cache
-    store.data["last_sync"] = cache["fetched_at"]
-    report = rebuild(store, mode=mode, reason=reason)
-    store.data["rules_version"] = RULES_VERSION
-    store.save()
+    downloaded, texts, dl_errors = ({}, {}, [])
+    if downloads_to is not None:
+        downloaded, texts, dl_errors = _download_new(canvas, cache, store, downloads_to, pdf_reader)
+    with store.locked():
+        store.reload_if_changed()
+        if still_valid is not None and not still_valid():
+            raise SyncCancelled("동기화하는 동안 로그아웃되어 저장하지 않았습니다")
+        if downloads_to is not None:
+            from .materials import apply
+            apply(store.data, downloaded, texts, dl_errors)  # 다시 받은 PDF의 옛 글자 정리까지
+        cache["pdf_texts"] = dict(store.data.get("pdf_texts") or {})
+        cache["errors"] += dl_errors
+        store.data["cache"] = cache
+        store.data["last_sync"] = cache["fetched_at"]
+        report = rebuild(store, mode=mode, reason=reason, by=by)
+        report["downloaded"] = len(downloaded)
+        store.data["rules_version"] = RULES_VERSION
+        store.write()
+    if still_valid is not None and not still_valid():
+        return report
+    report.update(_after_sync(store, ai_enabled, ai_runner, ai_command, still_valid))
     return report
 
 
@@ -400,6 +682,7 @@ def short_course_name(name: str | None) -> str:
     if not name:
         return name or ""
     s = _SECTION.sub("", name)
+    s = re.sub(r"^\s*(?:\[[^\]]*\]\s*)+(?:20\d{2}\s+)?", "", s)  # "[학생] [한국어] 2026 " 같은 앞머리
     if _TERM_PREFIX.match(s):
         s = _TERM_PREFIX.sub("", s)
         m = _TRAIL_PAREN.search(s)
@@ -415,6 +698,25 @@ def _default_term(today: date) -> tuple[date, date]:
     return date(today.year, 9, 1), date(today.year, 12, 20)
 
 
+SEMESTER_WEEKS = 16
+MAX_TERM_DAYS = 20 * 7
+
+
+def _median(days: list[date]) -> date | None:
+    if not days:
+        return None
+    days = sorted(days)
+    return days[(len(days) - 1) // 2]
+
+
+def _standard_start(d: date) -> date | None:
+    """한국 대학 표준 개강일(3/2, 9/1) 중 d에서 3주 안에 있는 날."""
+    for c in (date(d.year, 3, 2), date(d.year, 9, 1), date(d.year + 1, 3, 2)):
+        if abs((c - d).days) <= 21:
+            return c
+    return None
+
+
 def semester_info(cache: dict | None, items: list[dict], today: date | None = None) -> dict:
     """개강·종강일과 주차. Canvas 과목/학기 날짜 → 항목 날짜 → 통상 학기 순으로 정한다."""
     today = today or now_local().date()
@@ -427,7 +729,15 @@ def semester_info(cache: dict | None, items: list[dict], today: date | None = No
             starts.append(s.date())
         if e and near(e.date()):
             ends.append(e.date())
-    start, end, source = (min(starts) if starts else None), (max(ends) if ends else None), "canvas"
+    # 가운데 값: 1년짜리 필수 교육 과목 같은 예외 하나에 끌려가지 않게
+    start, end, source = _median(starts), _median(ends), "canvas"
+    note = None
+    if start and end and (end - start).days > MAX_TERM_DAYS:
+        # 학교 Canvas의 '학기'는 성적 처리·방학까지 포함해 길다(예: 8/23~이듬해 2/27) → 수업 16주로 본다
+        std = _standard_start(start)
+        start = std or start
+        end = start - timedelta(days=start.weekday()) + timedelta(weeks=SEMESTER_WEEKS, days=-1)
+        note = f"Canvas 학기 기간이 길어 {start.month}/{start.day} 개강, {SEMESTER_WEEKS}주로 계산했습니다"
     if not start or not end:
         dues = sorted(d.date() for d in (parse_iso(it.get("due")) for it in items) if d and near(d.date()))
         if dues:
@@ -445,7 +755,7 @@ def semester_info(cache: dict | None, items: list[dict], today: date | None = No
         now_n = total + 1
     else:
         now_n = (today - monday).days // 7 + 1
-    return {"start": start.isoformat(), "end": end.isoformat(), "source": source,
+    return {"start": start.isoformat(), "end": end.isoformat(), "source": source, "note": note,
             "week_now": now_n, "weeks_total": total, "weeks": weeks}
 
 
@@ -500,13 +810,33 @@ def weekly_summaries(items: list[dict], sem: dict) -> list[dict]:
     return out
 
 
+def review_reminder(store, now: datetime | None = None) -> list[dict]:
+    """확인 대기 후보가 있으면 오늘 09:00에 '[확인] 마감 후보 N개' 일정 하나(설정 review_reminder가 켜졌을 때).
+    매일 그날 것 하나만 원하는 일정으로 내므로, 지난날의 알림은 다음 반영 때 구글에서 지워진다."""
+    now = now or now_local()
+    pending = [v for v in store.view() if v["status"] == "review"
+               and (parse_iso(v["due"]) is None or parse_iso(v["due"]) >= now - timedelta(days=1))]
+    if not pending:
+        return []
+    start = datetime.combine(now.date(), time(9, 0), tzinfo=now.tzinfo)
+    lines = [f"[{short_course_name(v['course_name'])}] {v['title']}" for v in pending[:10]]
+    if len(pending) > 10:
+        lines.append(f"외 {len(pending) - 10}개")
+    return [{"uid": f"review-{now.date().isoformat()}@lms-agent", "start": start, "end": start + timedelta(minutes=15),
+             "summary": f"[확인] 마감 후보 {len(pending)}개 — LMS Agent에서 확인",
+             "description": "공지·메시지에서 찾은 마감입니다. 앱의 확인함에서 일정에 넣을지 정하세요.\n\n"
+                            + "\n".join(lines)}]
+
+
 def calendar_payload(store) -> tuple[list[dict], list[dict]]:
-    """내보낼 일정: (승인된 마감 + 설정에 따라 Canvas 과제, 주간 요약). .ics와 구글 반영이 함께 쓴다."""
+    """내보낼 일정: (승인된 마감 + 설정에 따라 Canvas 과제, 주간 요약·확인 알림). .ics와 구글 반영이 함께 쓴다."""
     cache = store.data.get("cache")
     items = store.calendar_items()
     sem = semester_info(cache, store.view())
     annotate(items, sem, cache)
     summaries = weekly_summaries(items, sem) if store.data["settings"].get("weekly_summary", True) else []
+    if store.data["settings"].get("review_reminder", False):
+        summaries += review_reminder(store)
     return items, summaries
 
 

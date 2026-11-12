@@ -148,9 +148,22 @@ def test_semester_and_courses(demo):
     ("디지털신호처리", "디지털신호처리"),
     ("ASIC설계(궁재하)", "ASIC설계(궁재하)"),
     ("Capstone Design", "Capstone Design"),
+    ("[학생] [한국어] 2026 인권과 성평등 교육 - 03분반", "인권과 성평등 교육"),
 ])
 def test_short_course_name(name, short):
     assert short_course_name(name) == short
+
+
+def test_long_canvas_term_snaps_to_16_week_semester():
+    """실제 고려대 데이터: 학기(262R)가 8/23~이듬해 2/27로 길고, 1년짜리 필수 교육 과목이 섞여 있다."""
+    cache = {"courses": [
+        {"id": "1", "name": "[학생] [한국어] 2026 인권과 성평등 교육 - 03분반",
+         "term_start": "2026-03-09T00:00:00+09:00", "term_end": "2027-02-21T23:59:00+09:00"},
+        *[{"id": str(i), "name": "x", "term_start": "2026-08-23T00:00:00+09:00",
+           "term_end": "2027-02-27T23:59:00+09:00"} for i in (2, 3, 4)]]}
+    sem = core.semester_info(cache, [], today=datetime(2026, 11, 13).date())
+    assert (sem["start"], sem["weeks_total"], sem["week_now"]) == ("2026-09-01", 16, 11)
+    assert sem["weeks"][0]["start"] == "2026-08-31" and sem["note"]
 
 
 def test_default_semester_when_no_dates():

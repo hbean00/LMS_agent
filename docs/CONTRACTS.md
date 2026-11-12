@@ -47,9 +47,22 @@ def start_mock_canvas(port: int = 0, today=None, tz=None) -> tuple[ThreadingHTTP
                                                            # 백그라운드 스레드로 띄우고 (server, base_url) 반환. 127.0.0.1에만 바인딩
 ```
 
-- 위 1번의 엔드포인트를 같은 모양으로 흉내 낸다. 토큰이 `demo-token`이 아니면 401.
+- 위 1번의 엔드포인트를 같은 모양으로 흉내 낸다. `/api/v1/...`만 Canvas 토큰(`demo-token`)을 요구하고, 아니면 401.
 - 과제 목록은 페이지 크기 2로 잘라 `Link: <...&page=2>; rel="next"`를 준다(페이지 처리 검증용).
-- 서버 객체에 받은 요청 경로 목록(`server.requests: list[str]`)을 남긴다(테스트에서 auto_mark_as_read=false 확인용).
+- 받은 요청: `server.requests: list[str]`(GET은 경로만, POST는 `"POST /경로"`), `server.header_log: list[(요청, Authorization, Cookie)]`
+  (테스트가 "Canvas 토큰은 /api/v1에만, 다운로드에는 인증 없음"을 확인).
+- LearningX 흉내(실제 고려대 흐름과 같은 순서, 10장):
+  - `GET /api/v1/courses/:id/external_tools` — 과목 101에만 게시판 도구 5 `게시판`(`/learningx/lti/learningx_board/boards`, course_navigation 있음)과
+    미끼 도구(3 출석, 6 전체 게시판). `include_parents=true`면 모든 과목에 다른 호스트의 Zoom 도구. 없는 과목 404.
+  - `GET /api/v1/courses/:id/external_tools/sessionless_launch?id=5` → `{id, name, url}`(한 번만 쓰는 verifier).
+  - `GET /courses/:id/external_tools/sessionless_launch?verifier=` → 미끼 로그아웃 폼 + LTI 1.1 폼(진짜 HMAC-SHA1 `oauth_signature`).
+  - `POST /learningx/lti/learningx_board/boards` — 서명·nonce(한 번만) 확인 → 쿠키 `laravel_session`, `XSRF-TOKEN`, `xn_api_token`(과목별, `server.lx_tokens`) → 302.
+  - `/learningx/api/v1/learningx_board/courses/:cid/boards`, `/boards/:bid/posts?page=N`(`{items, pagination}`, 본문·`attachment_count`만),
+    `/posts/:pid`(`{item:{…, attachments, post_url}}`). `xn` 토큰이 없거나 Canvas 토큰이면 401, 다른 과목 토큰이면 403.
+  - `GET /files/:fid/download?verifier=` — Authorization이 있으면 403, verifier가 틀리면 `/login/canvas`(HTML)로 302, 맞으면 `{storage_base}/storage/:fid`로 302.
+    `GET /storage/:fid`는 PDF 바이트(Authorization 있으면 400). `GET /api/v1/files/:fid` → `{id, filename, display_name, size, url}`.
+  - 시험용 손잡이: `lx_fail`(`"sessionless" | "form" | "foreign" | "launch" | "cookie" | "api"`), `lx_page_size`(기본 `LX_PAGE_SIZE`=20),
+    `lx_unwrapped`(글 상세를 `item`으로 감싸지 않음), `storage_base`(두 번째 가짜 서버를 가리키면 다른 호스트로 넘어가는 다운로드). 상수 `BOARD_TOOL_ID = 5`.
 
 ### 데모 시나리오 (T = today, 시각은 로컬 시간 → UTC로 변환해 `Z` 문자열)
 
@@ -301,3 +314,180 @@ Item 추가(근거 사슬의 마지막 고리):
 - `POST /api/grades/<course_id>` 본문 `{"components": [...], "dist"?: {9단계 %} | null, "class_size"?: int | null}` → 새 state. 잘못되면 400 `{"error"}`(비중 합 100% 초과, 분포 합 ≠ 100 등).
 - 점수 후보(candidates)는 사용자가 [항목에 넣기]로 골라 넣는다(자동으로 넣지 않음). 넣을 때 `source`에 출처를 적는다.
 - 화면은 추정이라는 단서(`estimate.notes`)를 항상 함께 보여 준다. D+/D0은 0%라 결과로 나오지 않는다.
+
+## 8. 계속 쓰게 만들기: 백그라운드 동기화·튜토리얼 (v0.3)
+
+### 백그라운드 동기화 — 앱을 열지 않아도 구글 캘린더가 최신
+
+Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간마다** `lms-agent sync --push`(바뀐 곳만 읽기 → 구글 반영)를 실행한다.
+결과는 같은 실행 기록(`runs`)에 `"by": "background"`로 남는다. 앱 화면이 열려 있어도 서버는 요청마다 state.json이 바뀌었는지 보고 다시 읽는다.
+
+`GET /api/state` 추가:
+
+```json
+"background": {
+  "supported": true,            // 작업 스케줄러를 쓸 수 있는 OS(Windows)인지. false면 화면은 안내만
+  "enabled": false,             // 등록돼 있는지(실제 스케줄러 조회 결과)
+  "interval_hours": 3,          // 1~24
+  "command": "\"C:\…\lms-agent.exe\" sync --push",   // 등록되는 명령(보여 주기용)
+  "last_run": "2026-11-12T21:00:00+09:00",            // 마지막 백그라운드 실행(없으면 null)
+  "error": null
+}
+```
+
+- `POST /api/background` 본문 `{"enabled": bool, "interval_hours"?: 1~24}` → 등록/해제 후 새 state. 실패 시 400 `{"error"}`.
+- 데모 모드에서는 실제 등록하지 않는다(`supported: false`, 안내 문구만).
+
+### 튜토리얼 완료 여부
+
+`state.settings.tutorial_done`(기본 false). 화면은 처음 열 때 false면 튜토리얼을 띄우고, 끝내거나 건너뛰면 `POST /api/settings {"tutorial_done": true}`.
+설정의 [튜토리얼 다시 보기]는 화면에서만 다시 띄운다(값은 바꾸지 않아도 됨). 서버에 저장하는 이유: 포트가 바뀌면 브라우저 localStorage가 달라져 튜토리얼이 다시 뜨기 때문.
+
+## 9. 로그인·로그아웃 (Canvas 토큰)
+
+앱은 학교 포털 아이디·비밀번호를 받지 않는다(포털 비밀번호 자동 입력은 이번에 만들지 않기로 함 — PROGRESS 참고).
+로그인 = Canvas의 토큰 발급 화면을 새 탭으로 열어 주고, 붙여 넣은 토큰으로 실제 연결을 확인. 토큰·구글 토큰은 설정 파일에 Windows 암호화로 저장.
+
+`GET /api/state` 추가:
+
+```json
+"account": {
+  "logged_in": true,
+  "user_name": "김현빈",                         // Canvas가 알려 준 이름(연결 확인 결과)
+  "canvas_url": "https://mylms.korea.ac.kr",
+  "token_page": "https://mylms.korea.ac.kr/profile/settings",   // 새 액세스 토큰 발급·삭제 화면(새 탭)
+  "encrypted": true                              // 토큰을 Windows 암호화로 저장하는지
+}
+```
+
+| 요청 | 동작 |
+|---|---|
+| `POST /api/account/login` | `{"canvas_url"?: str, "token": str}` → Canvas에 실제로 물어봐 확인, 저장, 첫 동기화 시작 → 새 state. 실패 400 `{"error"}` |
+| `POST /api/account/logout` | `{"wipe"?: bool}` → 이 PC의 토큰·로그인 상태 삭제(wipe면 마감·결정 기록까지) → 새 state. Canvas 쪽 토큰은 사용자가 `token_page`에서 직접 삭제하도록 안내 |
+
+데모 모드에서는 둘 다 400. `/api/setup`(3장)은 그대로 동작한다(같은 확인·저장).
+
+동기화 도중 로그아웃: 로그인·로그아웃은 `app.session_gen`을 올린다. `core.sync(..., still_valid=)`는 저장 직전(잠금 안)에
+확인해 그 사이 로그아웃됐으면 아무것도 저장하지 않고 `core.SyncCancelled`를 낸다(지운 기록이 되살아나지 않게).
+백그라운드 동기화(`sync --background`)는 설정 파일의 토큰이 시작할 때와 같은지로 판단한다.
+
+### 확인 알림 (벤치마크 추천, 선택)
+
+`state.settings.review_reminder`(기본 false). 켜면 확인 대기 후보가 있는 날 **오늘 09:00 "[확인] 마감 후보 N개 — LMS Agent에서 확인"** 일정이 캘린더(.ics·구글)에 하나 들어간다(설명에 후보 목록). 다 처리하면 사라지고, 지난날 것은 다음 반영 때 지워진다. `POST /api/settings {"review_reminder": bool}`.
+
+## 10. LearningX 게시판·첨부 자료·평가 비중 자동 찾기·AI CLI (v0.4)
+
+실제 고려대 계정 확인 결과: 과제 안내·마감은 Canvas 글이 아니라 **LearningX 게시판 본문**에, 자세한 내용은 **첨부 PDF**에 있다.
+비밀번호 없이 Canvas 토큰만으로 접근한다: `learningx.LearningX` — Canvas `sessionless_launch` → LTI 1.1 양식 제출 → `xn_api_token` 쿠키(메모리에만) → `/learningx/api/v1/learningx_board/...`.
+첨부 `url`은 Canvas 파일 주소(`/files/<id>/download?verifier=…`)라 **인증 헤더 없이** 받는다(저장소로 리디렉션). 실패하면 Canvas `GET /api/v1/files/<canvas_file_id>`의 `url`.
+
+### 수집 결과(cache)에 더해지는 것 — 리더(core.collect)가 채운다
+
+```json
+"boards": [
+  {"course_id": "95079", "tool_id": 5, "board_id": 83605, "board_title": "과제",
+   "posts": [{"id": 461903, "title": "Lab3 Assignment", "content": "<p>…(due : 23:59 on 11/18)</p>",
+              "created_at": "…Z", "updated_at": "…Z", "post_url": "https://…" ,
+              "attachments": [{"id": 10001, "filename": "Lab3.pdf", "filesize": 635152,
+                               "canvas_file_id": 6180826, "url": "https://…/files/6180826/download?download_frd=1&verifier=…"}]}]}
+]
+```
+- 글 목록 응답에 `content`가 들어 있어 바뀐 글만 본문 해시로 다시 읽는다. 첨부는 `attachment_count > 0`이고 새·바뀐 글만 상세를 받는다(지난 cache의 attachments 재사용).
+- 마감 찾기 출처: `type: "board"`, `id: "<board_id>-<post_id>"`, 제목 `"<게시판>: <글 제목>"`. 화면의 source_type 라벨은 "게시판".
+
+### 첨부 자료(materials) — B
+
+- `store.data["downloads"]`: `{"<course_id>:<attachment id>": {"path", "filename", "size", "course_id", "board_title", "post_title", "post_key": "board:<board_id>-<post_id>", "downloaded_at", "pdf_ok": bool|null, "pdf_notes": [...]}}`
+- `store.data["pdf_texts"]`: `{"<course_id>:<attachment id>": {"text": "…(최대 60,000자)", "course_id", "filename", "post_key", "posted_at"}}` → 마감 찾기 출처 `type: "pdf"`, `id: "<course_id>:<attachment id>"`, 제목 `"첨부 '<filename>'"`(라벨 "첨부 PDF").
+- 설정: `settings.auto_download`(기본 true), `settings.download_dir`(기본 null = `~/Documents/LMS Agent`). 저장 경로: `<폴더>/<짧은 과목명>/<게시판>/<글 제목>/<파일명>`(안전한 이름). 새 첨부만(같은 id·크기면 건너뜀), 파일당 50MB 제한.
+- `GET /api/state` → `"materials": {"folder": "C:\…\LMS Agent", "auto_download": true, "count": 12, "items": [{"key", "course_short", "board_title", "post_title", "filename", "size", "downloaded_at", "pdf_ok", "post_key"}], "errors": [...]}`
+- `POST /api/materials/open {"key"?: str}` → 그 파일(또는 key 없으면 폴더)을 OS 기본 프로그램으로 연다(다운로드 폴더 안의 경로만). `POST /api/settings`에 `auto_download`, `download_dir`.
+
+### 평가 비중 자동 찾기·AI CLI — C
+
+- 강의계획서·게시판·공지·PDF 글에서 "중간고사 30%, 기말고사 40%, 과제 20%, 출석 10%" 같은 평가 비중을 **규칙으로 먼저** 찾고, 못 찾으면(또는 애매하면) 사용자가 켠 경우에만 **AI CLI**(예: `claude -p`)로 표를 뽑는다.
+- 찾은 비중은 그 과목 성적 설정이 비어 있으면 **자동으로 들어간다**(`config.components`에 `"auto": true`, `source`에 근거 문장). 사용자가 고친 과목은 자동으로 덮어쓰지 않는다.
+- 설정 `settings.ai_cli`(기본 false). 켜면 강의 글 일부(한 번에 최대 12,000자)가 그 AI 서비스로 전송된다(화면에서 분명히 안내).
+- 규칙: `weights.find_weights(text, is_html=False) -> WeightsFound{components:[{name, weight, fixed}], total, sentence, confidence, notes} | None`.
+  한국어·영어 목록, `출석(10)`, 여러 줄 목록, 표(HTML·전치·합계 행·PDF에서 칸마다 한 줄), 배점(합이 100이 아니면 %로 바꾸고 메모).
+  무시: 출석 기준, "상위 30%", 학점 분포, 감점, 날짜, 점수 공지, 하위 비중. 합 100이면 high, 아니면 medium(≥50%)·low. 출석·참여는 `fixed`.
+- 자동 넣기: `gradebook.auto_fill(store, sources, ai_enabled, runner=None, session=None) -> [기록 줄]`. 규칙 먼저, high 중 **가장 최근 글**
+  (학기 중 "Updated Grading Policy" 공지가 강의계획서를 대신), 과제 하나의 채점 기준은 건너뜀. high가 없고 AI가 켜져 있으면 AI(`grading_weights`) —
+  글마다 결과를 기억하고 실패는 12시간 뒤 다시. 이름이 같은 항목의 점수·평균·표준편차는 유지. `POST /api/grades/<id>`로 저장하면 `auto` 표시가 빠져 다시는 자동으로 덮지 않는다.
+- `state.grades.courses[]` 추가: `auto`, `auto_source`, `auto_by: "rules"|"ai"`, `auto_changed: {at, source, added:[{name, weight}], removed:[…], changed:[{name, from, to}]} | null`.
+  과목 설정 추가: `auto_previous`, `auto_updated_at`, `auto_confidence`, `auto_notes`, `auto_source_type`, `auto_posted_at`.
+- 성적 파일(학번): `POST /api/grades/settings {"student_id": str|null}`(영문·숫자 6~12자, 이 PC의 state.json에만). `state.grades.student_id_set`, `student_id_masked`("2026****33"; 전체 학번은 응답에 없음).
+  `scorefile.parse_score_text(text, student_id, label=None, filename=None)`, `is_score_file`, `label_from_filename`("Lab0_score-1.pdf" → "Lab0").
+  `gradebook.candidates()`가 성적 PDF의 내 줄도 후보로 낸다(`source_type: "pdf"`, `source_title`=파일 이름, `key: "pdf:<pdf_texts 키>"`).
+- AI CLI 하네스(`agent_cli`):
+  - `detect()`(PATH의 `claude`, `LMS_AGENT_AI_CLI`로 전체 경로 지정), `command_name(path)`. 작업 목록 `TASKS`: `grading_weights`, `deadline_from_text`, `triage_review`
+    — 각각 지시문(한·영), JSON 스키마, 입력 만들기(가리기 + 12,000자 예산), 결과 검증, 2회 시도, 90초 제한.
+  - `run_task(name, inputs, runner=, command=, store=) -> AiResult{ok, data, error, attempts, duration_ms, input_chars, cli, model, notes}`(예외 없음).
+  - `AiSession(store, runner)`: `settings.ai_cli`일 때만, 동기화당 5회·하루 30회. 동기화 한 번의 평가 비중·확인함 정리가 한 세션을 나눠 쓴다(`core._after_sync`).
+  - 호출: `claude -p <고정 한 줄 지시> --output-format json --tools "" --no-session-persistence`(모르는 옵션이면 뒤 두 개 빼고 한 번 더).
+    글·스키마·고침 요청은 모두 stdin(명령줄에 강의 글 없음), 셸 없음, 빈 임시 폴더, 창 없음, 시간 초과 시 `taskkill /T`. 검증 실패는 오류를 인용해 다시 묻는다.
+  - 가리기: 이메일·전화·학번(가린 것 포함)·링크·토큰 같은 문자열·서명 이름·넘긴 이름 → `[이메일]` 같은 자리 표시. 점수·성적 파일은 보내지 않는다.
+  - 기록 `store.data["ai_runs"]`(최근 50): 작업·성공·시도·시간·글자 수·cli·model·오류만(지시·글·답 없음).
+  - 평가: `run_evals(runner=None, command=None) -> {cli, passed, total, cases}` = `python -m lms_agent ai-eval`(데모 문장만 실제 CLI로).
+- `state.ai = {available, command, enabled, auto_triage, last_error, calls_today, limits:{per_sync, per_day, max_chars}, recent_runs(최근 5, 내용 없음), last_triage}`.
+  `POST /api/ai/settings {"ai_cli"?, "ai_auto_triage"?}`. 화면에는 명령 이름만(경로 없음).
+- 데모: `mock_ai.runner`(규칙으로 답하는 가짜 AI)를 쓴다 — 실제 AI 서비스로 글을 보내지 않고 하네스 전체(가리기·검증·반영·기록)를 지난다.
+
+## 11. 성적 공개 반응 — "학기 마라톤을 함께 달리는 페이스메이커" (v0.4)
+
+사용자 아이디어: 성적이 공개되면 게임처럼 반응한다. LMS Agent는 학기 시작부터 끝까지 함께 달리는 마라토너다.
+
+- 감지(동기화 뒤): ① Canvas 과제가 새로 채점됨(`submission.score`가 새로 생기거나 바뀜) ② 공지·메시지·게시판·첨부에서 점수 문장이 새로 발견됨(`gradebook.candidates`) ③ (가능하면) 과목 `current_score` 변화. 같은 것은 한 번만(`store.data["celebrated"]`에 본 키 저장).
+- 판정: 평균·표준편차가 있으면 `grades.top_percent` → 그 과목 분포(없으면 기본)로 `letter_for` → 구간 `band` = A(A+·A0) / B(B+·B0) / C(C+·C0) / D / F. 과목에 추정(`gradebook` estimate)이 있으면 그 학점을 쓴다. 근거가 없으면 `band: null`(점수만 축하/알림, 등급 단정 금지).
+- 맥락 `exam`: 라벨·제목에 중간/midterm → "midterm", 기말/final → "final", 그 밖 → "assignment".
+- 마라톤 진행: `km = 42.195 × week_now / weeks_total`(소수 1자리), 종강 주면 결승선.
+
+`GET /api/state` → `"celebrations": {"pending": [{"id", "kind": "graded"|"score", "course_short", "title", "score", "max_score", "mean", "sd", "top", "letter", "band", "exam", "source_title", "at"}], "km": 27.6, "total_km": 42.195, "week_now": 11, "weeks_total": 16}`
+`POST /api/celebrations/seen {"ids": [...]}` → 본 것으로 표시 → 새 state.
+
+화면: 동기화 뒤 pending이 있으면 한 번에 하나씩 반응 카드(모달). A는 호들갑(축하·색종이), B는 "너무 고생했어요! 조금만 더 보완해 봅시다"(중간고사면 남은 기말 이야기), C는 위로와 격려, null은 담백한 "점수가 나왔어요". 기말 버전은 "한 학기 완주" 톤. 움직임 줄이기 설정을 존중하고, 성적은 이 PC에서만 다룬다.
+
+### 11-1. 중간중간 보상 (목표: 사용자가 계속 쓰고 싶게, 종강까지 함께 달리기)
+
+성적 반응만으로는 보상이 드물다. 학기 동안 **실제 행동(제출·확인)에 맞춘 작은 보상**을 준다. 과하지 않게(같은 날 최대 2개, 한 번 받은 것은 다시 안 뜸), 근거가 있는 것만.
+
+| 보상 `kind` | 조건(같은 학기 안에서 한 번) | 예시 문구 톤 |
+|---|---|---|
+| `start` | 첫 동기화 완료 | "출발! 16주 마라톤, 끝까지 같이 달려요" |
+| `km` | km 이정표 도달: 5, 10, 21.1(하프), 30(마의 구간 — 보통 기말 준비기), 35, 42.195(결승) | 하프: "반환점 돌았어요" / 30km: "가장 힘든 구간이에요. 페이스 유지!" / 결승: "한 학기 완주!" |
+| `week_clear` | 지난 주에 마감이 1개 이상 있었고 **전부 제출함**(Canvas 제출 확인 또는 사용자가 체크) | "11주차 완주 · 마감 3개 모두 제출" |
+| `streak` | `week_clear`가 연속 3·5·8주 | "3주 연속 완주 🔥"(이모지는 화면 아이콘으로) |
+| `inbox_zero` | 확인함이 3개 이상 쌓였다가 0개가 됨 | "확인함 비우기 완료 — 놓친 마감 없음" |
+| `graded` / `score` | 11장 성적 반응 | (11장) |
+
+- 상태: `celebrations.pending`에 같은 모양(`kind`, `id`, `title`, 필요한 숫자)으로 섞여 들어오고, `celebrations.medals`: 받은 보상 목록 `[{"id","kind","title","at","week"}]`, `celebrations.streak`: 현재 연속 완주 주 수.
+- 기록은 `store.data["celebrated"]`(본 키)와 `store.data["medals"]`(받은 보상). 처음 실행 때 지난 주들의 `week_clear`·`streak`은 조용히 메달함에만 넣고 모달로 띄우지 않는다(스팸 방지).
+- 화면: 대시보드에 마라톤 진행 막대(현재 km, 다음 이정표까지 남은 km)와 메달함(받은 것 + 다음 목표 1개), 새 보상은 모달 대신 가벼운 카드/토스트로(성적 반응만 모달).
+
+### 11-2. 구현 결과 (D, `celebrate.py`·`features/celebrate.py`·`features/mascot.py`)
+
+- 감지는 ①·②만(③ `current_score`는 ①과 겹쳐 두 번 뜨므로 뺐다). 첫 계산 때 14일보다 오래된 점수와 지난 주·km·연속 보상은 조용히 메달함으로(`start`만 보여 줌).
+  하루 새 보상 최대 2개, 같은 종류가 여럿 쌓이면 가장 최근 것만 보여 주고 나머지는 메달함. `inbox_zero`는 **주 1회**(학기 1회 아님 — 계속 받을 수 있게), 사용자나 AI가 실제로 결정했을 때만(로그아웃 지우기로는 안 뜸).
+- `state.celebrations`: `news[]`, `pending[]`(성적 반응·보상), `medals[]`, `streak`, `streak_next`, `km`, `total_km`, `week_now`, `weeks_total`, `finished`, `after_finish`,
+  `milestones[{km, label, reached}]`, `next{km, label, left, title}`, `waiting`. 성적 항목 추가 필드 `course_id`, `basis: "score"|"course"|null`, `source_type`, `url`. 보상 추가 필드 `week`, `km`, `label`, `finish`, `n`, `count`.
+- **동기화 소식 카드**(사용자 요청 2026-11-13: "동기화했을 때 새 정보가 있으면 가운데 큰 화면으로, 유머러스하게"): `news[] = {id: "news:<kind>:<hash>", kind, count, mood, items[]}`,
+  `kind` = `first`(첫 동기화 요약 한 장) → `grades`(+`grade_ids`, `snoozed`) → `deadlines`(+`review_ids`) → `changes`(items에 `old`, `new`, `conflict`) → `materials` → `weights`(+`changed`, items에 `diff{added, removed, changed}`, `source`, `by`) 순서.
+  성적 카드는 점수를 "??점"으로 가리고 [앗 쫄려요… 나중에 볼래요] / [지금 확인하기]. 미루면 다음 실행 때 한 번 더, 두 번 미루면 큰 카드 없이 배지만. 동기화당 한 줄, 소식이 먼저·보상은 그 뒤.
+  이 기능 전부터 쓰던 계정은 조용히 초기화(옛 소식이 한꺼번에 뜨지 않게). [가 보기]는 뒤 화면을 옮기고 다음 카드로 넘어간다.
+- 요청: `POST /api/celebrations/seen {"ids"}`, `POST /api/celebrations/snooze {"ids"}` → 새 state. `GET /api/state`가 첫 계산(초기화 표시)과 `review_peak` 변화 때 잠금을 잡고 저장한다.
+- `store.data` 칸: `celebrated`, `medals`, `celebrate_init`, `review_peak`, `news_seen{init, items, materials, weights}`, `news_snooze`, `mascot{choice}`.
+- 캐릭터 `state.mascot = {pack: "ku"|"local"|null, name, moods{mood: url|null}, local, guessed, files, folder, choice, ku, ku_school, credit}`.
+  `GET /mascot/ku/<mood>.gif`(패키지 안), `GET /mascot/local/<rel>`(내 PC 팩), `POST /api/mascot/map {mood, file}|{name}|{choice: "auto"|"original"}`, `POST /api/mascot/open-folder`.
+  고려대 Canvas(그리고 고려대를 흉내 낸 데모)면 KU 팩이 기본, 아니면 오리지널 SVG 페이스메이커(버건디 머리띠·배번 42, 8가지 자세). 설정 → 캐릭터에서 오리지널로 바꿀 수 있고, KU 저작권 안내를 함께 보여 준다.
+
+## 12. AI 에이전트가 미결정 사안을 직접 반영 (사용자 결정, v0.4)
+
+사용자 결정(2026-11-13): AI CLI는 챗봇이 아니라 **대시보드의 미결정 사안을 직접 처리**한다. 원칙 "판단은 사용자가"는 **"AI가 처리할 수 있으나, 보이게·되돌릴 수 있게·검증된 것만"**으로 바뀐다.
+
+- 대상: 확인함 후보(status review) — `approved`/`rejected`/제목·마감 수정, 마감 충돌(같은 과제의 여러 후보 중 하나 고르기), 평가 비중 채우기.
+- 하네스(agent_cli, C): 작업 `triage_review` — 입력은 후보마다 {id, 과목, 제목, 마감, 근거 문장들(원문), notes, conflict}만(이메일·학번·이름은 가린다). 출력 `[{"id", "decision": "approved"|"rejected"|"keep", "due"?: ISO, "title"?: str, "reason": 한 줄, "evidence": 원문에서 그대로 인용}]`. 검증: id가 실제 후보, evidence가 그 후보 근거 원문에 글자 그대로 있음, due는 파싱되고 근거와 모순 없음(±1일 밖이면 거부), 충돌 그룹에서는 최대 하나만 approved. 통과한 것만 반영.
+- 반영: `store.update_user(id, changes, by="ai", reason=...)` → item에 `decided_by: "ai"|"user"|null`, `ai_reason`. 사용자가 그 뒤 손대면 `decided_by: "user"`. 되돌리기 = `POST /api/item/<id> {"decision": "pending"}`(기존).
+- 실행: `POST /api/ai/triage` → 새 state + `"triage": {at, ok, applied, skipped: [{id, why}], error, attempts}`(꺼져 있으면 400). 설정 `settings.ai_auto_triage`(기본 false)가 켜져 있으면 동기화 뒤 자동 실행(`core._after_sync`, report에 `ai_triage: {ok, applied, error}`). 둘 다 `settings.ai_cli`가 켜져 있을 때만. 결과는 `store.data["ai_triage"]`(= `state.ai.last_triage`).
+- 저장 합치기: AI는 몇십 초 걸릴 수 있어 잠금 밖에서 돈다. 저장할 때 파일을 다시 읽어, 그 사이 다른 프로세스(앱 화면)에서 **사용자가 바꾼 칸은 건드리지 않는다**(사용자 쪽이 이김, report `ai_skipped_user_changed: n`). 대상 칸: `user`, `grades`, `weights_auto`, 그리고 `ai_runs`·`ai_triage`. 그 사이 로그아웃됐으면 아무것도 저장하지 않는다.
+- 추가 검증: AI가 결정하기 직전에 그 항목을 다시 확인(그 사이 사용자가 결정했으면 건너뜀), 이유 120자 이하, 이미 승인된 같은 과제 후보도 셈.
+- 화면(D): 확인함 위 [AI로 정리] 버튼(진행 표시), AI가 반영한 항목에 "AI" 칩 + 이유 + [되돌리기], 설정에 "동기화 뒤 AI가 자동 정리" 토글, AI 실행 기록.
