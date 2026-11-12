@@ -14,11 +14,16 @@ def _escape(s: str) -> str:
     return s.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
 
 
+def _prop(s: str) -> str:
+    """title= 같은 속성 값: ':'·','도 바꿔야 'tests/a.py::test_x'가 잘리지 않는다."""
+    return _escape(s).replace(":", "%3A").replace(",", "%2C")
+
+
 def main(path: str) -> int:
     text = Path(path).read_text("utf-8", errors="replace")
     failed = re.findall(r"^(?:FAILED|ERROR) (\S+?)(?: - (.*))?$", text, flags=re.M)
     for name, msg in failed[:MAX - 1]:
-        print(f"::error title={_escape(name)[:120]}::{_escape((msg or '').strip())[:500] or '실패'}")
+        print(f"::error title={_prop(name)[:160]}::{_escape((msg or '').strip())[:500] or '실패'}")
     if len(failed) >= MAX:
         print(f"::error title=그 밖의 실패::{len(failed) - (MAX - 1)}개 더 — 로그를 보세요")
     if not failed:  # 수집 오류 등: 마지막 줄들을 그대로
