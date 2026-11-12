@@ -10,6 +10,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
+# 마감 찾기 규칙이 바뀌면 올린다. 저장된 값과 다르면 다음 동기화 때 모든 글을 다시 읽는다.
+RULES_VERSION = "2026.11.12-1"
+
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 EN_MONTHS = ["january", "february", "march", "april", "may", "june", "july",

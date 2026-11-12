@@ -60,7 +60,8 @@ def event_description(item: dict) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def build_ics(items: list[dict], now: datetime | None = None) -> str:
+def build_ics(items: list[dict], now: datetime | None = None, summaries: list[dict] | None = None) -> str:
+    """items: 마감 일정. summaries: 주간 요약 {uid, start, end, summary, description} (알림 없음)."""
     stamp = to_utc_stamp(now or now_local())
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LMS Agent//lms-agent//KO",
              "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:LMS 마감"]
@@ -81,6 +82,11 @@ def build_ics(items: list[dict], now: datetime | None = None) -> str:
             lines += ["BEGIN:VALARM", "ACTION:DISPLAY", f"TRIGGER:{trig}",
                       f"DESCRIPTION:{_esc(summary)}", "END:VALARM"]
         lines.append("END:VEVENT")
+    for s in summaries or []:
+        lines += ["BEGIN:VEVENT", f"UID:{s['uid']}", f"DTSTAMP:{stamp}",
+                  f"DTSTART:{to_utc_stamp(s['start'])}", f"DTEND:{to_utc_stamp(s['end'])}",
+                  f"SUMMARY:{_esc(s['summary'])}", f"DESCRIPTION:{_esc(s['description'])}",
+                  "CATEGORIES:주간 요약", "TRANSP:TRANSPARENT", "END:VEVENT"]
     lines.append("END:VCALENDAR")
     out: list[str] = []
     for ln in lines:

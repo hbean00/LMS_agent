@@ -86,15 +86,17 @@ def test_courses_include_syllabus(mock):
     _, cv = mock
     courses = {c["id"]: c for c in cv.courses()}
     assert sorted(courses) == [101, 102, 103, 104]
-    assert courses[101]["name"] == "ASIC설계" and courses[101]["course_code"] == "EE401"
+    assert "ASIC설계" in courses[101]["name"] and courses[101]["course_code"] == "EE401"
     assert "기말고사" in courses[103]["syllabus_body"]
+    assert courses[101]["enrollments"][0]["computed_current_score"] == 92.5
+    assert courses[101]["term"]["start_at"]
 
 
 def test_assignments_follow_pagination(mock):
     server, cv = mock
     items = cv.assignments(101)
     assert [a["id"] for a in items] == [1011, 1012, 1013]
-    assert items[0]["submission"]["workflow_state"] == "submitted"
+    assert items[0]["submission"]["workflow_state"] == "graded" and items[0]["submission"]["score"] == 9.0
     assert items[1]["due_at"] is None and items[1]["submission_types"] == ["none"]
     pages = [p for p in server.requests if p.startswith("/api/v1/courses/101/assignments")]
     assert len(pages) == 2 and "page=2" in pages[1]

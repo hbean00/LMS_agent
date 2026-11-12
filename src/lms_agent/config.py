@@ -25,6 +25,35 @@ def data_dir() -> Path:
     return base / APP_NAME
 
 
+def load_dotenv(*paths: Path) -> list[Path]:
+    """KEY=VALUE 형식의 .env를 읽어 환경 변수에 넣는다(이미 있는 값은 덮지 않음). 값은 출력하지 않는다."""
+    loaded = []
+    for p in paths:
+        try:
+            text = Path(p).read_text("utf-8-sig")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[len("export "):].strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+        loaded.append(Path(p))
+    return loaded
+
+
+def google_client() -> tuple[str | None, str | None]:
+    """구글 OAuth 클라이언트(데스크톱 앱). 현재 폴더·데이터 폴더의 .env 또는 환경 변수에서."""
+    load_dotenv(Path.cwd() / ".env", data_dir() / ".env")
+    return os.environ.get("LMS_AGENT_GOOGLE_CLIENT_ID"), os.environ.get("LMS_AGENT_GOOGLE_CLIENT_SECRET")
+
+
 def normalize_url(url: str) -> str:
     url = (url or "").strip().rstrip("/")
     if url and not url.startswith(("http://", "https://")):

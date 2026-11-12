@@ -17,6 +17,8 @@ cmd = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
     "--name", "lms-agent",
     "--paths", str(SRC),
+    # features/는 이름으로 불러오므로(import_module) PyInstaller가 못 찾는다 → 하위 모듈을 모두 넣는다
+    "--collect-submodules", "lms_agent",
     "--add-data", f"{SRC / 'lms_agent' / 'web' / 'index.html'}{sep}lms_agent/web",
     "--distpath", str(ROOT / "dist"), "--workpath", str(ROOT / "build"), "--specpath", str(ROOT / "build"),
     str(SRC / "lms_agent" / "__main__.py"),

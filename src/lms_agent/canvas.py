@@ -123,6 +123,7 @@ class Canvas:
             raise CanvasError("토큰 형식이 올바르지 않습니다 (공백이나 허용되지 않는 문자가 있음)")
         self._token = token
         self.timeout = timeout
+        self.request_count = 0  # 실행 기록에 "요청 몇 번으로 끝냈는지" 남기려고 센다
         self._opener = urllib.request.build_opener(_KeepAuthOnSameOrigin)
 
     def __repr__(self) -> str:
@@ -139,6 +140,7 @@ class Canvas:
         req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
         req.add_unredirected_header("Authorization", "Bearer " + self._token)
         timeout_msg = f"Canvas 응답이 {self.timeout:g}초 안에 오지 않았습니다 (시간 초과)"
+        self.request_count += 1
         try:
             with self._opener.open(req, timeout=self.timeout) as resp:
                 return parse_json(resp.read()), resp.headers
@@ -185,7 +187,8 @@ class Canvas:
         return self._get_one("/api/v1/users/self")
 
     def courses(self) -> list[dict]:
-        params = [("enrollment_state", "active"), ("include[]", "syllabus_body"), ("per_page", 100)]
+        params = [("enrollment_state", "active"), ("include[]", "syllabus_body"), ("include[]", "term"),
+                  ("include[]", "total_scores"), ("per_page", 100)]
         # 접근 제한 과목(access_restricted_by_date) 등 name 없는 항목은 뺀다
         return [c for c in self._get_all("/api/v1/courses", params) if c.get("name")]
 
@@ -203,7 +206,8 @@ class Canvas:
             out += self._get_all("/api/v1/announcements", params)
         return out
 
-    def conversations(self, since: datetime, limit: int = 30) -> list[dict]:
+    def conversation_list(self, since: datetime, limit: int = 30) -> list[dict]:
+        """메시지함 목록(본문 없음). last_message_at >= since 인 대화만, 최대 limit개."""
         if limit <= 0:
             return []
         since = since.astimezone(timezone.utc)  # naive면 로컬 시간으로 본다
@@ -214,17 +218,23 @@ class Canvas:
             # 목록은 최근 메시지 순이다. since 이전 것이 나왔으면 다음 페이지는 더 오래된 것뿐이다.
             if len(picked) >= limit or any(t and t < since for t in times):
                 break
+        return [c for c in picked[:limit] if c.get("id") is not None]
+
+    def conversation_detail(self, conv: dict) -> dict | None:
+        """대화 하나의 본문. 지워졌거나 볼 수 없으면 None."""
+        try:
+            # auto_mark_as_read=false 필수: 본문을 읽어도 읽음 처리하지 않는다
+            detail = self._get_one(f"/api/v1/conversations/{_seg(conv['id'])}", [("auto_mark_as_read", "false")])
+        except CanvasError as e:
+            if e.status in (403, 404):
+                return None
+            raise
+        return {**conv, **detail}
+
+    def conversations(self, since: datetime, limit: int = 30) -> list[dict]:
         out = []
-        for conv in picked[:limit]:
-            if conv.get("id") is None:
-                continue
-            try:
-                # auto_mark_as_read=false 필수: 본문을 읽어도 읽음 처리하지 않는다
-                detail = self._get_one(f"/api/v1/conversations/{_seg(conv['id'])}",
-                                       [("auto_mark_as_read", "false")])
-            except CanvasError as e:
-                if e.status in (403, 404):  # 그 사이 지워졌거나 볼 수 없는 대화는 건너뛴다
-                    continue
-                raise
-            out.append({**conv, **detail})
+        for conv in self.conversation_list(since, limit):
+            d = self.conversation_detail(conv)
+            if d is not None:
+                out.append(d)
         return out

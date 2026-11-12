@@ -146,3 +146,158 @@ def start_mock_canvas(port: int = 0, today=None, tz=None) -> tuple[ThreadingHTTP
 ### `GET /calendar.ics`
 
 승인한 후보 + (include_canvas면) 마감 있는 Canvas 과제 중 제외 안 한 것. 파일 다운로드(`lms-deadlines.ics`). 이 경로는 헤더 없이 받을 수 있다.
+
+## 4. v0.2 학기 관리자 확장 (3장에 더해지는 것)
+
+마감 목록 앱에서 "개강부터 종강까지" 보는 앱으로 넓힌다. 보는 단위가 **주(week)**와 **과목**이 된다. 3장의 필드는 그대로 두고 아래를 더한다.
+
+### `GET /api/state` 추가 필드
+
+```json
+{
+  "semester": {
+    "start": "2026-09-01",           // 개강일(로컬 날짜). 과목/학기 시작일 → 없으면 항목 날짜 → 없으면 통상 학기
+    "end": "2026-12-19",             // 종강일
+    "source": "canvas",              // "canvas" | "items" | "default" — 화면은 default면 "추정" 표시
+    "week_now": 11,                  // 오늘이 몇 주차인지. 개강 전 0, 종강 후 weeks_total+1
+    "weeks_total": 16,
+    "weeks": [
+      {"n": 1, "start": "2026-08-31", "end": "2026-09-06"}  // 월~일. 1주차는 개강일이 든 주의 월요일부터
+    ]
+  },
+  "courses": [
+    {
+      "id": "101",
+      "name": "262R (서울-학부)ASIC설계(영강)(ASIC DESIGN(English))-00분반",
+      "short_name": "ASIC설계(영강)",       // 화면에는 이것을 쓴다
+      "current_score": 92.5,                // Canvas가 계산한 현재 점수(%). 학교가 숨기면 null
+      "graded": 3, "assignments": 5         // 채점된 과제 수 / 전체 과제 수
+    }
+  ],
+  "settings": {"include_canvas": true, "weekly_summary": true}
+}
+```
+
+### Item 추가 필드
+
+```json
+{"week": 11, "course_short": "ASIC설계(영강)"}   // week는 due가 없거나 학기 밖이면 null
+```
+
+### 쓰기
+
+- `POST /api/settings` 본문에 `"weekly_summary": bool`도 받는다.
+
+### 캘린더 파일 (휴대폰용 요약, 선택 b)
+
+`weekly_summary`가 켜져 있으면 일정이 1개 이상 있는 주마다 **월요일 08:00~08:30 요약 일정**을 하나 더 넣는다.
+제목 `11주차: 마감 4 · 시험 1`, 설명에 그 주 일정 목록. UID `week-<월요일 날짜>@lms-agent`.
+
+### 화면 구성 (PC 우선, 휴대폰 화면은 만들지 않음)
+
+| 화면 | 사용자가 내리는 결정 | 들어갈 것 |
+|---|---|---|
+| 이번 주 (기본) | 오늘 무엇부터 할까 | 한 줄 결론, 오늘·이번 주 일정, 바뀐 것(충돌), 확인 대기 수 |
+| 학기 지도 | 어느 주가 몰리나, 무엇을 당겨 할까 | 1~N주 가로 막대(마감 수), 시험 주 표시, 지금 주 표시, 주를 누르면 그 주 목록 |
+| 과목 | 이 과목에서 놓친 게 없나 | 과목별 다음 일정, 지난 과제 제출 여부, 현재 점수, 최근 근거 글 |
+| 확인함 | 찾은 마감을 일정에 넣을까 | 3장의 검토 카드(근거·충돌·추정 표시), 겹친 항목, 제외한 항목, 직접 붙여넣기 |
+| 설정 | — | Canvas 연결, 캘린더 파일 옵션, 휴대폰 캘린더에 넣는 법 |
+
+## 5. 바뀐 곳만 읽기와 근거 사슬 (M1·M2)
+
+앱은 **켤 때마다**(서버가 뜨자마자 백그라운드로) 그리고 [동기화]를 누를 때 바뀐 곳만 확인한다.
+공지·과제·강의계획서는 목록 응답에 본문이 같이 오므로 매번 받아 **내용 해시**를 비교하고, 바뀐 글에만 마감 찾기를 돌린다.
+메시지는 `last_message_at`이 바뀐 대화만 본문을 받는다. 처음 실행·규칙 업데이트·[전체 다시 확인]일 때만 전부 읽는다.
+
+### `POST /api/sync`
+본문 `{"full"?: bool}` — true면 전체 다시 확인.
+
+### `GET /api/state` 추가 필드
+
+```json
+{
+  "syncing": true,                  // 켤 때 자동 동기화 중이면 true. 화면은 true인 동안 2초마다 /api/state를 다시 불러 갱신
+  "sync_error": null,               // 마지막 자동/수동 동기화 실패 메시지(한국어) 또는 null
+  "last_export": "2026-11-12T17:05:00+09:00",   // 마지막으로 캘린더 파일을 받은 시각(없으면 null)
+  "runs": [                          // 최근 실행 기록, 최신 먼저(최대 10)
+    {"finished_at": "...", "mode": "incremental",       // "incremental" | "full"
+     "reason": null,                                     // full일 때 "처음 실행" | "규칙 업데이트" | "전체 다시 확인"
+     "checked": 3, "skipped": 41, "requests": 9, "conversations_fetched": 1,
+     "candidates": 12, "new_items": 2, "errors": [],
+     "targets": [{"key": "announcement:9100", "type": "announcement", "title": "LAB5 안내",
+                  "course_name": "...", "reason": "새 글", "found": 1}]}   // reason: 새 글 | 내용 바뀜 | 규칙 업데이트 | 처음 실행 | 전체 다시 확인
+  ]
+}
+```
+`report`(마지막 실행)에도 같은 `mode, reason, checked, skipped, targets, requests, conversations_fetched`와 `new_items`(새로 생긴 item id 목록)가 있다.
+
+### Item 추가 필드 — 근거 사슬
+
+```json
+{
+  "first_seen": "2026-11-12T16:20:00+09:00",   // 이 항목을 처음 발견한 실행 시각
+  "decided_at": "2026-11-12T16:31:00+09:00",   // 사용자가 승인·제외한 시각(없으면 null)
+  "exported_at": "2026-11-12T17:05:00+09:00",  // 마지막으로 받은 캘린더 파일에 들어 있었으면 그 시각
+  "export_stale": false                        // 파일을 받은 뒤 제목·마감이 바뀌었으면 true → "다시 받아 가져오세요"
+}
+```
+화면은 항목마다 **출처 글(evidence) → 찾은 문장 → 추정(notes) → 승인(decided_at) → 파일 포함(exported_at)** 을 한 줄로 보여 준다.
+구글 캘린더에 실제로 들어갔는지는 앱이 알 수 없으므로 "파일에 포함됨"까지만 표시한다.
+
+## 6. 구글 캘린더 자동 반영
+
+권한은 `calendar.app.created`(앱이 만든 "LMS 마감" 캘린더만). 연결되면 동기화·승인·제외·수정·설정 변경 뒤 백그라운드로 자동 반영한다.
+반영 대상은 캘린더 파일과 같고(승인된 마감 + 설정에 따라 Canvas 과제), 주간 요약이 켜져 있으면 요약 일정도 간다. 마감 일정은 길이 0(시작=끝=마감, 알림 1일·3시간 전).
+
+### `GET /api/state` 추가
+
+```json
+"google": {
+  "available": true,        // 클라이언트 ID가 있음(.env). false면 연결 버튼 대신 설정 안내
+  "connected": false,
+  "pushing": false,         // 반영 중이면 true → 화면은 잠시 뒤 다시 불러 갱신
+  "error": null,            // 마지막 반영 오류(한국어)
+  "last_push": "2026-11-12T17:40:00+09:00",
+  "last_result": {"created": 9, "updated": 0, "deleted": 0, "unchanged": 0}
+}
+```
+
+Item 추가(근거 사슬의 마지막 고리):
+`gcal_event_id`, `gcal_updated`(구글이 돌려준 수정 시각), `gcal_link`(구글 캘린더에서 열기), `gcal_synced_at`(그 반영 시각). 마지막 반영에 들어 있지 않으면 모두 null.
+
+### 요청
+
+| 요청 | 동작 |
+|---|---|
+| `POST /api/google/connect` | `{"url": 구글 동의 화면}` → 화면은 그 주소로 이동(같은 탭). 동의 후 앱 루트로 돌아오며 서버가 `/?google=ok#settings` 또는 `/?google=error&msg=…#settings`로 보낸다 |
+| `POST /api/google/push` | 지금 바로 반영(동기 실행). 실패 502 `{"error"}` |
+| `POST /api/google/disconnect` | 토큰 폐기·삭제(구글 캘린더의 일정은 남김) |
+
+## 7. 성적
+
+`GET /api/state`의 `"grades"`:
+
+```json
+{
+  "grades": ["A+","A0","B+","B0","C+","C0","D+","D0","F"],
+  "default_dist": {"A+":15,"A0":15,"B+":15,"B0":15,"C+":15,"C0":20,"D+":0,"D0":0,"F":5},
+  "courses": [{
+    "course_id": "102", "short_name": "디지털신호처리", "canvas_score": 81.0,
+    "config": {"components": [{"name":"중간고사","weight":30,"score":78,"max_score":null,"mean":65.3,"sd":12.1,"fixed":false,"source":"메시지 '중간고사 성적 안내'"}],
+               "dist": null, "class_size": 48},
+    "using_default_dist": true,
+    "estimate": {"top": 16.9, "range": [12.1, 22.0], "grade": "A0", "grade_range": ["A+","B+"], "rank": 8,
+                 "completed_weight": 50, "components": [{"name","weight","top","status"}], "notes": ["정규분포 근사…"]},
+    "error": null,
+    "needed": [{"component":"기말고사","target":"A+","possible":true,"already":false,"need_top":9.8,"need_score":84.2,"notes":[…]}]
+  }],
+  "priorities": [{"course":"반도체공학","score":1.9,"grade":"B+","reason":"A0/B+ 경계까지 가까움 · 남은 비중 50%"}],
+  "candidates": [{"course_id":"102","course_short":"디지털신호처리","source_type":"inbox","source_title":"중간고사 성적 안내",
+                  "posted_at":"…","url":null,"label":"중간고사","score":78,"max_score":null,"mean":65.3,"sd":12.1,
+                  "high":null,"low":null,"sentence":"…","notes":[]}]
+}
+```
+
+- `POST /api/grades/<course_id>` 본문 `{"components": [...], "dist"?: {9단계 %} | null, "class_size"?: int | null}` → 새 state. 잘못되면 400 `{"error"}`(비중 합 100% 초과, 분포 합 ≠ 100 등).
+- 점수 후보(candidates)는 사용자가 [항목에 넣기]로 골라 넣는다(자동으로 넣지 않음). 넣을 때 `source`에 출처를 적는다.
+- 화면은 추정이라는 단서(`estimate.notes`)를 항상 함께 보여 준다. D+/D0은 0%라 결과로 나오지 않는다.

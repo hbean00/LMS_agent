@@ -41,14 +41,14 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     def md(n: int) -> str:
         return f"{day(n).month}월 {day(n).day}일"
 
-    def assignment(course, aid, name, due, types, state, created, description="", submitted_at=None):
+    def assignment(course, aid, name, due, types, state, created, description="", submitted_at=None, score=None):
         return {
             "id": aid, "course_id": course, "name": name, "description": description,
             "due_at": due, "lock_at": None, "unlock_at": None, "points_possible": 10.0,
             "submission_types": types, "published": True,
             "created_at": at(created, 9), "updated_at": at(created + 1, 9),
             "html_url": f"{base_url}/courses/{course}/assignments/{aid}",
-            "submission": {"assignment_id": aid, "user_id": USER_ID,
+            "submission": {"assignment_id": aid, "user_id": USER_ID, "score": score,
                            "workflow_state": state, "submitted_at": submitted_at},
         }
 
@@ -76,22 +76,28 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         f"<tr><td>과제 2</td><td>{md(syl[1])}까지 이메일 제출</td></tr>"
         f"<tr><td>기말고사</td><td>{md(syl[2])} 15:00</td></tr></table>"
     )
+    # 101은 고려대식 긴 과목명(short_name 줄이기 확인용). 103은 학교가 점수를 숨긴 경우(None).
     courses = [
-        {"id": 101, "name": "ASIC설계", "course_code": "EE401", "syllabus_body": None},
+        {"id": 101, "name": "262R (서울-학부)ASIC설계(영강)(ASIC DESIGN(English))-00분반", "course_code": "EE401",
+         "syllabus_body": None},
         {"id": 102, "name": "디지털신호처리", "course_code": "EE342", "syllabus_body": None},
         {"id": 103, "name": "반도체공학", "course_code": "EE361", "syllabus_body": syllabus},
         {"id": 104, "name": "Capstone Design", "course_code": "CAP400", "syllabus_body": None},
     ]
+    scores = {101: 92.5, 102: 81.0, 103: None, 104: 88.0}
+    term = {"id": 1, "name": "데모 학기", "start_at": at(-70, 0), "end_at": at(41, 23, 59)}
     for c in courses:
-        c.update(start_at=at(-70, 9), end_at=None, workflow_state="available", enrollment_term_id=1,
-                 enrollments=[{"type": "student", "role": "StudentEnrollment", "enrollment_state": "active"}])
+        c.update(start_at=at(-70, 9), end_at=at(41, 18), workflow_state="available", enrollment_term_id=1,
+                 term=term,
+                 enrollments=[{"type": "student", "role": "StudentEnrollment", "enrollment_state": "active",
+                               "computed_current_score": scores[c["id"]]}])
 
     lab4_desc = ('<p>LAB4 보고서는 조교 이메일(<a href="mailto:asic.ta@example.ac.kr">asic.ta@example.ac.kr</a>)'
                  '로 제출합니다.</p><p>마감은 공지사항을 확인하세요.</p>')
     assignments = {
         "101": [
-            assignment(101, 1011, "LAB3 보고서", at(-5, 23, 59), ["online_upload"], "submitted", -19,
-                       submitted_at=at(-5, 21, 47)),
+            assignment(101, 1011, "LAB3 보고서", at(-5, 23, 59), ["online_upload"], "graded", -19,
+                       submitted_at=at(-5, 21, 47), score=9.0),
             assignment(101, 1012, "LAB4 보고서", None, ["none"], "unsubmitted", -12, description=lab4_desc),
             assignment(101, 1013, "LAB5 예비보고서", at(10, 23, 59), ["online_upload"], "unsubmitted", -2),
         ],
@@ -118,6 +124,10 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                      {"id": 201, "name": "ASIC설계 조교"}),
         conversation(7002, "장학금 서류 제출", "user_1", None, at(-2, 14), "확인했습니다.",
                      {"id": 202, "name": "학과 사무실"}),
+        # 개별 성적 안내(성적 기능 데모용): 점수·평균·표준편차가 한 문장에
+        conversation(7003, "중간고사 성적 안내", "course_102", "디지털신호처리", at(-6, 18),
+                     "중간고사 성적 안내드립니다. 본인 점수 78점 (평균 65.3, 표준편차 12.1)입니다.",
+                     {"id": 203, "name": "디지털신호처리 조교"}),
     ]
     return {
         "user": {"id": USER_ID, "name": "데모 학생", "short_name": "데모 학생",

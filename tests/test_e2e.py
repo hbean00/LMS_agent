@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from lms_agent import core  # noqa: E402
+from lms_agent.core import short_course_name  # noqa: E402
 from lms_agent.canvas import Canvas  # noqa: E402
 from lms_agent.ics import validate_ics  # noqa: E402
 from lms_agent.mock_canvas import DEMO_TOKEN, start_mock_canvas  # noqa: E402
@@ -40,7 +41,7 @@ def by(store, **kw):
 
 
 def find(store, course, due):
-    rows = [v for v in store.view() if v["course_name"] == course and parse_iso(v["due"]) == due]
+    rows = [v for v in store.view() if short_course_name(v["course_name"]) == course and parse_iso(v["due"]) == due]
     assert len(rows) == 1, f"{course} {due}: {len(rows)}개 — {[(v['title'], v['due']) for v in store.view() if v['course_name'] == course]}"
     return rows[0]
 
@@ -53,8 +54,8 @@ def test_report_counts(demo):
 
 def test_email_assignment_from_announcement_linked_and_conflicting(demo):
     _, _, store, _ = demo
-    a = find(store, "ASIC설계", at(6))
-    b = find(store, "ASIC설계", at(8))
+    a = find(store, "ASIC설계(영강)", at(6))
+    b = find(store, "ASIC설계(영강)", at(8))
     for it in (a, b):
         assert it["status"] == "review" and it["method"] == "email"
         assert it["title"] == "LAB4 보고서"
@@ -69,7 +70,7 @@ def test_email_assignment_from_announcement_linked_and_conflicting(demo):
 
 def test_canvas_items_and_submission(demo):
     _, _, store, _ = demo
-    lab3 = find(store, "ASIC설계", at(-5))
+    lab3 = find(store, "ASIC설계(영강)", at(-5))
     assert (lab3["origin"], lab3["status"], lab3["submitted"], lab3["submitted_source"]) == ("canvas", "scheduled", True, "canvas")
     rows =[v for v in store.view() if v["course_name"] == "디지털신호처리" and parse_iso(v["due"]) == at(4, 18, 0)]
     assert sorted(v["origin"] for v in rows) == ["canvas", "found"]
@@ -110,10 +111,10 @@ def test_inbox_not_marked_read(demo):
 
 def test_user_decisions_survive_resync(demo):
     _, base, store, _ = demo
-    a = find(store, "ASIC설계", at(8))
+    a = find(store, "ASIC설계(영강)", at(8))
     store.update_user(a["id"], {"decision": "approved", "submitted": True, "title": "LAB4 최종"})
     core.sync(Canvas(base, DEMO_TOKEN), store)
-    again = find(store, "ASIC설계", at(8))
+    again = find(store, "ASIC설계(영강)", at(8))
     assert (again["status"], again["submitted"], again["title"], again["edited"]) == ("scheduled", True, "LAB4 최종", True)
 
 
@@ -123,6 +124,43 @@ def test_manual_paste_without_canvas(tmp_path):
     core.rebuild(store)
     (it,) = store.view()
     assert it["status"] == "review" and it["method"] == "email" and it["course_name"] == "회로이론"
+
+
+# ---------------------------------------------------------------- 학기 (v0.2)
+
+def test_semester_and_courses(demo):
+    _, _, store, _ = demo
+    sem = core.semester_info(store.data["cache"], store.view())
+    assert sem["source"] == "canvas" and sem["week_now"] == 11 and sem["weeks_total"] in (16, 17)
+    assert sem["weeks"][0]["start"] <= (T - timedelta(days=70)).isoformat()
+    items = core.annotate(store.view(), sem, store.data["cache"])
+    lab5 = next(i for i in items if i["title"] == "LAB5 예비보고서")
+    assert lab5["course_short"] == "ASIC설계(영강)" and lab5["week"] in (12, 13)
+    courses = {c["id"]: c for c in core.course_summaries(store.data["cache"])}
+    assert courses["101"]["short_name"] == "ASIC설계(영강)"
+    assert (courses["101"]["current_score"], courses["101"]["graded"], courses["101"]["assignments"]) == (92.5, 1, 3)
+    assert courses["103"]["current_score"] is None
+
+
+@pytest.mark.parametrize("name,short", [
+    ("262R (서울-학부)ASIC설계(영강)(ASIC DESIGN(English))-00분반", "ASIC설계(영강)"),
+    ("262R (서울-학부)회로이론(1)-01분반", "회로이론(1)"),
+    ("디지털신호처리", "디지털신호처리"),
+    ("ASIC설계(궁재하)", "ASIC설계(궁재하)"),
+    ("Capstone Design", "Capstone Design"),
+])
+def test_short_course_name(name, short):
+    assert short_course_name(name) == short
+
+
+def test_default_semester_when_no_dates():
+    sem = core.semester_info(None, [], today=datetime(2026, 11, 12).date())
+    assert (sem["source"], sem["start"], sem["end"]) == ("default", "2026-09-01", "2026-12-20")
+    assert sem["week_now"] == 11
+
+
+def _deadline_events(text):
+    return sum(1 for line in text.split("\r\n") if line.startswith("UID:") and not line.startswith("UID:week-"))
 
 
 # ---------------------------------------------------------------- 서버
@@ -181,12 +219,16 @@ def test_server_flow_to_calendar(running):
     assert validate_ics(text) == []
     assert f"UID:{target['id']}@lms-agent" in text
     assert "canvas-101-1013@lms-agent" in text  # Canvas 과제 포함(기본값)
-    assert text.count("BEGIN:VEVENT") == 1 + 3  # 승인 1 + 마감 있는 Canvas 과제 3(LAB3, LAB5, HW5)
+    assert _deadline_events(text) == 1 + 3  # 승인 1 + 마감 있는 Canvas 과제 3(LAB3, LAB5, HW5)
+    assert "UID:week-" in text and "주차: 마감" in text.replace("\r\n ", "")  # 주간 요약(기본 켜짐)
 
     code, body, _ = _req(url + "/api/settings", "POST", app.token, {"include_canvas": False})
     assert code == 200
     text = _req(url + "/calendar.ics")[1].decode("utf-8")
-    assert text.count("BEGIN:VEVENT") == 1
+    assert _deadline_events(text) == 1
+    _req(url + "/api/settings", "POST", app.token, {"weekly_summary": False})
+    text = _req(url + "/calendar.ics")[1].decode("utf-8")
+    assert "UID:week-" not in text and validate_ics(text) == []
 
     code, body, _ = _req(url + "/api/setup", "POST", app.token, {"canvas_url": "x", "token": "y"})
     assert code == 400  # 데모에서는 설정 변경 불가

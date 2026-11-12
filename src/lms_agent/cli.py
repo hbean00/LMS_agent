@@ -12,7 +12,7 @@ from pathlib import Path
 from . import __version__, core
 from .canvas import Canvas, CanvasError
 from .config import STATE_FILE, data_dir, is_configured, load_config, normalize_url, save_config
-from .ics import build_ics, validate_ics
+from .ics import validate_ics
 from .store import Store
 from .timeutil import parse_iso
 
@@ -56,23 +56,30 @@ def cmd_serve(args) -> None:
     from .server import App
 
     home = data_dir()
-    _run_server(App(_store(home), home), args.port, not args.no_browser)
+    app = App(_store(home), home)
+    app.sync_in_background()  # 켤 때마다 바뀐 곳만 확인한다
+    _run_server(app, args.port, not args.no_browser)
 
 
 def cmd_demo(args) -> None:
     from .mock_canvas import DEMO_TOKEN, start_mock_canvas
     from .server import App
 
+    from .mock_google import DEMO_CLIENT_ID, DEMO_CLIENT_SECRET, start_mock_google, urls
+
     mock, base = start_mock_canvas()
+    gmock, gbase = start_mock_google()  # 데모의 '구글 캘린더 연결'은 가짜 구글로 간다
     home = Path(tempfile.mkdtemp(prefix="lms-agent-demo-"))
     cfg = {"canvas_url": base, "token": DEMO_TOKEN}
-    app = App(_store(home), home, cfg=cfg, demo=True)
+    app = App(_store(home), home, cfg=cfg, demo=True,
+              google=(DEMO_CLIENT_ID, DEMO_CLIENT_SECRET), google_urls=urls(gbase))
     app.do_sync()
-    _out("데모 모드: 가짜 Canvas 데이터로 실행합니다. 실제 계정에는 접속하지 않습니다.")
+    _out("데모 모드: 가짜 Canvas·가짜 구글로 실행합니다. 실제 계정에는 접속하지 않습니다.")
     try:
         _run_server(app, args.port, not args.no_browser)
     finally:
         mock.shutdown()
+        gmock.shutdown()
 
 
 def cmd_setup(args) -> None:
@@ -129,13 +136,14 @@ def cmd_list(args) -> None:
 
 def cmd_export(args) -> None:
     store = _store(data_dir())
-    text = build_ics(store.calendar_items())
+    text = core.calendar_text(store, record=True)
     problems = validate_ics(text)
     if problems:
         _out("캘린더 파일 검사 실패: " + "; ".join(problems))
         sys.exit(1)
     out = Path(args.output)
     out.write_bytes(text.encode("utf-8"))
+    store.save()
     _out(f"{text.count('BEGIN:VEVENT')}개 일정을 저장했습니다: {out.resolve()}")
 
 
@@ -158,6 +166,9 @@ def main(argv: list[str] | None = None) -> None:
     sp.set_defaults(fn=cmd_setup)
     sub.add_parser("sync", help="Canvas에서 다시 읽기").set_defaults(fn=cmd_sync)
     sub.add_parser("list", help="찾은 마감 보기").set_defaults(fn=cmd_list)
+    sp = sub.add_parser("google-test", help="구글 캘린더 연결 시험(데모 일정으로)")
+    sp.add_argument("--mine", action="store_true", help="데모 대신 내 승인된 일정으로 시험")
+    sp.set_defaults(fn=lambda a: sys.exit(__import__("lms_agent.gtest", fromlist=["run"]).run(mine=a.mine, out=_out)))
     sp = sub.add_parser("export", help="캘린더 파일(.ics) 저장")
     sp.add_argument("-o", "--output", default="lms-deadlines.ics")
     sp.set_defaults(fn=cmd_export)

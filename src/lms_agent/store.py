@@ -20,7 +20,7 @@ def _default() -> dict:
         "manual": [],           # 직접 붙여 넣은 글
         "report": None,
         "last_sync": None,
-        "settings": {"include_canvas": True, "lookback_days": 120},
+        "settings": {"include_canvas": True, "weekly_summary": True, "lookback_days": 120},
     }
 
 
@@ -58,6 +58,7 @@ class Store:
             if d not in DECISIONS:
                 raise ValueError("decision은 approved, rejected, pending 중 하나여야 합니다")
             u["decision"] = d
+            u["decided_at"] = iso(now_local())  # 근거 사슬: 사용자가 언제 승인·제외했는지
         if "submitted" in changes:
             s = changes["submitted"]
             if s is not None and not isinstance(s, bool):
@@ -98,7 +99,16 @@ class Store:
 
     # ------------------------------------------------------------ 화면용
 
+    def record_export(self, items: list[dict]) -> None:
+        """캘린더 파일을 내보낸 시각과, 그때 각 일정의 제목·마감을 남긴다."""
+        self.data["last_export"] = {"at": iso(now_local()),
+                                    "items": {it["id"]: f"{it.get('due')}|{it.get('title')}" for it in items}}
+
     def view(self) -> list[dict]:
+        seen = self.data.get("seen") or {}
+        export = self.data.get("last_export") or {"at": None, "items": {}}
+        gcal = self.data.get("gcal") or {}
+        gcal_events = gcal.get("events") or {}
         out = []
         for it in self.data["items"]:
             u = self.data["user"].get(it["id"], {})
@@ -132,6 +142,16 @@ class Store:
                 "conflict": it.get("conflict"), "notes": it.get("notes") or [],
                 "evidence": it.get("evidence") or [], "url": it.get("url"),
                 "edited": bool(u.get("title") or u.get("due")),
+                # 근거 사슬: 처음 발견 → 승인 → 캘린더 파일 포함(받은 뒤 바뀌었으면 export_stale)
+                "first_seen": seen.get(it["id"]), "decided_at": u.get("decided_at"),
+                "exported_at": export["at"] if it["id"] in export["items"] else None,
+                "export_stale": (it["id"] in export["items"]
+                                 and export["items"][it["id"]] != f"{due}|{title}"),
+                # 구글 캘린더 반영 증거: 구글이 돌려준 일정 id·수정 시각·링크(마지막 반영에 들어 있었으면)
+                "gcal_event_id": (gcal_events.get(it["id"]) or {}).get("event_id"),
+                "gcal_updated": (gcal_events.get(it["id"]) or {}).get("updated"),
+                "gcal_link": (gcal_events.get(it["id"]) or {}).get("html_link"),
+                "gcal_synced_at": gcal.get("at") if it["id"] in gcal_events else None,
             })
         out.sort(key=lambda x: (parse_iso(x["due"]) is None, x["due"] or "", x["course_name"], x["title"]))
         return out

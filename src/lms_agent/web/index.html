@@ -1,0 +1,1673 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="lms-agent-token" content="__LMS_AGENT_TOKEN__">
+<meta name="color-scheme" content="light">
+<title>LMS Agent</title>
+<style>
+/* 색은 흰 배경 · 버건디 · 검정 · 보조 회색 · 연한 틴트(+회색에서 나온 가는 선)만 쓴다 */
+:root {
+  --accent: #900A31;
+  --text: #000000;
+  --gray: #595959;
+  --tint: #F9F0F3;
+  --bg: #FFFFFF;
+  --line: #E5E5E5;
+  --line-2: #BFBFBF;
+  --font: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --pad-x: 56px;
+  --maxw: 1312px;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 16px/1.6 var(--font); word-break: keep-all; overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+}
+b, strong, h1, h2, h3, th, dt, label.lbl { font-weight: 600; }
+a { color: var(--accent); font-weight: 600; text-decoration: none; border-radius: 4px; }
+a:hover { background: var(--tint); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; background: var(--tint); padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.ico { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 네 모서리 프레임 */
+.corner { position: fixed; z-index: 40; width: 14px; height: 14px; background: var(--accent); }
+.c-tl { top: 20px; left: 20px; }
+.c-tr { top: 20px; right: 20px; }
+.c-bl { bottom: 20px; left: 20px; }
+.corner-chip {
+  position: fixed; z-index: 40; right: 20px; bottom: 14px; height: 26px; padding: 0 10px;
+  display: inline-flex; align-items: center; background: var(--bg); color: var(--accent);
+  border: 1.5px solid var(--accent); border-radius: 6px; font-size: 13px; font-weight: 600; letter-spacing: .01em;
+}
+.frame-bottom { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: 54px; background: var(--bg); }
+
+/* 머리 */
+header.top { position: sticky; top: 0; z-index: 35; background: var(--bg); padding-top: 34px; }
+.top-inner {
+  max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px;
+}
+.top-bar { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.nav a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; color: var(--text); font-weight: 400; border-radius: 6px; }
+.nav a:hover { background: var(--tint); }
+.nav a[aria-current="page"] { color: var(--accent); font-weight: 600; background: var(--tint); }
+.top-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.sync-meta { color: var(--gray); font-size: 14px; }
+.top-notes { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x); }
+.top-notes p { margin: 8px 0 0; }
+
+/* 버튼 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 0 18px; border-radius: 6px; border: 1.5px solid transparent;
+  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: var(--bg); }
+.btn-primary:hover { background: var(--accent); opacity: .88; }
+.btn-secondary { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+.btn-secondary:hover { background: var(--tint); }
+.btn-ghost { background: transparent; color: var(--accent); padding: 0 10px; }
+.btn-ghost:hover { background: var(--tint); }
+.btn-sm { min-height: 34px; padding: 0 12px; font-size: 14px; }
+.btn[aria-disabled="true"], .btn:disabled { opacity: .5; cursor: default; }
+.linkish { background: none; border: 0; padding: 2px 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 4px; }
+.linkish:hover { background: var(--tint); }
+.spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 본문 틀 */
+main.page { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x) 96px; }
+.screen-head { margin: 36px 0 26px; }
+.screen-head h1 { margin: 0; font-size: 32px; line-height: 1.3; color: var(--accent); letter-spacing: -.01em; display: flex; align-items: center; gap: 12px; }
+.screen-head h1:focus { outline: none; }
+.sub { margin: 6px 0 0; color: var(--gray); font-size: 15px; }
+h2 { margin: 0 0 6px; font-size: 20px; line-height: 1.4; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+h3 { margin: 0 0 8px; font-size: 16px; }
+.help { margin: 0 0 14px; color: var(--gray); font-size: 14px; }
+.empty { margin: 4px 0 0; color: var(--gray); }
+.block { margin-top: 40px; }
+.count { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 12px; background: var(--tint); color: var(--accent); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.nav-count { min-width: 22px; height: 20px; font-size: 12px; background: var(--accent); color: var(--bg); }
+.note-error { color: var(--accent); font-weight: 600; }
+.note-accent { color: var(--accent); font-size: 14px; font-weight: 600; }
+.boot { margin-top: 40px; }
+
+/* 결론 박스 */
+.conclude { background: var(--tint); padding: 22px 26px; }
+.conclude p { margin: 0; }
+.premise { font-size: 18px; font-weight: 600; color: var(--text); }
+.conclusion { margin-top: 6px !important; font-size: 22px; font-weight: 600; color: var(--accent); line-height: 1.45; }
+.after { margin: 14px 0 0; display: grid; gap: 6px; }
+.after p { margin: 0; }
+.warnline { color: var(--gray); font-size: 14px; }
+.warnline b { color: var(--accent); }
+
+/* 칩 */
+.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; word-break: normal; }
+.chip-accent { border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }
+.chip-dashed { border: 1.5px dashed var(--gray); color: var(--gray); }
+.chip-tint { background: var(--tint); border-color: var(--tint); color: var(--accent); font-weight: 600; }
+.chip-plain { color: var(--gray); }
+a.chip { font-weight: 400; color: var(--gray); }
+a.chip:hover { color: var(--accent); background: var(--tint); }
+.email { font-weight: 600; user-select: all; }
+.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tiny { font-size: 12px; color: var(--gray); white-space: nowrap; }
+
+/* 일정 줄 */
+.ilist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.irow { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 2px 14px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.ilist.by-date .irow { grid-template-columns: 82px minmax(0, 1fr) auto; }
+.irow.is-review { border: 1.5px dashed var(--gray); }
+.irow.is-today { border: 1.5px solid var(--accent); }
+.irow.is-today .irow-when { color: var(--accent); }
+.irow.is-alert { border: 1.5px solid var(--accent); }
+.irow.is-done .irow-title, .irow.is-done .irow-when { color: var(--gray); }
+.irow-when { font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.irow-date { display: block; font-size: 13px; color: var(--gray); font-weight: 600; }
+.irow-title { font-weight: 600; }
+.irow-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 14px; color: var(--gray); }
+.irow-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+.irow-note { grid-column: 2 / -1; margin: 6px 0 0; font-size: 14px; color: var(--accent); }
+.irow-error { grid-column: 1 / -1; margin: 6px 0 0; }
+.is-busy { opacity: .55; }
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.check input:disabled { cursor: default; }
+
+/* 이번 주 */
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 36px; margin-top: 40px; }
+.col h2 { margin-bottom: 2px; }
+
+/* 학기 지도 */
+.map-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); gap: 44px; align-items: start; margin-top: 36px; }
+.wk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.wk {
+  width: 100%; display: grid; grid-template-columns: 64px 96px minmax(60px, 1fr) 28px 92px; align-items: center; gap: 12px;
+  min-height: 44px; padding: 6px 12px; border: 1.5px solid transparent; border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.wk:hover, .wk[aria-pressed="true"] { background: var(--tint); }
+.wk.is-now { border-color: var(--accent); }
+.wk.is-past { color: var(--gray); }
+.wk.is-past .bar > span { background: var(--line-2); }
+.wk-n { font-weight: 600; }
+.wk-range { color: var(--gray); font-size: 14px; font-variant-numeric: tabular-nums; }
+.bar { display: block; height: 14px; background: var(--tint); border-radius: 2px; overflow: hidden; }
+.wk:hover .bar, .wk[aria-pressed="true"] .bar { background: var(--bg); }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+.wk-count { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.wk.is-past .wk-count { font-weight: 400; }
+.wk-tags { display: flex; gap: 4px; }
+.map-detail { position: sticky; top: 132px; }
+.day-head { margin: 18px 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.day-head:first-of-type { margin-top: 10px; }
+
+/* 비교표 */
+table.cmp { width: 100%; border-collapse: collapse; }
+.cmp th { height: 44px; padding: 0 14px; background: var(--accent); color: var(--bg); font-size: 15px; font-weight: 600; text-align: left; vertical-align: middle; white-space: nowrap; }
+.cmp td { height: 66px; padding: 10px 14px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
+.cmp td:first-child { font-weight: 600; width: 22%; }
+.cmp td.em { background: var(--tint); font-weight: 600; }
+.cmp tr { cursor: pointer; }
+.cmp .cell-sub { display: block; font-size: 13px; font-weight: 400; color: var(--gray); }
+.cell-btn { all: unset; cursor: pointer; font-weight: 600; color: var(--text); border-radius: 4px; padding: 2px 4px; margin: -2px -4px; }
+.cell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cmp tr.is-sel .cell-btn { color: var(--accent); }
+.cmp tr.is-sel td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+.cdetail { margin-top: 48px; }
+.cdetail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; margin-top: 18px; }
+.ev-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.ev-list li { padding-left: 12px; border-left: 3px solid var(--line); }
+.ev-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 13px; color: var(--gray); }
+.src { color: var(--accent); font-weight: 600; }
+
+/* 확인함 */
+.inbox-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 44px; align-items: start; }
+.inbox-side { display: grid; gap: 28px; }
+.review-list { display: grid; gap: 18px; }
+.card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; }
+.card.is-low { border: 1.5px dashed var(--gray); }
+.card.has-conflict { border: 1.5px solid var(--accent); }
+.card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 4px; }
+.course { margin-right: auto; color: var(--gray); font-size: 14px; font-weight: 600; }
+.title-input {
+  display: block; width: calc(100% + 12px); margin: 0 -6px; padding: 4px 6px; min-height: 0;
+  font: inherit; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--text);
+  background: transparent; border: 1px solid transparent; border-bottom: 1px dashed var(--line-2); border-radius: 6px 6px 0 0;
+  resize: none; overflow: hidden; word-break: keep-all; overflow-wrap: anywhere;
+}
+.title-input:hover { background: var(--tint); }
+.title-input:focus { background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; outline: none; }
+.due-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.due-input { min-height: 40px; padding: 6px 10px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; }
+.weekday { font-weight: 600; }
+.dday { display: inline-flex; align-items: center; min-height: 26px; padding: 2px 9px; border-radius: 4px; border: 1px solid var(--line-2); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dday.soon { background: var(--tint); border-color: var(--tint); color: var(--accent); }
+.dday.past, .dday.none { color: var(--gray); }
+.conflict { margin: 0 0 12px; padding: 12px 14px; background: var(--tint); }
+.conflict strong { display: block; color: var(--accent); }
+.conflict p { margin: 2px 0 0; font-size: 15px; }
+.conflict .sib { margin-top: 6px; font-size: 15px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.low-hint { margin: 12px 0 0; padding: 8px 12px; border: 1.5px dashed var(--gray); border-radius: 6px; color: var(--gray); font-size: 14px; }
+.linked { margin: 10px 0 0; font-size: 15px; }
+.notes { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--gray); }
+.notes li::before { content: "참고 · "; font-weight: 600; }
+.ev-head { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--gray); }
+.evidence { margin: 8px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid var(--line-2); }
+.evidence blockquote { margin: 0; white-space: pre-wrap; font-size: 15px; max-height: 16em; overflow: auto; }
+.evidence figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 4px; font-size: 13px; color: var(--gray); }
+.evidence figcaption .src-title { color: var(--text); }
+.evidence a { display: inline-flex; align-items: center; gap: 3px; }
+.actions { display: flex; gap: 10px; margin-top: 18px; }
+.inline-error { margin: 10px 0 0; color: var(--accent); font-size: 15px; font-weight: 600; }
+.ok-msg { margin: 10px 0 0; font-size: 15px; }
+.mini-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.mini { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; }
+.mini-title { font-weight: 600; }
+.mini-meta { font-size: 14px; color: var(--gray); }
+.mini-actions { margin-top: 8px; display: flex; gap: 6px; }
+
+/* 접기 */
+.group { margin-top: 16px; }
+.group > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 0 4px; border-bottom: 1px solid var(--line); font-weight: 600;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); margin: 0 4px 0 2px; transition: transform .15s; }
+.group[open] > summary::before { transform: rotate(45deg); }
+.group > summary:hover { background: var(--tint); }
+.group-body { padding-top: 12px; display: grid; gap: 12px; }
+
+/* 판 · 폼 */
+.panel { border: 1px solid var(--line); border-radius: 8px; padding: 22px 24px; }
+.form-stack { display: grid; gap: 14px; }
+.field { display: grid; gap: 4px; }
+label.lbl { font-size: 15px; }
+.input { width: 100%; min-height: 42px; padding: 8px 12px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; }
+textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.settings-main { display: grid; gap: 28px; }
+.toggle { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.toggle input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+.toggle small { display: block; margin-top: 2px; color: var(--gray); font-size: 14px; }
+.conn { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 10px 0 16px; font-size: 15px; }
+.conn dd { margin: 0; overflow-wrap: anywhere; word-break: normal; }
+.report { margin: 0 0 16px; font-size: 14px; color: var(--gray); }
+.report p { margin: 0; }
+.report ul { margin: 4px 0 0; padding-left: 18px; color: var(--text); }
+.help-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.help-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 15px; }
+.help-note p { margin: 0 0 8px; }
+.help-note p:last-child { margin: 0; }
+
+/* 알림 */
+#toast {
+  position: fixed; z-index: 45; left: 50%; bottom: 70px; transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 160px); min-height: 48px; padding: 8px 8px 8px 18px;
+  display: flex; align-items: center; gap: 12px; background: var(--bg); color: var(--text);
+  border: 1.5px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .12); font-size: 15px;
+}
+#toast:empty { display: none; }
+.flash { animation: flash 1.8s ease-out; }
+@keyframes flash { 0%, 35% { box-shadow: 0 0 0 4px var(--tint), 0 0 0 6px var(--accent); } 100% { box-shadow: none; } }
+
+@media (max-width: 1100px) {
+  :root { --pad-x: 48px; }
+  .inbox-grid, .settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .map-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, .9fr); gap: 32px; }
+  .wk { grid-template-columns: 58px 84px minmax(40px, 1fr) 24px 84px; gap: 8px; }
+  .cdetail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation-duration: 2.4s; }
+  .flash { animation: none; }
+  .group > summary::before { transition: none; }
+}
+</style>
+</head>
+<body>
+<span class="corner c-tl" aria-hidden="true"></span>
+<span class="corner c-tr" aria-hidden="true"></span>
+<span class="corner c-bl" aria-hidden="true"></span>
+<span class="corner-chip" aria-hidden="true">LMS Agent</span>
+<div class="frame-bottom" aria-hidden="true"></div>
+<noscript><p style="padding:64px">이 화면은 JavaScript가 켜져 있어야 동작합니다.</p></noscript>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="top-bar">
+      <nav id="nav" class="nav" aria-label="화면" hidden>
+        <a href="#week" data-view="week">이번 주</a>
+        <a href="#map" data-view="map">학기 지도</a>
+        <a href="#courses" data-view="courses">과목</a>
+        <a href="#inbox" data-view="inbox">확인함 <span id="nav-count" class="count nav-count" hidden>0</span></a>
+        <a href="#settings" data-view="settings">설정</a>
+      </nav>
+      <div class="top-right">
+        <span id="demo-badge" class="chip chip-tint" title="실제 Canvas가 아닌 데모 데이터입니다" hidden>데모</span>
+        <span id="sync-meta" class="sync-meta">불러오는 중…</span>
+        <button id="sync-btn" class="btn btn-secondary" type="button" hidden>동기화</button>
+        <a id="ics-link" class="btn btn-primary" href="/calendar.ics" download="lms-deadlines.ics" hidden>캘린더 파일 받기</a>
+      </div>
+    </div>
+  </div>
+  <div class="top-notes">
+    <p id="sync-error" class="note-error" role="alert" hidden></p>
+    <p id="ics-changed" class="note-accent" hidden>파일을 받은 뒤 일정이 바뀌었습니다. 다시 받아서 캘린더에 가져오세요.</p>
+  </div>
+</header>
+
+<main class="page">
+  <div id="boot" class="boot">
+    <p id="boot-msg" class="sub">불러오는 중…</p>
+    <button id="boot-retry" class="btn btn-secondary" type="button" hidden>다시 시도</button>
+  </div>
+
+  <!-- 이번 주 -->
+  <section id="scr-week" class="screen" aria-labelledby="title-week" hidden>
+    <div class="screen-head">
+      <h1 id="title-week" tabindex="-1">이번 주</h1>
+      <p id="week-sub" class="sub"></p>
+    </div>
+    <div id="week-body"></div>
+  </section>
+
+  <!-- 학기 지도 -->
+  <section id="scr-map" class="screen" aria-labelledby="title-map" hidden>
+    <div class="screen-head">
+      <h1 id="title-map" tabindex="-1">학기 지도</h1>
+      <p id="map-sub" class="sub"></p>
+    </div>
+    <div id="map-body"></div>
+  </section>
+
+  <!-- 과목 -->
+  <section id="scr-courses" class="screen" aria-labelledby="title-courses" hidden>
+    <div class="screen-head">
+      <h1 id="title-courses" tabindex="-1">과목</h1>
+      <p id="courses-sub" class="sub"></p>
+    </div>
+    <div id="courses-body"></div>
+  </section>
+
+  <!-- 확인함 -->
+  <section id="scr-inbox" class="screen" aria-labelledby="title-inbox" hidden>
+    <div class="screen-head">
+      <h1 id="title-inbox" tabindex="-1">확인함 <span id="inbox-count" class="count">0</span></h1>
+      <p class="sub">공지·메시지·강의계획서에서 찾은 마감입니다. 근거를 읽고 일정에 넣을지 정하세요. 제목과 날짜는 눌러서 고칠 수 있습니다.</p>
+    </div>
+    <div class="inbox-grid">
+      <div>
+        <div id="review-list" class="review-list"></div>
+        <div id="review-past"></div>
+      </div>
+      <aside class="inbox-side" aria-label="붙여넣기와 다른 항목">
+        <section class="panel" aria-labelledby="manual-title">
+          <h2 id="manual-title">직접 붙여넣기</h2>
+          <p class="help">Canvas 밖에서 받은 메일이나 PDF 글을 붙여 넣으면 마감을 찾아 이 목록에 올립니다.</p>
+          <form id="manual-form" class="form-stack" novalidate>
+            <div class="field">
+              <label class="lbl" for="m-course">과목</label>
+              <select id="m-course" class="input"></select>
+              <input id="m-course-free" class="input" type="text" placeholder="과목 이름" aria-label="과목 이름 직접 입력" hidden>
+            </div>
+            <div class="field">
+              <label class="lbl" for="m-date">받은 날짜</label>
+              <input id="m-date" class="input" type="date">
+            </div>
+            <div class="field">
+              <label class="lbl" for="m-text">내용</label>
+              <textarea id="m-text" class="input" rows="7" placeholder="예) 기말 보고서는 12월 5일(금) 18시까지 이메일로 제출하세요."></textarea>
+              <p class="help" style="margin:0">‘다음 주 금요일’처럼 적힌 날짜는 받은 날짜를 기준으로 계산합니다.</p>
+            </div>
+            <div id="manual-msg" aria-live="polite"></div>
+            <div class="form-actions"><button id="m-submit" class="btn btn-primary" type="submit">마감 찾기</button></div>
+          </form>
+        </section>
+        <div id="nodl-box"></div>
+        <div id="inbox-groups"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 설정 -->
+  <section id="scr-settings" class="screen" aria-labelledby="title-settings" hidden>
+    <div class="screen-head">
+      <h1 id="title-settings" tabindex="-1">설정</h1>
+    </div>
+    <div class="settings-grid">
+      <div class="settings-main">
+        <section id="setup" class="panel" aria-labelledby="setup-title" hidden>
+          <h2 id="setup-title">Canvas 연결</h2>
+          <p class="help">학교 Canvas 주소와 액세스 토큰을 넣으면 과제·공지·메시지를 읽어 학기 일정을 만듭니다.</p>
+          <form id="setup-form" class="form-stack" novalidate>
+            <div class="field">
+              <label class="lbl" for="canvas-url">Canvas 주소</label>
+              <input id="canvas-url" class="input" type="text" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="https://canvas.학교.ac.kr">
+              <p class="help" style="margin:0">브라우저로 Canvas에 들어갔을 때 주소창 맨 앞부분입니다.</p>
+            </div>
+            <div class="field">
+              <label class="lbl" for="canvas-token">액세스 토큰</label>
+              <input id="canvas-token" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+              <p class="help" style="margin:0">받는 법: Canvas → <b>계정</b> → <b>설정</b> → <b>새 액세스 토큰</b> 발급 → 나온 값을 복사해 붙여 넣기</p>
+              <p class="help" style="margin:0">토큰은 이 PC에만 저장되고 Canvas에 접속할 때만 씁니다. 읽기만 하며 메시지를 읽음으로 바꾸지 않습니다.</p>
+            </div>
+            <p id="setup-error" class="inline-error" role="alert" hidden></p>
+            <div class="form-actions">
+              <button id="setup-submit" class="btn btn-primary" type="submit">연결하고 동기화</button>
+              <button id="setup-cancel" class="btn btn-ghost" type="button" hidden>취소</button>
+            </div>
+          </form>
+        </section>
+        <div id="settings-conf" class="settings-main">
+          <section class="panel" aria-labelledby="conn-title">
+            <h2 id="conn-title">Canvas 연결</h2>
+            <dl class="conn">
+              <dt>주소</dt><dd id="conn-url">-</dd>
+              <dt>버전</dt><dd id="app-version">-</dd>
+            </dl>
+            <div id="settings-report" aria-live="polite"></div>
+            <button id="reconfig" class="btn btn-secondary btn-sm" type="button">연결 다시 설정</button>
+          </section>
+          <section class="panel" aria-labelledby="file-title">
+            <h2 id="file-title">캘린더 파일</h2>
+            <p id="ics-count" class="help"></p>
+            <label class="toggle">
+              <input id="include-canvas" type="checkbox">
+              <span><b>Canvas 과제도 캘린더 파일에 포함</b>
+                <small>끄면 공지·메시지 등에서 찾은 마감만 들어갑니다. Canvas 앱 알림과 겹치는 게 싫다면 끄세요.</small></span>
+            </label>
+            <label class="toggle" id="weekly-row">
+              <input id="weekly-summary" type="checkbox">
+              <span><b>주간 요약 일정 넣기</b>
+                <small>일정이 있는 주마다 월요일 08:00에 ‘11주차: 마감 4 · 시험 1’ 같은 요약 일정을 하나 더 넣습니다. 휴대폰에서 한 주를 한눈에 보기 좋습니다.</small></span>
+            </label>
+            <p id="settings-error" class="inline-error" role="alert" hidden></p>
+            <div class="form-actions" style="margin-top:14px"><a id="ics-link-2" class="btn btn-primary" href="/calendar.ics" download="lms-deadlines.ics">캘린더 파일 받기</a></div>
+          </section>
+        </div>
+      </div>
+      <section class="panel" aria-labelledby="help-title">
+        <h2 id="help-title">휴대폰 캘린더에 넣는 법</h2>
+        <ol class="help-steps">
+          <li><b>캘린더 파일 받기</b>를 눌러 <code>lms-deadlines.ics</code> 파일을 받습니다.</li>
+          <li><b>PC에서</b> <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer">calendar.google.com</a>을 엽니다. 휴대폰 앱에서는 파일을 가져올 수 없습니다.</li>
+          <li>오른쪽 위 톱니바퀴 → <b>설정</b> → 왼쪽 메뉴의 <b>가져오기/내보내기</b>.</li>
+          <li><b>컴퓨터에서 파일 선택</b>으로 받은 파일을 고르고, 넣을 캘린더를 선택한 뒤 <b>가져오기</b>.</li>
+          <li>잠시 뒤 휴대폰 Google 캘린더 앱에도 나타납니다.</li>
+        </ol>
+        <div class="help-note">
+          <p><b>바뀌면 다시 가져와야 합니다.</b> 가져온 일정은 저절로 바뀌지 않습니다. 마감을 새로 넣거나 고쳤다면 파일을 다시 받아 가져오세요.</p>
+          <p>다시 가져올 때 Google이 같은 일정을 알아보고 덮어쓰는지(UID 기준 중복 제거)는 아직 확인하지 못했습니다. 그래서 <b>‘LMS 마감’ 같은 별도 캘린더</b>에 가져오기를 권합니다(설정 → 캘린더 추가 → 새 캘린더 만들기). 다시 가져올 땐 그 캘린더를 지우고 새로 만든 뒤 가져오면 일정이 두 번 생기지 않습니다.</p>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+(() => {
+  const TOKEN = document.querySelector('meta[name="lms-agent-token"]').content;
+  const $ = (id) => document.getElementById(id);
+  const VIEWS = ['week', 'map', 'courses', 'inbox', 'settings'];
+  // 화면마다 다시 그리는 칸. 안 보이는 화면의 칸은 비워서 같은 id·data-key가 두 번 생기지 않게 한다
+  const DYN = {
+    week: ['week-body'], map: ['map-body'], courses: ['courses-body'],
+    inbox: ['review-list', 'review-past', 'nodl-box', 'inbox-groups'], settings: ['settings-report']
+  };
+
+  let state = null;
+  let skew = 0;            // 서버 시각 - 브라우저 시각
+  let syncing = false;
+  let reconfiguring = false;
+  let rendering = false;
+  let focusAfter = null;   // 키보드로 승인/제외한 뒤 다음 카드로 포커스
+  let lastDay = '';
+  let courseSig = '';
+  let view = viewFromHash();
+  let selWeek = null;
+  let selCourse = null;
+  let pendingJump = null;
+  const openGroups = new Set();
+  const cardErrors = new Map();
+  const busyItems = new Set();
+
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+  const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력' };
+  const METHOD = { lms: 'LMS 제출', email: '이메일 제출', paper: '종이 제출', unknown: '제출 방법 확인 필요' };
+  const CONF = { high: '높음', medium: '보통', low: '낮음' };
+
+  // ---------------------------------------------------------------- DOM 도우미 (데이터는 전부 텍스트 노드로만 넣는다)
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    let late = null;
+    if (props) {
+      for (const k of Object.keys(props)) {
+        const v = props[k];
+        if (v === null || v === undefined || v === false) continue;
+        if (k === 'class') el.className = v;
+        else if (k === 'on') for (const ev of Object.keys(v)) el.addEventListener(ev, v[ev]);
+        else if (k === 'value' || k === 'checked' || k === 'disabled' || k === 'open') (late = late || {})[k] = v;
+        else el.setAttribute(k, v === true ? '' : String(v));
+      }
+    }
+    add(el, kids);
+    if (late) for (const k of Object.keys(late)) el[k] = late[k];
+    return el;
+  }
+  function add(el, kids) {
+    for (const kid of kids) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      if (Array.isArray(kid)) add(el, kid);
+      else el.appendChild(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    }
+  }
+  const ICONS = {
+    sync: ['M20 11a8 8 0 0 0-14.3-4.9L4 8', 'M4 3v5h5', 'M4 13a8 8 0 0 0 14.3 4.9L20 16', 'M20 21v-5h-5'],
+    download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
+    ext: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
+  };
+  function icon(name) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'ico');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const d of ICONS[name]) {
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
+  function safeUrl(u) {
+    if (typeof u !== 'string' || !u) return null;
+    try {
+      const x = new URL(u, location.href);
+      return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null;
+    } catch (e) { return null; }
+  }
+  const byKey = (key) => document.querySelector('[data-key="' + CSS.escape(key) + '"]');
+  function showMsg(el, text) { el.textContent = text || ''; el.hidden = !text; }
+
+  // ---------------------------------------------------------------- 시간
+  const nowMs = () => Date.now() + skew;
+  const pad = (n) => (n < 10 ? '0' : '') + n;
+  function parseDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function parseDay(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  const dayKey = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const fmtTime = (d) => pad(d.getHours()) + ':' + pad(d.getMinutes());
+  function yearPrefix(d, short) {
+    if (d.getFullYear() === new Date(nowMs()).getFullYear()) return '';
+    return short ? String(d.getFullYear()).slice(2) + '/' : d.getFullYear() + '년 ';
+  }
+  const fmtDate = (d) => yearPrefix(d) + (d.getMonth() + 1) + '월 ' + d.getDate() + '일 (' + WD[d.getDay()] + ')';
+  const fmtShort = (d) => yearPrefix(d, true) + (d.getMonth() + 1) + '/' + d.getDate() + ' (' + WD[d.getDay()] + ')';
+  const fmtMD = (d) => (d.getMonth() + 1) + '/' + d.getDate();
+  const fmtDateTime = (d) => fmtDate(d) + ' ' + fmtTime(d);
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const mondayOf = (d) => addDays(d, -((d.getDay() + 6) % 7));
+  const dayDiff = (d) => Math.round((startOfDay(d) - startOfDay(new Date(nowMs()))) / 86400000);
+  const ddayText = (diff) => diff === 0 ? 'D-DAY' : diff > 0 ? 'D-' + diff : 'D+' + (-diff);
+  const urgency = (diff) => diff < 0 ? 'past' : diff <= 2 ? 'soon' : '';
+  function whenText(d) {
+    const diff = dayDiff(d);
+    if (diff === 0) return '오늘 ' + fmtTime(d);
+    if (diff === 1) return '내일 ' + fmtTime(d);
+    return fmtDate(d) + ' ' + fmtTime(d) + (diff > 1 ? ' · D-' + diff : '');
+  }
+  function toInput(iso) { const d = parseDate(iso); return d ? dayKey(d) + 'T' + fmtTime(d) : ''; }
+  function fromInput(v) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v || '');
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+  }
+  function relTime(iso) {
+    const d = parseDate(iso);
+    if (!d) return '';
+    const s = Math.round((nowMs() - d.getTime()) / 1000);
+    if (s < 60) return '방금';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + '분 전';
+    const hr = Math.floor(m / 60);
+    if (hr < 24) return hr + '시간 전';
+    const days = Math.floor(hr / 24);
+    if (days < 7) return days + '일 전';
+    return fmtDate(d);
+  }
+  function dueMs(it) { const d = parseDate(it.due); return d ? d.getTime() : null; }
+  function byDue(a, b) {
+    const x = dueMs(a), y = dueMs(b);
+    if (x === null && y === null) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return x - y;
+  }
+
+  // ---------------------------------------------------------------- 학기·과목
+  const sem = () => (state && state.semester) || null;
+  const weeksList = () => { const s = sem(); return s && Array.isArray(s.weeks) ? s.weeks : []; };
+  function weekOfDate(d) {
+    if (!d) return null;
+    const k = dayKey(d);
+    for (const w of weeksList()) if (k >= w.start && k <= w.end) return w.n;
+    return null;
+  }
+  const itemWeek = (it) => typeof it.week === 'number' ? it.week : weekOfDate(parseDate(it.due));
+  const courseLabel = (it) => it.course_short || it.course_name || '과목 미상';
+  const courseShort = (c) => c.short_name || c.name || '';
+  const isActive = (i) => i.status === 'scheduled' || i.status === 'review';
+  const activeDated = () => state.items.filter((i) => isActive(i) && parseDate(i.due));
+  function inRange(it, a, b) { const t = dueMs(it); return t !== null && t >= a.getTime() && t < b.getTime(); }
+
+  // ---------------------------------------------------------------- 서버
+  function api(method, path, body) {
+    const headers = { 'X-LMS-Agent': TOKEN };
+    const opts = { method, headers, cache: 'no-store', credentials: 'same-origin' };
+    if (body !== undefined) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    return fetch(path, opts).then((res) => res.text().then((text) => {
+      let data = null;
+      if (text) { try { data = JSON.parse(text); } catch (e) { data = null; } }
+      if (!res.ok) throw new Error((data && typeof data.error === 'string' && data.error) || '요청이 실패했습니다 (' + res.status + ')');
+      if (data === null) throw new Error('서버 응답을 읽지 못했습니다.');
+      return data;
+    }), () => { throw new Error('LMS Agent에 연결하지 못했습니다. 프로그램이 켜져 있는지 확인하세요.'); });
+  }
+  // 쓰기 요청은 하나씩 차례로 보낸다(응답 순서가 뒤섞여 옛 상태로 그리는 일을 막는다)
+  let chain = Promise.resolve();
+  function enqueue(fn) {
+    const p = chain.then(fn);
+    chain = p.then(() => {}, () => {});
+    return p;
+  }
+  const post = (path, body) => enqueue(() => api('POST', path, body));
+
+  function applyState(s) {
+    if (!s || typeof s !== 'object') throw new Error('서버 응답 형식이 올바르지 않습니다.');
+    if (!Array.isArray(s.items)) s.items = [];
+    if (!Array.isArray(s.courses)) s.courses = [];
+    if (!s.settings || typeof s.settings !== 'object') s.settings = {};
+    const n = Date.parse(s.now);
+    skew = isNaN(n) ? 0 : n - Date.now();
+    state = s;
+    render();
+    pollWhileSyncing();
+  }
+  // 서버가 켜질 때 스스로 동기화한다. 그동안 2초마다 상태를 다시 읽는다
+  let pollTimer = null;
+  function pollWhileSyncing() {
+    if (!state || !state.syncing || pollTimer || syncing) return;
+    pollTimer = setTimeout(() => {
+      pollTimer = null;
+      api('GET', '/api/state').then((s) => applyState(s), () => pollWhileSyncing());
+    }, 2000);
+  }
+  const findItem = (id) => state.items.find((i) => i.id === id) || null;
+
+  // ---------------------------------------------------------------- 알림
+  let toastTimer = null;
+  let toastMs = 0;
+  function toast(msg, undo) {
+    const t = $('toast');
+    t.replaceChildren(h('span', null, msg));
+    if (undo) t.appendChild(h('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { hideToast(); undo(); } } }, '되돌리기'));
+    toastMs = undo ? 10000 : 4000;
+    armToast();
+  }
+  function armToast() { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, toastMs); }
+  function hideToast() { clearTimeout(toastTimer); $('toast').replaceChildren(); }
+  // 마우스를 올리거나 포커스가 있는 동안은 닫지 않는다
+  $('toast').addEventListener('mouseenter', () => clearTimeout(toastTimer));
+  $('toast').addEventListener('focusin', () => clearTimeout(toastTimer));
+  $('toast').addEventListener('mouseleave', () => { if ($('toast').firstChild) armToast(); });
+  $('toast').addEventListener('focusout', () => { if ($('toast').firstChild) armToast(); });
+
+  // ---------------------------------------------------------------- 항목 변경
+  function markBusy(id, on) {
+    document.querySelectorAll('[data-item="' + CSS.escape(id) + '"]').forEach((el) => {
+      el.classList.toggle('is-busy', on);
+      if (on) el.setAttribute('aria-busy', 'true'); else el.removeAttribute('aria-busy');
+    });
+  }
+  function itemPost(it, payload, okMsg, undoPayload) {
+    if (busyItems.has(it.id)) return Promise.resolve(false);
+    busyItems.add(it.id);
+    cardErrors.delete(it.id);
+    markBusy(it.id, true);
+    return post('/api/item/' + encodeURIComponent(it.id), payload).then((s) => {
+      busyItems.delete(it.id);
+      applyState(s);
+      if (okMsg) toast(okMsg, undoPayload ? () => itemPost(it, undoPayload, '되돌렸습니다: ' + (it.title || '')) : null);
+      return true;
+    }, (err) => {
+      busyItems.delete(it.id);
+      focusAfter = null;
+      cardErrors.set(it.id, err.message);
+      render();
+      return false;
+    });
+  }
+  function decide(it, decision, card, ev) {
+    if (busyItems.has(it.id)) return;
+    const payload = { decision };
+    let title = it.title || '';
+    if (decision === 'approved') {
+      const tIn = card.querySelector('.title-input');
+      const dIn = card.querySelector('.due-input');
+      const tv = tIn ? tIn.value.trim() : '';
+      if (tv && tv !== title) { payload.title = tv; title = tv; }
+      const dv = dIn ? dIn.value.slice(0, 16) : '';
+      if (!dv) {
+        cardErrors.set(it.id, '마감 날짜와 시간을 먼저 넣어 주세요.');
+        render();
+        const el = byKey('due-' + it.id);
+        if (el) el.focus();
+        return;
+      }
+      if (dv !== toInput(it.due)) payload.due = dv;
+    }
+    const list = $('review-list');
+    if (ev && ev.detail === 0 && list.contains(card)) focusAfter = { index: Array.prototype.indexOf.call(list.children, card) };
+    itemPost(it, payload, (decision === 'approved' ? '일정에 넣었습니다: ' : '제외했습니다: ') + title, { decision: 'pending' });
+  }
+  function jumpTo(id) {
+    const el = document.getElementById('item-' + id);
+    if (!el) return;
+    const det = el.closest('details');
+    if (det && !det.open) det.open = true;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+  function goInbox(id) {
+    if (view === 'inbox') { jumpTo(id); return; }
+    pendingJump = id;
+    location.hash = '#inbox';
+  }
+
+  // ---------------------------------------------------------------- 조각
+  const chip = (text, kind, title) => h('span', { class: 'chip' + (kind ? ' chip-' + kind : ''), title: title || null }, text);
+  const countChip = (n) => h('span', { class: 'count' }, String(n));
+  function group(key, summary, body) {
+    const d = h('details', { class: 'group' });
+    d.open = openGroups.has(key);
+    d.addEventListener('toggle', () => {
+      if (d.open) openGroups.add(key); else openGroups.delete(key);
+      if (d.open) d.querySelectorAll('textarea.title-input').forEach(fitTitle);
+    });
+    d.appendChild(h('summary', { 'data-key': 'grp-' + key }, summary));
+    d.appendChild(h('div', { class: 'group-body' }, body));
+    return d;
+  }
+  function methodChip(it, short) {
+    const m = METHOD[it.method] ? it.method : 'unknown';
+    if (m === 'unknown' && it.kind === '시험') return null;
+    if (short) return h('span', { class: 'chip' + (m === 'unknown' ? ' chip-dashed' : ''), title: it.email_to || null }, METHOD[m]);
+    return h('span', { class: 'chip' + (m === 'unknown' ? ' chip-dashed' : '') },
+      h('span', null, METHOD[m], it.email_to ? [' · ', h('span', { class: 'email' }, it.email_to)] : null));
+  }
+  const confChip = (c) => CONF[c] ? chip('신뢰도 ' + CONF[c], c === 'low' ? 'dashed' : 'plain') : null;
+  const examChip = (it) => it.kind === '시험' ? chip('시험', 'accent') : null;
+  function originChip(it) {
+    if (it.origin === 'canvas') {
+      const u = safeUrl(it.url);
+      return u
+        ? h('a', { class: 'chip', href: u, target: '_blank', rel: 'noopener noreferrer', title: 'Canvas에서 열기' }, 'Canvas', icon('ext'))
+        : chip('Canvas', 'plain');
+    }
+    return chip('찾은 마감', 'plain');
+  }
+  function evidenceBlock(ev) {
+    const url = safeUrl(ev.url);
+    const d = parseDate(ev.posted_at);
+    return h('figure', { class: 'evidence' },
+      h('blockquote', null, ev.text || ''),
+      h('figcaption', null,
+        h('span', { class: 'src' }, SOURCE[ev.source_type] || '출처'),
+        ev.source_title ? h('span', { class: 'src-title' }, ev.source_title) : null,
+        d ? h('span', null, fmtDateTime(d)) : null,
+        url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, '원문 보기', icon('ext')) : null));
+  }
+  function evidenceList(it) {
+    const ev = Array.isArray(it.evidence) ? it.evidence : [];
+    if (!ev.length) return h('p', { class: 'help' }, '저장된 근거가 없습니다.');
+    return h('div', null, h('p', { class: 'ev-head' }, '근거'), ev.map(evidenceBlock));
+  }
+  function siblings(it) {
+    return state.items.filter((b) => {
+      if (b.id === it.id || b.origin !== 'found' || !isActive(b)) return false;
+      if (b.course_id !== it.course_id) return false;
+      if (it.linked_to && b.linked_to === it.linked_to) return true;
+      return (b.title || '').replace(/\s+/g, '') === (it.title || '').replace(/\s+/g, '');
+    });
+  }
+  function conflictBox(it) {
+    const sib = siblings(it);
+    return h('div', { class: 'conflict', role: 'note' },
+      h('strong', null, '마감이 서로 다르게 적혀 있습니다'),
+      h('p', null, it.conflict),
+      sib.length ? h('div', { class: 'sib' }, h('span', null, '다른 후보:'), sib.map((b) => {
+        const d = parseDate(b.due);
+        return h('a', { href: '#item-' + b.id, on: { click: (e) => { e.preventDefault(); jumpTo(b.id); } } },
+          (d ? fmtDateTime(d) : '날짜 없음') + (b.status === 'scheduled' ? ' (일정에 넣음)' : ''));
+      })) : null);
+  }
+  const errLine = (it, cls) => cardErrors.has(it.id) ? h('p', { class: 'inline-error' + (cls ? ' ' + cls : ''), role: 'alert' }, cardErrors.get(it.id)) : null;
+  function conclude(premise, conclusion) {
+    return h('div', { class: 'conclude' }, h('p', { class: 'premise' }, premise), h('p', { class: 'conclusion' }, conclusion));
+  }
+  function fitTitle(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 2 + 'px';
+  }
+  const fitAllTitles = () => document.querySelectorAll('textarea.title-input').forEach(fitTitle);
+  let fitTimer = null;
+  window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitAllTitles, 100); });
+
+  // 이번 주·학기 지도·과목에서 쓰는 한 줄
+  function itemRow(it, mode) {
+    const d = parseDate(it.due);
+    const isReview = it.status === 'review';
+    const past = d && d.getTime() < nowMs();
+    const today = d && dayDiff(d) === 0;
+    const canvasDone = it.submitted && it.submitted_source === 'canvas';
+    const missed = it.status === 'scheduled' && past && !it.submitted && it.kind !== '시험';
+    let cls = 'irow';
+    if (isReview) cls += ' is-review';
+    if (today && !it.submitted) cls += ' is-today';
+    if (isReview && it.conflict) cls += ' is-alert';
+    if (it.submitted) cls += ' is-done';
+    if (busyItems.has(it.id)) cls += ' is-busy';
+    let side = null;
+    if (it.status === 'scheduled') {
+      side = [
+        h('label', { class: 'check' },
+          h('input', { type: 'checkbox', 'data-key': 'sub-' + it.id, checked: !!it.submitted, disabled: canvasDone, 'aria-label': (it.title || '') + ' 제출함',
+            on: { change: (e) => itemPost(it, { submitted: e.target.checked }, e.target.checked ? '제출함으로 표시했습니다' : '제출 표시를 지웠습니다') } }),
+          h('span', null, '제출')),
+        canvasDone ? h('span', { class: 'tiny' }, 'Canvas에서 확인됨') : null
+      ];
+    } else if (isReview) {
+      side = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-key': 'go-' + it.id, on: { click: () => goInbox(it.id) } }, it.conflict ? '고르기' : '확인하기');
+    }
+    return h('li', { class: cls, 'data-item': it.id },
+      h('div', { class: 'irow-when' }, d ? (mode === 'time' ? fmtTime(d) : [h('span', { class: 'irow-date' }, fmtShort(d)), fmtTime(d)]) : '-'),
+      h('div', null,
+        h('div', { class: 'irow-title' }, it.submitted ? '✓ ' : null, it.title || ''),
+        h('div', { class: 'irow-meta' },
+          h('span', { title: it.course_name || null }, courseLabel(it)),
+          examChip(it), methodChip(it, true),
+          isReview ? chip(it.conflict ? '마감 바뀜' : '확인 전', it.conflict ? 'accent' : 'dashed') : null,
+          missed ? chip('미제출', 'accent') : null)),
+      h('div', { class: 'irow-side' }, side),
+      errLine(it, 'irow-error'));
+  }
+  function rowList(items, mode, emptyText) {
+    if (!items.length) return h('p', { class: 'empty' }, emptyText);
+    return h('ul', { class: 'ilist' + (mode === 'time' ? '' : ' by-date') }, items.map((it) => itemRow(it, mode)));
+  }
+
+  // ---------------------------------------------------------------- 이번 주
+  function renderWeek() {
+    const body = $('week-body');
+    body.replaceChildren();
+    const now = new Date(nowMs());
+    const t0 = startOfDay(now), t1 = addDays(now, 1);
+    const mon = mondayOf(now), mon1 = addDays(mon, 7), mon2 = addDays(mon, 14);
+    const act = activeDated();
+    const todayL = act.filter((i) => inRange(i, t0, t1)).sort(byDue);
+    const restL = act.filter((i) => inRange(i, t1, mon1)).sort(byDue);
+    const nextL = act.filter((i) => inRange(i, mon1, mon2)).sort(byDue);
+    const weekL = act.filter((i) => inRange(i, mon, mon1));
+    const s = sem();
+    const wn = s ? s.week_now : null;
+    const total = s ? s.weeks_total : null;
+    const est = !!(s && s.source === 'default');
+    const inSem = !!(s && wn >= 1 && wn <= total);
+    $('week-sub').textContent = (inSem ? wn + '주차 · ' : '') + fmtDate(mon) + ' – ' + fmtDate(addDays(mon, 6)) + (est ? ' · 학기 날짜는 추정입니다' : '');
+
+    const exams = weekL.filter((i) => i.kind === '시험').length;
+    const dl = weekL.length - exams;
+    const unconfirmed = weekL.filter((i) => i.status === 'review').length;
+    let premise;
+    if (s && wn === 0) premise = '개강 전입니다 · ' + (parseDay(s.start) ? fmtDate(parseDay(s.start)) + ' 개강' : '');
+    else if (s && total && wn > total) premise = '종강했습니다 · 이번 주 마감 ' + dl + '개';
+    else {
+      premise = (inSem ? '이번 주(' + wn + '주차' + (est ? ', 추정' : '') + ')' : '이번 주') + ' 마감 ' + dl + '개' +
+        (exams ? ' · 시험 ' + exams + '개' : '') + (unconfirmed ? ' (확인 전 ' + unconfirmed + '개 포함)' : '');
+    }
+    const urgent = act.filter((i) => dueMs(i) >= nowMs() && !i.submitted).sort(byDue)[0];
+    const conclusion = urgent
+      ? '가장 급한 것: ' + (urgent.title || '') + ' — ' + whenText(parseDate(urgent.due)) + ' · ' + courseLabel(urgent) + (urgent.status === 'review' ? ' · 확인 전' : '')
+      : '남은 마감이 없습니다';
+    body.appendChild(conclude(premise, conclusion));
+
+    const reviewN = state.items.filter((i) => i.status === 'review').length;
+    const errs = state.report && Array.isArray(state.report.errors) ? state.report.errors.filter(Boolean) : [];
+    if (reviewN || errs.length) {
+      body.appendChild(h('div', { class: 'after' },
+        reviewN ? h('p', null, '확인 대기 ', h('b', null, reviewN + '개'), ' — 찾았지만 아직 일정에 넣지 않은 마감입니다. ', h('a', { href: '#inbox' }, '확인함으로')) : null,
+        errs.length ? h('p', { class: 'warnline' }, h('b', null, '일부를 읽지 못했습니다 '), errs.map(String).join(' · '), ' ', h('a', { href: '#settings' }, '자세히')) : null));
+    }
+
+    const changed = state.items.filter((i) => i.status === 'review' && i.conflict).sort(byDue);
+    if (changed.length) {
+      body.appendChild(h('section', { class: 'block', 'aria-labelledby': 'changed-title' },
+        h('h2', { id: 'changed-title' }, '바뀐 것', countChip(changed.length)),
+        h('p', { class: 'help' }, '같은 과제에 다른 마감이 적힌 글이 있습니다. 어느 쪽이 맞는지 확인함에서 골라 주세요.'),
+        h('ul', { class: 'ilist by-date' }, changed.map((it) => {
+          const d = parseDate(it.due);
+          return h('li', { class: 'irow is-alert', 'data-item': it.id },
+            h('div', { class: 'irow-when' }, d ? [h('span', { class: 'irow-date' }, fmtShort(d)), fmtTime(d)] : '-'),
+            h('div', null,
+              h('div', { class: 'irow-title' }, it.title || ''),
+              h('div', { class: 'irow-meta' }, h('span', null, courseLabel(it)), methodChip(it))),
+            h('div', { class: 'irow-side' }, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', 'data-key': 'chg-' + it.id, on: { click: () => goInbox(it.id) } }, '고르기')),
+            h('p', { class: 'irow-note' }, it.conflict));
+        }))));
+    }
+
+    const nextLabel = (inSem && wn + 1 <= total ? (wn + 1) + '주차 · ' : '') + fmtShort(mon1) + ' – ' + fmtShort(addDays(mon1, 6));
+    body.appendChild(h('div', { class: 'cols' },
+      h('section', { class: 'col', 'aria-labelledby': 'col-today' },
+        h('h2', { id: 'col-today' }, '오늘', countChip(todayL.length)),
+        h('p', { class: 'help' }, fmtDate(t0)),
+        rowList(todayL, 'time', '오늘 마감이 없습니다.')),
+      h('section', { class: 'col', 'aria-labelledby': 'col-week' },
+        h('h2', { id: 'col-week' }, '이번 주', countChip(restL.length)),
+        h('p', { class: 'help' }, '내일부터 ' + fmtShort(addDays(mon, 6)) + '까지'),
+        rowList(restL, 'date', '이번 주에 남은 마감이 없습니다.')),
+      h('section', { class: 'col', 'aria-labelledby': 'col-next' },
+        h('h2', { id: 'col-next' }, '다음 주', countChip(nextL.length)),
+        h('p', { class: 'help' }, nextLabel),
+        rowList(nextL, 'date', '다음 주 마감이 없습니다.'))));
+  }
+
+  // ---------------------------------------------------------------- 학기 지도
+  function renderMap() {
+    const body = $('map-body');
+    body.replaceChildren();
+    const s = sem();
+    const weeks = weeksList();
+    if (!s || !weeks.length) {
+      $('map-sub').textContent = '';
+      body.appendChild(h('p', { class: 'empty' }, '학기 정보가 아직 없습니다. 동기화하면 학기 지도가 만들어집니다.'));
+      return;
+    }
+    const wn = Number(s.week_now) || 0;
+    const total = s.weeks_total || weeks.length;
+    const st = parseDay(s.start), en = parseDay(s.end);
+    $('map-sub').textContent = (st ? fmtDate(st) + ' 개강 · ' : '') + (en ? fmtDate(en) + ' 종강 · ' : '') + total + '주' +
+      (s.source === 'default' ? ' · 학기 날짜는 추정입니다(Canvas에 학기 정보가 없어 통상 학기로 계산했습니다)' : '');
+
+    const byWeek = {};
+    let outside = 0;
+    for (const it of state.items) {
+      if (!isActive(it)) continue;
+      const w = itemWeek(it);
+      if (w === null || w < 1 || w > total) { outside++; continue; }
+      (byWeek[w] = byWeek[w] || []).push(it);
+    }
+    const cnt = (n) => (byWeek[n] || []).length;
+    const max = Math.max(1, ...weeks.map((w) => cnt(w.n)));
+
+    // 결론: 남은 주 중 가장 몰리는 주, 그 전에 여유 있는 주
+    const ended = wn > total;
+    const future = ended ? weeks : weeks.filter((w) => w.n >= Math.max(1, wn));
+    const remaining = future.reduce((a, w) => a + cnt(w.n), 0);
+    const examsLeft = future.reduce((a, w) => a + (byWeek[w.n] || []).filter((i) => i.kind === '시험').length, 0);
+    let busiest = null;
+    for (const w of future) if (cnt(w.n) && (!busiest || cnt(w.n) > busiest.c)) busiest = { n: w.n, c: cnt(w.n) };
+    let premise;
+    if (ended) premise = '종강했습니다 · 학기 전체 마감 ' + remaining + '개';
+    else if (wn === 0) premise = '개강 전 · 학기 마감 ' + remaining + '개' + (examsLeft ? ' · 시험 ' + examsLeft + '개' : '');
+    else premise = '지금 ' + wn + '주차 · 남은 ' + future.length + '주 동안 마감 ' + remaining + '개' + (examsLeft ? ' · 시험 ' + examsLeft + '개' : '');
+    const conclusion = busiest ? busiest.n + '주차가 가장 몰립니다(' + busiest.c + '개)' : '남은 주에 마감이 없습니다';
+    body.appendChild(conclude(premise, conclusion));
+    if (busiest && !ended) {
+      let light = null;
+      for (const w of future) if (w.n < busiest.n && (!light || cnt(w.n) < light.c)) light = { n: w.n, c: cnt(w.n) };
+      if (light && light.c < busiest.c) {
+        body.appendChild(h('div', { class: 'after' }, h('p', { class: 'help', style: 'margin:0' },
+          '그 앞 ' + light.n + '주차는 ' + light.c + '개라 ' + busiest.n + '주차 것을 미리 해 두기 좋습니다.')));
+      }
+    }
+
+    const nowN = Math.min(Math.max(wn, 1), total);
+    if (!selWeek || selWeek < 1 || selWeek > total) selWeek = nowN;
+
+    const list = h('ul', { class: 'wk-list', 'aria-label': '주차별 마감 수' }, weeks.map((w) => {
+      const c = cnt(w.n);
+      const exam = (byWeek[w.n] || []).some((i) => i.kind === '시험');
+      const ws = parseDay(w.start), we = parseDay(w.end);
+      const range = ws && we ? fmtMD(ws) + '–' + fmtMD(we) : '';
+      const pct = Math.round((c / max) * 100);
+      return h('li', null, h('button', {
+        type: 'button', class: 'wk' + (w.n === wn ? ' is-now' : '') + (w.n < wn ? ' is-past' : ''),
+        'aria-pressed': String(w.n === selWeek), 'data-key': 'wk-' + w.n,
+        'aria-label': w.n + '주차, ' + range + ', 마감 ' + c + '개' + (exam ? ', 시험 있음' : '') + (w.n === wn ? ', 이번 주' : ''),
+        on: { click: () => { selWeek = w.n; render(); } }
+      },
+        h('span', { class: 'wk-n' }, w.n + '주차'),
+        h('span', { class: 'wk-range' }, range),
+        h('span', { class: 'bar', 'aria-hidden': 'true' }, c ? h('span', { style: 'width:' + pct + '%' }) : null),
+        h('span', { class: 'wk-count' }, String(c)),
+        h('span', { class: 'wk-tags' }, exam ? chip('시험', 'accent') : null, w.n === wn ? chip('지금', 'tint') : null)));
+    }));
+
+    const sw = weeks.find((w) => w.n === selWeek);
+    const items = (byWeek[selWeek] || []).slice().sort(byDue);
+    const detail = h('section', { class: 'map-detail', 'aria-labelledby': 'map-detail-title' });
+    const sws = sw ? parseDay(sw.start) : null, swe = sw ? parseDay(sw.end) : null;
+    detail.appendChild(h('h2', { id: 'map-detail-title' }, selWeek + '주차', selWeek === wn ? chip('지금', 'tint') : null));
+    detail.appendChild(h('p', { class: 'help' }, (sws && swe ? fmtDate(sws) + ' – ' + fmtDate(swe) + ' · ' : '') + '마감 ' + items.length + '개'));
+    if (!items.length) detail.appendChild(h('p', { class: 'empty' }, '이 주에는 마감이 없습니다.'));
+    let day = '';
+    let ul = null;
+    for (const it of items) {
+      const d = parseDate(it.due);
+      const k = dayKey(d);
+      if (k !== day) {
+        day = k;
+        const diff = dayDiff(d);
+        detail.appendChild(h('h3', { class: 'day-head' }, fmtDate(d), diff === 0 ? chip('오늘', 'accent') : diff > 0 && diff <= 2 ? chip(ddayText(diff), 'tint') : null));
+        ul = h('ul', { class: 'ilist' });
+        detail.appendChild(ul);
+      }
+      ul.appendChild(itemRow(it, 'time'));
+    }
+    const left = h('div', null, list,
+      outside ? h('p', { class: 'help', style: 'margin:14px 0 0' }, '날짜가 없거나 학기 밖인 항목 ' + outside + '개는 지도에 넣지 않았습니다.') : null);
+    body.appendChild(h('div', { class: 'map-grid' }, left, detail));
+  }
+
+  // ---------------------------------------------------------------- 과목
+  function fmtScore(x) {
+    if (x === null || x === undefined || x === '' || isNaN(Number(x))) return null;
+    return (Math.round(Number(x) * 10) / 10) + '%';
+  }
+  function courseRows() {
+    const now = nowMs();
+    const rows = state.courses.filter((c) => c && c.id !== null && c.id !== undefined).map((c) => {
+      const its = state.items.filter((i) => String(i.course_id) === String(c.id));
+      return summarize(c, its, now);
+    });
+    const known = new Set(state.courses.map((c) => String(c && c.id)));
+    const orphan = state.items.filter((i) => isActive(i) && (i.course_id === null || i.course_id === undefined || !known.has(String(i.course_id))));
+    if (orphan.length) rows.push(summarize({ id: '__other__', short_name: '기타', name: '과목을 알 수 없는 항목' }, orphan, now));
+    return rows;
+  }
+  function summarize(c, its, now) {
+    const upcoming = its.filter((i) => isActive(i) && dueMs(i) !== null && dueMs(i) >= now).sort(byDue);
+    const past = its.filter((i) => i.status === 'scheduled' && dueMs(i) !== null && dueMs(i) < now && i.kind !== '시험').sort((a, b) => byDue(b, a));
+    const sub = past.filter((i) => i.submitted).length;
+    return {
+      c, its, upcoming, past, sub, unsub: past.length - sub,
+      review: its.filter((i) => i.status === 'review').length,
+      nodl: its.filter((i) => i.status === 'no_deadline')
+    };
+  }
+  function renderCourses() {
+    const body = $('courses-body');
+    body.replaceChildren();
+    const rows = courseRows();
+    const realN = rows.filter((r) => r.c.id !== '__other__').length;
+    $('courses-sub').textContent = realN ? realN + '과목 · 점수는 Canvas가 계산한 현재 점수입니다' : '';
+    if (!rows.length) { body.appendChild(h('p', { class: 'empty' }, '과목 정보가 아직 없습니다. 동기화해 주세요.')); return; }
+
+    const pastAll = rows.reduce((a, r) => a + r.past.length, 0);
+    const missed = [];
+    for (const r of rows) for (const i of r.past) if (!i.submitted) missed.push(i);
+    missed.sort(byDue);
+    body.appendChild(conclude(
+      realN + '과목 · 지난 과제 ' + pastAll + '개 중 미제출 ' + missed.length + '개',
+      missed.length ? '놓친 것: ' + (missed[0].title || '') + ' · ' + courseLabel(missed[0]) + (missed.length > 1 ? ' 외 ' + (missed.length - 1) + '개' : '') : '놓친 과제가 없습니다'));
+
+    if (!selCourse || !rows.some((r) => String(r.c.id) === selCourse)) selCourse = String(rows[0].c.id);
+    const select = (id) => { selCourse = id; render(); };
+
+    const table = h('table', { class: 'cmp', style: 'margin-top:36px' },
+      h('thead', null, h('tr', null, h('th', { scope: 'col' }, '과목'), h('th', { scope: 'col' }, '다음 마감'), h('th', { scope: 'col' }, '지난 과제'), h('th', { scope: 'col' }, '현재 점수'), h('th', { scope: 'col' }, '확인 대기'))),
+      h('tbody', null, rows.map((r) => {
+        const id = String(r.c.id);
+        const next = r.upcoming[0];
+        const nd = next ? parseDate(next.due) : null;
+        const score = fmtScore(r.c.current_score);
+        const graded = typeof r.c.graded === 'number' && typeof r.c.assignments === 'number' ? '채점 ' + r.c.graded + '/' + r.c.assignments : null;
+        return h('tr', { class: id === selCourse ? 'is-sel' : null, on: { click: (e) => { if (!e.target.closest('a,button')) select(id); } } },
+          h('td', null, h('button', { type: 'button', class: 'cell-btn', 'aria-pressed': String(id === selCourse), 'data-key': 'crs-' + id, title: r.c.name || null, on: { click: () => select(id) } }, courseShort(r.c))),
+          h('td', { class: 'em' }, next ? [next.title || '', h('span', { class: 'cell-sub' }, whenText(nd) + (next.status === 'review' ? ' · 확인 전' : ''))] : h('span', { class: 'cell-sub' }, '없음')),
+          h('td', null, r.past.length ? ['제출 ' + r.sub + ' · ', r.unsub ? h('b', { style: 'color:var(--accent)' }, '미제출 ' + r.unsub) : '미제출 0'] : h('span', { class: 'cell-sub' }, '없음')),
+          h('td', null, score ? h('b', null, score) : h('span', { class: 'cell-sub' }, r.c.id === '__other__' ? '-' : '점수 비공개'), graded ? h('span', { class: 'cell-sub' }, graded) : null),
+          h('td', null, r.review ? h('a', { href: '#inbox' }, r.review + '개') : h('span', { class: 'cell-sub' }, '없음')));
+      })));
+    body.appendChild(table);
+
+    const r = rows.find((x) => String(x.c.id) === selCourse);
+    if (!r) return;
+    const evs = [];
+    const seen = new Set();
+    for (const it of r.its) {
+      for (const ev of (Array.isArray(it.evidence) ? it.evidence : [])) {
+        const key = (ev.source_type || '') + '|' + (ev.source_title || '') + '|' + (ev.url || '');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        evs.push(ev);
+      }
+    }
+    evs.sort((a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0));
+    const detail = h('section', { class: 'cdetail', 'aria-labelledby': 'cdetail-title' },
+      h('h2', { id: 'cdetail-title' }, courseShort(r.c)),
+      r.c.name && r.c.name !== courseShort(r.c) ? h('p', { class: 'help' }, r.c.name) : null,
+      h('div', { class: 'cdetail-grid' },
+        h('section', null, h('h3', null, '다음 일정'), rowList(r.upcoming, 'date', '남은 일정이 없습니다.')),
+        h('section', null, h('h3', null, '지난 과제'), rowList(r.past, 'date', '지난 과제가 없습니다.'),
+          r.nodl.length ? h('div', { style: 'margin-top:14px' }, h('p', { class: 'help', style: 'margin:0 0 6px' }, '마감이 없는 과제'),
+            h('ul', { class: 'mini-list' }, r.nodl.map((i) => {
+              const u = safeUrl(i.url);
+              return h('li', { class: 'mini mini-title' }, i.title || '', u ? [' ', h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas', icon('ext'))] : null);
+            }))) : null),
+        h('section', null, h('h3', null, '최근 근거 글'),
+          evs.length ? h('ul', { class: 'ev-list' }, evs.slice(0, 6).map((ev) => {
+            const u = safeUrl(ev.url);
+            const d = parseDate(ev.posted_at);
+            return h('li', null,
+              u ? h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, ev.source_title || '(제목 없음)') : h('b', null, ev.source_title || '(제목 없음)'),
+              h('div', { class: 'ev-meta' }, h('span', { class: 'src' }, SOURCE[ev.source_type] || '출처'), d ? h('span', null, fmtDateTime(d)) : null));
+          })) : h('p', { class: 'empty' }, '근거 글이 없습니다.'))));
+    body.appendChild(detail);
+  }
+
+  // ---------------------------------------------------------------- 확인함
+  function reviewCard(it) {
+    const busy = busyItems.has(it.id);
+    const card = h('article', {
+      class: 'card review-card' + (it.confidence === 'low' ? ' is-low' : '') + (it.conflict ? ' has-conflict' : '') + (busy ? ' is-busy' : ''),
+      id: 'item-' + it.id, 'data-item': it.id, 'aria-busy': busy ? 'true' : null,
+      'aria-label': courseLabel(it) + ' ' + (it.title || '')
+    });
+    // 긴 제목도 잘리지 않게 한 줄짜리 textarea를 내용 높이에 맞춘다(Enter는 저장)
+    const titleIn = h('textarea', { class: 'title-input', rows: '1', value: it.title || '', maxlength: '200', autocomplete: 'off', spellcheck: 'false', 'aria-label': '제목', 'data-key': 'title-' + it.id });
+    titleIn.addEventListener('input', () => {
+      if (/[\r\n]/.test(titleIn.value)) titleIn.value = titleIn.value.replace(/[\r\n]+/g, ' ');
+      fitTitle(titleIn);
+    });
+    const dueIn = h('input', { type: 'datetime-local', class: 'due-input', value: toInput(it.due), 'aria-label': '마감 날짜와 시간', 'data-key': 'due-' + it.id });
+    const dday = h('span', { class: 'dday' });
+    const wday = h('span', { class: 'weekday' });
+    const wk = h('span', { class: 'help', style: 'margin:0' });
+    const syncDue = () => {
+      const d = fromInput(dueIn.value);
+      if (d) {
+        const diff = dayDiff(d);
+        dday.textContent = ddayText(diff);
+        dday.className = 'dday ' + urgency(diff);
+        wday.textContent = WD[d.getDay()] + '요일';
+        const n = weekOfDate(d);
+        wk.textContent = n ? n + '주차' : '';
+      } else {
+        dday.textContent = '날짜 없음';
+        dday.className = 'dday none';
+        wday.textContent = '';
+        wk.textContent = '';
+      }
+    };
+    syncDue();
+    const toDecision = (t) => t && card.contains(t) && t.hasAttribute('data-decision');
+    titleIn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); titleIn.blur(); }
+      else if (e.key === 'Escape') { titleIn.value = it.title || ''; fitTitle(titleIn); titleIn.blur(); }
+    });
+    titleIn.addEventListener('blur', (e) => {
+      if (rendering) return;
+      const v = titleIn.value.trim();
+      if (!v) { titleIn.value = it.title || ''; fitTitle(titleIn); return; }
+      if (v === (it.title || '') || toDecision(e.relatedTarget)) return;
+      itemPost(it, { title: v }, '제목을 고쳤습니다');
+    });
+    dueIn.addEventListener('input', syncDue);
+    dueIn.addEventListener('change', syncDue);
+    dueIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); dueIn.blur(); } });
+    dueIn.addEventListener('blur', (e) => {
+      if (rendering) return;
+      const v = dueIn.value.slice(0, 16);
+      if (!v) { dueIn.value = toInput(it.due); syncDue(); return; }
+      if (v === toInput(it.due) || toDecision(e.relatedTarget)) return;
+      itemPost(it, { due: v }, '마감을 고쳤습니다');
+    });
+
+    const linked = it.linked_to ? findItem(it.linked_to) : null;
+    const linkedUrl = linked ? safeUrl(linked.url) : null;
+    const notes = Array.isArray(it.notes) ? it.notes : [];
+    const approve = h('button', { type: 'button', class: 'btn btn-primary', 'data-decision': 'approved', 'data-key': 'approve-' + it.id, 'aria-disabled': busy ? 'true' : null,
+      on: { click: (e) => decide(it, 'approved', card, e) } }, '일정에 넣기');
+    const reject = h('button', { type: 'button', class: 'btn btn-secondary', 'data-decision': 'rejected', 'data-key': 'reject-' + it.id, 'aria-disabled': busy ? 'true' : null,
+      on: { click: (e) => decide(it, 'rejected', card, e) } }, '아님');
+
+    add(card, [
+      h('div', { class: 'card-top' }, h('span', { class: 'course', title: it.course_name || null }, courseLabel(it)), examChip(it), confChip(it.confidence)),
+      titleIn,
+      h('div', { class: 'due-row' }, dday, dueIn, wday, wk),
+      it.conflict ? conflictBox(it) : null,
+      h('div', { class: 'badges' }, methodChip(it),
+        it.edited ? chip('직접 고침', 'plain') : null,
+        it.edited ? h('button', { type: 'button', class: 'linkish', on: { click: () => itemPost(it, { title: null, due: null }, '원래 값으로 되돌렸습니다') } }, '원래대로') : null),
+      linked ? h('p', { class: 'linked' }, 'Canvas 과제 ', h('b', null, '“' + (linked.title || '') + '”'),
+        linked.due ? '의 마감으로 보입니다.' : '의 마감으로 보입니다. Canvas에는 마감이 비어 있습니다.',
+        linkedUrl ? [' ', h('a', { href: linkedUrl, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas에서 보기')] : null) : null,
+      it.confidence === 'low' ? h('p', { class: 'low-hint' }, '확실하지 않은 후보입니다. 아래 근거를 직접 읽고 날짜가 맞는지 확인하세요.') : null,
+      notes.length ? h('ul', { class: 'notes' }, notes.map((n) => h('li', null, n))) : null,
+      evidenceList(it),
+      errLine(it),
+      h('div', { class: 'actions' }, approve, reject)
+    ]);
+    return card;
+  }
+
+  function renderInbox() {
+    const now = nowMs();
+    const up = [], past = [];
+    for (const it of state.items) {
+      if (it.status !== 'review') continue;
+      const t = dueMs(it);
+      (t !== null && t < now ? past : up).push(it);
+    }
+    up.sort(byDue);
+    past.sort((a, b) => byDue(b, a));
+    $('inbox-count').textContent = String(up.length + past.length);
+    const list = $('review-list');
+    list.replaceChildren();
+    if (!up.length) list.appendChild(h('p', { class: 'empty' }, state.report ? '지금 확인할 마감이 없습니다.' : '동기화하면 공지·메시지에서 찾은 마감이 여기에 나옵니다.'));
+    for (const it of up) list.appendChild(reviewCard(it));
+    const pb = $('review-past');
+    pb.replaceChildren();
+    if (past.length) {
+      pb.appendChild(group('review-past', ['지난 후보', countChip(past.length)], [
+        h('p', { class: 'help', style: 'margin:0' }, '적힌 마감이 이미 지난 후보입니다. 날짜를 잘못 읽었을 수도 있으니 필요하면 고쳐서 넣으세요.'),
+        past.map(reviewCard)
+      ]));
+    }
+
+    // 마감을 못 찾은 과제(찾은 후보와 연결된 것은 그 카드에서 보여 주므로 뺀다)
+    const linked = new Set(state.items.filter((i) => i.linked_to && isActive(i)).map((i) => i.linked_to));
+    const nd = state.items.filter((i) => i.status === 'no_deadline' && !linked.has(i.id));
+    const nb = $('nodl-box');
+    nb.replaceChildren();
+    if (nd.length) {
+      nb.appendChild(h('section', { 'aria-labelledby': 'nodl-title' },
+        h('h2', { id: 'nodl-title' }, '마감을 못 찾은 과제', countChip(nd.length)),
+        h('p', { class: 'help' }, 'Canvas에 마감이 없고 공지·메시지에서도 근거를 못 찾았습니다. 직접 확인하세요.'),
+        h('ul', { class: 'mini-list' }, nd.map((it) => {
+          const u = safeUrl(it.url);
+          return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
+            h('div', { class: 'mini-meta' }, courseLabel(it)),
+            h('div', { class: 'mini-title' }, it.title || ''),
+            u ? h('div', { class: 'mini-actions' }, h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas에서 보기', icon('ext'))) : null);
+        }))));
+    }
+
+    const dupes = state.items.filter((i) => i.status === 'duplicate').sort(byDue);
+    const rej = state.items.filter((i) => i.status === 'rejected').sort(byDue);
+    const box = $('inbox-groups');
+    box.replaceChildren();
+    const inc = !!state.settings.include_canvas;
+    if (dupes.length) {
+      box.appendChild(group('dupes', ['Canvas와 겹친 항목', countChip(dupes.length)], [
+        h('p', { class: 'help', style: 'margin:0' }, 'Canvas 과제와 같은 마감이라 따로 넣지 않았습니다.' +
+          (inc ? '' : ' 지금은 Canvas 과제를 파일에서 빼 두어서 이 마감은 캘린더에 들어가지 않습니다. 필요하면 ‘따로 넣기’를 누르세요.')),
+        h('ul', { class: 'mini-list' }, dupes.map((it) => {
+          const c = it.duplicate_of ? findItem(it.duplicate_of) : null;
+          const d = parseDate(it.due);
+          const cd = c ? parseDate(c.due) : null;
+          return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
+            h('div', { class: 'mini-meta' }, courseLabel(it)),
+            h('div', { class: 'mini-title' }, (it.title || '') + (d ? ' · ' + fmtShort(d) + ' ' + fmtTime(d) : '')),
+            h('div', { class: 'mini-meta' }, '겹친 Canvas 과제: ', c ? [h('b', { style: 'color:var(--text)' }, c.title || ''), cd ? ' · ' + fmtShort(cd) + ' ' + fmtTime(cd) : ''] : (it.duplicate_of || '알 수 없음')),
+            evidenceList(it),
+            errLine(it),
+            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', 'data-key': 'dupadd-' + it.id,
+              on: { click: () => itemPost(it, { decision: 'approved' }, '따로 일정에 넣었습니다: ' + (it.title || ''), { decision: 'pending' }) } }, '따로 넣기')));
+        }))
+      ]));
+    }
+    if (rej.length) {
+      box.appendChild(group('rejected', ['제외한 항목', countChip(rej.length)], [
+        h('ul', { class: 'mini-list' }, rej.map((it) => {
+          const d = parseDate(it.due);
+          // Canvas 과제의 기본값은 '넣기'라서 되살리면 일정으로, 찾은 후보는 확인함으로 돌아간다
+          const back = it.origin === 'canvas' && it.due ? 'approved' : 'pending';
+          return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
+            h('div', { class: 'mini-meta' }, courseLabel(it) + (d ? ' · ' + fmtShort(d) + ' ' + fmtTime(d) : '')),
+            h('div', { class: 'mini-title' }, it.title || ''),
+            errLine(it),
+            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-key': 'restore-' + it.id,
+              'aria-label': (it.title || '') + ' 되살리기',
+              on: { click: () => itemPost(it, { decision: back }, (back === 'pending' ? '확인함으로 되살렸습니다: ' : '되살렸습니다: ') + (it.title || '')) } }, '되살리기')));
+        }))
+      ]));
+    }
+  }
+
+  function renderCourseOptions() {
+    const opts = [];
+    for (const c of state.courses) {
+      if (!c || !c.name) continue;
+      if (!opts.some((o) => o.value === c.name)) opts.push({ value: String(c.name), label: courseShort(c) });
+    }
+    const sig = opts.map((o) => o.value + '\u0001' + o.label).join('\n');
+    if (sig === courseSig) return;
+    courseSig = sig;
+    const sel = $('m-course');
+    const prev = sel.value;
+    sel.replaceChildren(h('option', { value: '' }, '과목 선택'));
+    for (const o of opts) sel.appendChild(h('option', { value: o.value }, o.label));
+    sel.appendChild(h('option', { value: '__free__' }, '직접 입력…'));
+    sel.value = prev && (prev === '__free__' || opts.some((o) => o.value === prev)) ? prev : '';
+    $('m-course-free').hidden = sel.value !== '__free__';
+  }
+
+  // ---------------------------------------------------------------- 설정
+  const num = (x) => Number(x) || 0;
+  function renderSettings() {
+    const conf = !!state.configured;
+    $('title-settings').textContent = conf ? '설정' : '시작하기';
+    $('setup').hidden = conf && !reconfiguring;
+    $('setup-cancel').hidden = !conf;
+    $('setup-submit').textContent = conf ? '저장하고 동기화' : '연결하고 동기화';
+    if (!$('setup').hidden && !$('canvas-url').value && state.canvas_url) $('canvas-url').value = state.canvas_url;
+    $('settings-conf').hidden = !conf;
+    if (!conf) return;
+    $('conn-url').textContent = state.canvas_url || '-';
+    $('app-version').textContent = state.app_version || '-';
+    $('include-canvas').checked = !!state.settings.include_canvas;
+    const hasWeekly = Object.prototype.hasOwnProperty.call(state.settings, 'weekly_summary');
+    $('weekly-row').hidden = !hasWeekly;
+    $('weekly-summary').checked = !!state.settings.weekly_summary;
+    $('ics-count').textContent = '지금 받으면 일정 ' + icsItems().length + '개가 들어갑니다' +
+      (state.settings.weekly_summary ? ' (주간 요약 별도)' : '') + '.';
+
+    const box = $('settings-report');
+    box.replaceChildren();
+    const r = state.report;
+    if (!r) { box.appendChild(h('p', { class: 'report' }, '아직 동기화하지 않았습니다.')); return; }
+    const d = parseDate(state.last_sync);
+    const parts = ['과목 ' + num(r.courses), '과제 ' + num(r.assignments), '공지 ' + num(r.announcements), '메시지 ' + num(r.messages), '강의계획서 ' + num(r.syllabi)];
+    if (num(r.manual)) parts.push('직접 입력 ' + num(r.manual));
+    const errs = Array.isArray(r.errors) ? r.errors.filter(Boolean) : [];
+    box.appendChild(h('div', { class: 'report' },
+      h('p', null, '마지막 동기화 ' + (d ? fmtDateTime(d) : '-')),
+      h('p', null, '읽은 것: ' + parts.join(' · ')),
+      h('p', null, '찾은 마감 후보 ' + num(r.candidates) + '개 · 확인 필요 ' + num(r.needs_review) + '개 · 마감 없음 ' + num(r.no_deadline) + '개'),
+      errs.length ? [h('p', { style: 'margin-top:8px' }, h('b', { style: 'color:var(--accent)' }, '일부를 읽지 못했습니다. 그 부분의 마감은 빠졌을 수 있습니다.')),
+        h('ul', null, errs.map((e) => h('li', null, String(e))))] : null));
+  }
+
+  function icsItems() {
+    const inc = !!state.settings.include_canvas;
+    return state.items.filter((i) => i.status === 'scheduled' && i.due && (i.origin !== 'canvas' || inc));
+  }
+  function icsSig() {
+    const s = icsItems().map((i) => i.id + '|' + i.title + '|' + i.due).sort().join('\n') + '\n' + (state.settings.weekly_summary ? 'W' : '');
+    let x = 2166136261;
+    for (let k = 0; k < s.length; k++) { x ^= s.charCodeAt(k); x = Math.imul(x, 16777619) >>> 0; }
+    return String(x) + ':' + s.length;
+  }
+  function readSig() { try { return localStorage.getItem('lms-agent.ics-sig'); } catch (e) { return null; } }
+  function saveSig() { try { localStorage.setItem('lms-agent.ics-sig', icsSig()); } catch (e) { /* 저장 못 해도 동작에는 지장 없음 */ } }
+
+  // ---------------------------------------------------------------- 머리
+  function renderHeader(v) {
+    const conf = !!state.configured;
+    $('nav').hidden = !conf;
+    document.querySelectorAll('#nav a').forEach((a) => {
+      if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    const rc = state.items.filter((i) => i.status === 'review').length;
+    $('nav-count').textContent = String(rc);
+    $('nav-count').hidden = !rc;
+    document.title = rc ? '(' + rc + ') LMS Agent' : 'LMS Agent';
+    $('demo-badge').hidden = !state.demo;
+
+    const meta = $('sync-meta');
+    meta.replaceChildren();
+    if (!conf) meta.textContent = 'Canvas 연결이 필요합니다';
+    else if (syncing || state.syncing) meta.textContent = '바뀐 곳 확인 중…';
+    else if (state.last_sync) {
+      const d = parseDate(state.last_sync);
+      add(meta, ['마지막 동기화 ', h('time', { datetime: state.last_sync, 'data-rel': state.last_sync, title: d ? fmtDateTime(d) : null }, relTime(state.last_sync))]);
+    } else meta.textContent = '아직 동기화하지 않았습니다';
+
+    const btn = $('sync-btn');
+    btn.hidden = !conf;
+    btn.disabled = !conf;
+    btn.setAttribute('aria-disabled', syncing ? 'true' : 'false');
+    if (syncing) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+    btn.replaceChildren();
+    add(btn, syncing ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '동기화 중…'] : [icon('sync'), '동기화']);
+
+    if (!syncing && state.sync_error) showMsg($('sync-error'), '동기화 실패 · ' + state.sync_error);
+    const link = $('ics-link');
+    link.hidden = !conf;
+    if (!link.firstChild || link.firstChild.nodeType !== 1) link.replaceChildren(icon('download'), '캘린더 파일 받기');
+    const saved = readSig();
+    $('ics-changed').hidden = !(conf && saved && saved !== icsSig());
+  }
+
+  // 다시 그려도 쓰던 칸·누르던 버튼이 그대로 남도록
+  function snapshotFocus() {
+    const a = document.activeElement;
+    if (!a || !a.getAttribute) return null;
+    const key = a.getAttribute('data-key');
+    if (!key) return null;
+    const snap = { key };
+    if (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type === 'text')) { snap.value = a.value; snap.start = a.selectionStart; snap.end = a.selectionEnd; }
+    else if (a.tagName === 'INPUT' && a.type === 'datetime-local' && a.value) snap.value = a.value;
+    return snap;
+  }
+  function restoreFocus(snap) {
+    if (focusAfter) {
+      const f = focusAfter;
+      focusAfter = null;
+      const cards = $('review-list').querySelectorAll('.review-card');
+      const card = cards[Math.min(f.index, cards.length - 1)];
+      const target = card ? card.querySelector('[data-decision="approved"]') : $('title-inbox');
+      if (target) target.focus();
+      return;
+    }
+    if (!snap) return;
+    const el = byKey(snap.key);
+    if (!el || el === document.activeElement) return;
+    if (snap.value !== undefined && el.value !== snap.value) {
+      el.value = snap.value;
+      el.dispatchEvent(new Event('input'));
+    }
+    el.focus({ preventScroll: true });
+    if (snap.start !== undefined && snap.start !== null && el.setSelectionRange) {
+      try { el.setSelectionRange(snap.start, snap.end); } catch (e) { /* 무시 */ }
+    }
+  }
+
+  function render() {
+    if (!state) return;
+    const snap = snapshotFocus();
+    rendering = true;
+    try {
+      lastDay = dayKey(new Date(nowMs()));
+      const v = state.configured ? view : 'settings';
+      renderHeader(v);
+      for (const name of VIEWS) {
+        $('scr-' + name).hidden = name !== v;
+        if (name !== v) for (const id of DYN[name]) $(id).replaceChildren();
+      }
+      if (v === 'week') renderWeek();
+      else if (v === 'map') renderMap();
+      else if (v === 'courses') renderCourses();
+      else if (v === 'inbox') { renderInbox(); renderCourseOptions(); }
+      renderSettings();
+    } finally {
+      rendering = false;
+    }
+    fitAllTitles();
+    restoreFocus(snap);
+  }
+
+  function viewFromHash() {
+    const v = (location.hash || '').replace('#', '');
+    return VIEWS.indexOf(v) >= 0 ? v : 'week';
+  }
+  window.addEventListener('hashchange', () => {
+    view = viewFromHash();
+    if (!state) return;
+    render();
+    if (pendingJump) {
+      const id = pendingJump;
+      pendingJump = null;
+      jumpTo(id);
+    } else {
+      window.scrollTo(0, 0);
+      const t = $('title-' + view);
+      if (t) t.focus({ preventScroll: true });
+    }
+  });
+
+  // ---------------------------------------------------------------- 동작
+  function runSync() {
+    if (syncing || !state || !state.configured) return Promise.resolve();
+    syncing = true;
+    showMsg($('sync-error'), '');
+    const before = new Set(state.items.map((i) => i.id));
+    render();
+    return post('/api/sync', {}).then((s) => {
+      syncing = false;
+      applyState(s);
+      const fresh = s.items.filter((i) => i.status === 'review' && !before.has(i.id)).length;
+      toast(fresh ? '동기화했습니다. 새로 찾은 후보 ' + fresh + '개' : '동기화했습니다');
+    }, (err) => {
+      syncing = false;
+      showMsg($('sync-error'), '동기화 실패 · ' + err.message);
+      render();
+    });
+  }
+  $('sync-btn').addEventListener('click', () => runSync());
+  const onIcsClick = () => { saveSig(); setTimeout(() => { if (state) renderHeader(state.configured ? view : 'settings'); }, 0); };
+  $('ics-link').addEventListener('click', onIcsClick);
+  $('ics-link-2').addEventListener('click', onIcsClick);
+
+  $('setup-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const err = $('setup-error');
+    const url = $('canvas-url').value.trim();
+    const token = $('canvas-token').value.trim();
+    if (!url) { showMsg(err, 'Canvas 주소를 넣어 주세요.'); $('canvas-url').focus(); return; }
+    if (!token) { showMsg(err, '액세스 토큰을 넣어 주세요.'); $('canvas-token').focus(); return; }
+    showMsg(err, '');
+    const btn = $('setup-submit');
+    btn.disabled = true;
+    btn.replaceChildren(h('span', { class: 'spin', 'aria-hidden': 'true' }), '확인 중…');
+    enqueue(() => api('POST', '/api/setup', { canvas_url: url, token }))
+      .then(() => api('GET', '/api/state'))
+      .then((s) => {
+        $('canvas-token').value = '';
+        reconfiguring = false;
+        btn.disabled = false;
+        if (view === 'settings') location.hash = '#week';
+        view = 'week';
+        applyState(s);
+        toast('연결했습니다. 동기화를 시작합니다.');
+        runSync();
+      }, (er) => {
+        btn.disabled = false;
+        if (state) renderSettings(); else btn.textContent = '연결하고 동기화';
+        showMsg(err, er.message);
+      });
+  });
+  $('setup-cancel').addEventListener('click', () => {
+    reconfiguring = false;
+    $('canvas-token').value = '';
+    showMsg($('setup-error'), '');
+    render();
+    $('reconfig').focus();
+  });
+  $('reconfig').addEventListener('click', () => {
+    reconfiguring = true;
+    render();
+    $('setup').scrollIntoView({ block: 'start' });
+    $('canvas-url').focus({ preventScroll: true });
+  });
+
+  function settingToggle(id, key, onMsg, offMsg) {
+    $(id).addEventListener('change', (e) => {
+      const want = e.target.checked;
+      showMsg($('settings-error'), '');
+      post('/api/settings', { [key]: want }).then((s) => {
+        applyState(s);
+        toast(want ? onMsg : offMsg);
+      }, (err) => {
+        e.target.checked = !want;
+        showMsg($('settings-error'), err.message);
+      });
+    });
+  }
+  settingToggle('include-canvas', 'include_canvas', 'Canvas 과제도 캘린더 파일에 넣습니다', 'Canvas 과제는 캘린더 파일에서 뺍니다');
+  settingToggle('weekly-summary', 'weekly_summary', '주간 요약 일정을 넣습니다', '주간 요약 일정을 뺍니다');
+
+  $('m-course').addEventListener('change', function () {
+    const free = $('m-course-free');
+    free.hidden = this.value !== '__free__';
+    if (!free.hidden) free.focus();
+  });
+  $('manual-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const msg = $('manual-msg');
+    const sel = $('m-course');
+    const course = sel.value === '__free__' ? $('m-course-free').value.trim() : sel.value;
+    const text = $('m-text').value.trim();
+    const posted = $('m-date').value;
+    const say = (t, isErr, ids) => {
+      msg.replaceChildren();
+      if (!t) return;
+      msg.appendChild(h('p', { class: isErr ? 'inline-error' : 'ok-msg', role: isErr ? 'alert' : null }, t,
+        ids && ids.length ? [' ', h('button', { type: 'button', class: 'linkish', on: { click: () => jumpTo(ids[0]) } }, '보러 가기')] : null));
+    };
+    if (!text) { say('붙여 넣은 내용이 없습니다.', true); $('m-text').focus(); return; }
+    if (sel.value === '__free__' && !course) { say('과목 이름을 넣어 주세요.', true); $('m-course-free').focus(); return; }
+    const before = new Set(state.items.map((i) => i.id));
+    const btn = $('m-submit');
+    btn.disabled = true;
+    btn.replaceChildren(h('span', { class: 'spin', 'aria-hidden': 'true' }), '찾는 중…');
+    say('');
+    const body = { course_name: course, text };
+    if (posted) body.posted_at = posted;
+    post('/api/manual', body).then((s) => {
+      applyState(s);
+      const fresh = s.items.filter((i) => !before.has(i.id));
+      const rev = fresh.filter((i) => i.status === 'review');
+      if (rev.length) {
+        $('m-text').value = '';
+        say('마감 후보 ' + rev.length + '개를 찾아 왼쪽 목록에 올렸습니다.', false, rev.map((i) => i.id));
+        for (const i of rev) { const el = document.getElementById('item-' + i.id); if (el) el.classList.add('flash'); }
+      } else if (fresh.length) {
+        $('m-text').value = '';
+        say('마감 ' + fresh.length + '개를 찾았지만 이미 있는 일정과 겹칩니다.', false, fresh.map((i) => i.id));
+      } else {
+        say('마감으로 보이는 날짜를 찾지 못했습니다. 글에 날짜가 적혀 있는지 확인해 주세요.', true);
+      }
+    }, (err) => say(err.message, true)).then(() => {
+      btn.disabled = false;
+      btn.textContent = '마감 찾기';
+    });
+  });
+
+  // 상대 시각·D-day를 시간이 흐르는 대로 맞춘다
+  setInterval(() => {
+    if (!state) return;
+    if (dayKey(new Date(nowMs())) !== lastDay) { render(); return; }
+    document.querySelectorAll('[data-rel]').forEach((el) => { el.textContent = relTime(el.getAttribute('data-rel')); });
+  }, 30000);
+
+  function boot() {
+    const msg = $('boot-msg');
+    const retry = $('boot-retry');
+    msg.textContent = '불러오는 중…';
+    msg.className = 'sub';
+    retry.hidden = true;
+    api('GET', '/api/state').then((s) => {
+      $('boot').hidden = true;
+      $('m-date').value = dayKey(new Date(Date.parse(s.now) || Date.now()));
+      applyState(s);
+      if (!s.configured) $('canvas-url').focus();
+    }, (err) => {
+      msg.textContent = err.message;
+      msg.className = 'inline-error';
+      retry.hidden = false;
+      $('sync-meta').textContent = '연결 안 됨';
+    });
+  }
+  $('boot-retry').addEventListener('click', boot);
+  boot();
+})();
+</script>
+</body>
+</html>
