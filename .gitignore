@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+*.spec
+*.ics
+# 개인 설정·상태(토큰 포함)는 저장소에 넣지 않는다
+config.json
+state.json
