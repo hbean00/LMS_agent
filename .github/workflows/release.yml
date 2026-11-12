@@ -25,7 +25,17 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install pytest
-      - run: python -m pytest
+      - name: Run tests
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8   # 로그만 UTF-8로(파일 기본 인코딩은 그대로 두어 영어 윈도의 인코딩 버그도 잡는다)
+        run: |
+          set +e
+          python -m pytest -rfE --tb=short > pytest-out.txt 2>&1
+          code=$?
+          cat pytest-out.txt
+          if [ $code -ne 0 ]; then python scripts/ci_annotate.py pytest-out.txt; fi
+          exit $code
 
   build:
     if: startsWith(github.ref, 'refs/tags/v')
