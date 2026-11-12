@@ -8,7 +8,7 @@ import pytest
 
 from lms_agent import agent_cli, gradebook
 from lms_agent.store import Store
-from lms_agent.timeutil import iso, now_local
+from lms_agent.timeutil import iso, now_local, parse_iso
 
 
 def claude_json(model_text, is_error=False):
@@ -188,7 +188,7 @@ def test_deadline_evidence_must_be_verbatim_and_date_must_parse():
     res = agent_cli.run_task("deadline_from_text", inputs, runner=fake, command=CMD)
     assert res.ok and res.attempts == 2
     assert [d["title"] for d in res.data] == ["Lab3"] and res.data[0]["by"] == "ai"
-    assert res.data[0]["due"].startswith("2026-11-18T23:59")
+    assert parse_iso(res.data[0]["due"]) == parse_iso("2026-11-18T23:59:00+09:00")   # 같은 순간(CI는 UTC)
     assert "verbatim" in fake.calls[1]["input"]
     res = agent_cli.run_task("deadline_from_text", inputs, runner=FakeCLI({"deadlines": [halluc]}), command=CMD)
     assert not res.ok and res.data is None
@@ -298,7 +298,7 @@ def test_triage_due_change_must_match_evidence_date(tstore):
     fake = FakeCLI({"decisions": [D("f-b", "approved", "LAB4 보고서 마감이 11월 20일 자정으로 연장되었습니다.",
                                     due="2026-11-21T00:00:00+09:00")]})
     agent_cli.auto_triage(tstore, runner=fake, command=CMD)
-    assert {v["id"]: v for v in tstore.view()}["f-b"]["due"].startswith("2026-11-21T00:00")
+    assert parse_iso({v["id"]: v for v in tstore.view()}["f-b"]["due"]) == parse_iso("2026-11-21T00:00:00+09:00")
 
 
 def test_triage_conflict_double_approve_rejected(tstore):

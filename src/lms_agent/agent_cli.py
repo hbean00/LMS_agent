@@ -28,7 +28,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -71,7 +71,8 @@ def command_name(path: str | None) -> str | None:
     """화면에 보여 줄 이름: 'C:\\Users\\…\\npm\\claude.CMD' → 'claude'."""
     if not path:
         return None
-    return Path(path).stem.lower() or None
+    name = re.split(r"[\\/]", str(path).rstrip("\\/"))[-1]   # 윈도·맥·리눅스 경로 모두(Path는 지금 OS 규칙만 앎)
+    return os.path.splitext(name)[0].lower() or None
 
 
 def _scrub(msg: str, exe: str | None) -> str:
@@ -85,6 +86,8 @@ def _scrub(msg: str, exe: str | None) -> str:
             msg = re.sub(re.escape(home), "~", msg, flags=re.I)
     except RuntimeError:
         pass
+    msg = re.sub(r"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s)]+", "~", msg, flags=re.I)   # 다른 OS 모양의 홈 경로도
+    msg = re.sub(r"/(?:home|Users)/[^/\s]+", "~", msg)
     return re.sub(r"\s+", " ", msg).strip()[:200]
 
 
@@ -1001,6 +1004,9 @@ EVAL_CASES = [
 ]
 
 
+_EVAL_TZ = timezone(timedelta(hours=9))
+
+
 def _check_expect(case: dict, res: AiResult) -> str | None:
     exp = case["expect"]
     if not res.ok:
@@ -1019,6 +1025,7 @@ def _check_expect(case: dict, res: AiResult) -> str | None:
             hit = False
             for g in got:
                 d = parse_iso(g["due"])
+                d = d.astimezone(_EVAL_TZ) if d else None   # 평가 문장의 마감은 한국 시각(CI는 UTC에서 돈다)
                 if (d and d.month == w["month"] and d.day == w["day"]
                         and all(getattr(d, k) == w[k] for k in ("hour", "minute") if k in w)
                         and w.get("evidence_has", "") in g["evidence"]):
