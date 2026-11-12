@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 # 마감 찾기 규칙이 바뀌면 올린다. 저장된 값과 다르면 다음 동기화 때 모든 글을 다시 읽는다.
-RULES_VERSION = "2026.11.12-2"  # -2: 표의 다른 행·다른 마감에서 제출 방법을 끌어오지 않음
+RULES_VERSION = "2026.11.13-1"  # -1: "Oct. 22" 줄임말에서 문장을 끊지 않음, "Midterm Project"는 과제(시험 아님)
 
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -52,13 +52,26 @@ def html_to_text(s: str | None) -> str:
 _SPLIT = re.compile(r"(?<=[!?。])\s+|(?<=[^\d\s.][.])\s+")
 
 
+# 마침표로 끝나는 줄임말: 여기서 끊으면 'Oct. 22' 같은 날짜가 두 문장으로 갈라진다(실제 고려대 ASIC 공지)
+_ABBR = re.compile(r"(?i)(?:^|[\s(])(?:jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|mon|tue|tues|wed|thu|thur|thurs|"
+                   r"fri|sat|sun|no|vs|approx|dr|mr|ms|prof|e\.g|i\.e)\.$")
+
+
 def split_sentences(text: str) -> list[str]:
     out = []
     for line in text.split("\n"):
+        buf = ""
         for part in _SPLIT.split(line):
             part = part.strip()
-            if part:
-                out.append(part)
+            if not part:
+                continue
+            buf = f"{buf} {part}" if buf else part
+            if _ABBR.search(buf):   # 줄임말 뒤 → 다음 조각과 이어 붙인다
+                continue
+            out.append(buf)
+            buf = ""
+        if buf:
+            out.append(buf)
     return out
 
 
@@ -99,6 +112,12 @@ def deadline_kind(sentence: str) -> str | None:
     return None
 
 
+# 'Midterm Project'처럼 학기 시점 낱말 바로 뒤의 종류 낱말(title_hint가 이어 붙인다)
+_TERM_WORD = re.compile(r"(?i)midterm|final|중간|기말")
+_FOLLOW = re.compile(r"(?i)\s*(project|report|quiz|exam|프로젝트|보고서|퀴즈|시험)(?![a-z])")
+_EXAM_ONLY = re.compile(r"(?i)시험|고사|퀴즈|(?<![a-z])(?:quiz|exam)(?![a-z])")
+
+
 # ---------------------------------------------------------------- 과제 이름
 
 _TITLE_WORDS = (r"과제|숙제|레포트|리포트|보고서|프로젝트|실습|퀴즈|중간고사|기말고사|중간\s*시험|기말\s*시험|시험|"
@@ -135,6 +154,11 @@ def title_hint(text: str) -> str | None:
     if not best:
         return None
     w, n = _display_word(best.group("w")), best.group("n")
+    if not n and _TERM_WORD.fullmatch(best.group("w").strip()):
+        # 'Midterm Project'·'Final Report'·'Midterm Quiz': 학기 시점 낱말 뒤의 종류 낱말까지 이름에 넣는다
+        m2 = _FOLLOW.match(text, best.end())
+        if m2:
+            w = f"{w} {_display_word(m2.group(1))}"
     return f"{w} {n}" if n else w
 
 
@@ -440,8 +464,11 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
             email_to = addr.group(0) if addr else None
 
         hint = title_hint(s) or title_hint(" ".join(lines[max(0, i - 2):i]))
-        if kind == "과제" and hint and EXAM.search(hint):
+        if kind == "과제" and hint and EXAM.search(hint) and not TASK.search(hint):
             kind = "시험"
+        elif kind == "시험" and hint and TASK.search(hint) and not _EXAM_ONLY.search(hint) \
+                and not _EXAM_ONLY.search(s):
+            kind = "과제"   # 'Midterm Project … due'는 프로젝트 마감(중간 '시험'이 아님)
 
         score = (0 if h.relative else 2) + (1 if has_time else 0) + (1 if STRONG.search(s) else 0) - (2 if h.weekday_bad else 0)
         conf = "high" if score >= 4 else "medium" if score >= 2 else "low"

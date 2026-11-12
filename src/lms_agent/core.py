@@ -381,7 +381,8 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
                     and parse_iso(it["due"]).date() == c["due"].date()), None)
         if linked:
             title = linked["_name"]
-        elif c["hint"] and (any(ch.isdigit() for ch in c["hint"]) or c["kind"] == "시험"):
+        elif c["hint"] and (any(ch.isdigit() for ch in c["hint"]) or c["kind"] == "시험"
+                            or " " in c["hint"]):   # 'Midterm Project'처럼 과제 하나를 가리키는 이름
             title = c["hint"]
         else:
             title = c["source_title"] or c["hint"] or "마감"

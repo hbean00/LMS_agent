@@ -236,3 +236,36 @@ def test_title_hint_number_before_word():
 
 def test_html_to_text_keeps_lines():
     assert html_to_text("<p>a&amp;b</p><p>c<br>d</p>") == "a&b\nc\nd"
+
+
+# ---- 실제 고려대 ASIC 글(2026-11-13 사용자 제보: "퀴즈 같은 시험 일정이 안 보인다")
+
+def test_abbreviated_month_does_not_split_sentence():
+    """'Oct. 22'의 마침표에서 문장을 끊으면 날짜가 사라진다(실제 공지 'Announcement about Midterm Week')."""
+    text = ("Dear all,\nAs I have mentioned in the last lecture, we will have a short quiz session "
+            "(+ explanation on midterm project) in the regular class hour on Oct. 22, 2026 .\n"
+            "There is no class on Oct. 20, 2026 so that you can fully work on your programming assignment "
+            "that will be given today.\nRegards,")
+    found = find_deadlines(text, datetime(2026, 10, 15, 14, 0, tzinfo=KST))
+    assert [(f.due.date().isoformat(), f.kind) for f in found] == [("2026-10-22", "시험")]   # 휴강 줄은 마감 아님
+
+
+@pytest.mark.parametrize("s", ["Sept. 30", "Nov. 5", "Dec. 1", "Jan. 3"])
+def test_other_month_abbreviations_keep_date(s):
+    found = find_deadlines(f"The final quiz will be held on {s} in class.", REF)
+    assert len(found) == 1 and found[0].kind == "시험"
+
+
+def test_split_keeps_eg_and_ie():
+    from lms_agent.extract import split_sentences
+    assert split_sentences("Submit the report, e.g. Lab3 results. Then rest.") == [
+        "Submit the report, e.g. Lab3 results.", "Then rest."]
+
+
+def test_midterm_project_is_a_task_not_an_exam():
+    """게시판 'Midterm Project' 글의 '(due : 23:59 on 11/5)'는 프로젝트 보고서 마감이지 시험이 아니다."""
+    assert title_hint("Midterm Project") == "Midterm Project"
+    f = one("Midterm Project\n(due : 23:59 on 11/5)", ref=datetime(2026, 10, 20, 10, tzinfo=KST))
+    assert f.kind == "과제" and f.due == at(2026, 11, 5)
+    assert title_hint("Midterm quiz") == "Midterm Quiz"
+    assert one("Midterm quiz on Nov. 26 in class.").kind == "시험"
