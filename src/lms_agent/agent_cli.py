@@ -4,7 +4,8 @@
 - 작업 목록(TASKS): 작업마다 목적, 지시문(한국어+영어, JSON만 답하게), 보낼 글 만들기(글자 수 예산·가리기),
   JSON 스키마(형식·범위 검사), 사후 검사(비중 합 ~100, 근거 문장이 보낸 글에 그대로 있는지, 날짜가 근거와 맞는지 …),
   재시도(검사 오류를 그대로 인용해 고쳐 달라고 한 번 더), 시간 제한.
-  작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장).
+  작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
+  map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장).
 - 실행(run_task): `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·세션 저장 안 함 — 옛 버전이
   모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
@@ -611,6 +612,93 @@ def _approved(inputs: dict, item_id: str) -> bool:
     return False
 
 
+# ---- map_score_item·count_items (계약 14-2·14-4)
+
+MAP_MAX_THINGS = 20
+
+
+def _norm_name(s) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def _map_build(inputs: dict) -> tuple[str, list]:
+    """평가 항목 이름 목록 + 연결할 것마다 {key, 라벨, 출처, 글}(가려서). 검사 준비물은 inputs["_prep"]."""
+    names = inputs.get("names")
+    comps = [str(c) for c in inputs.get("components") or [] if str(c).strip()]
+    prep, parts, notes, budget, red = {}, [], [], MAX_TEXT, 0
+    for t in list(inputs.get("things") or [])[:MAP_MAX_THINGS]:
+        label, n1 = redact(_flat(str(t.get("label") or ""))[:120], names)
+        title, n2 = redact(_flat(str(t.get("title") or ""))[:160], names)
+        text, n3 = redact(_flat(str(t.get("text") or ""))[:600], names)
+        red += bool(n1 or n2 or n3)
+        block = f"### key: {t['key']}\n라벨/label: {label}\n출처/source: {title}\n글/text: {text}"
+        if len(block) > budget:
+            notes.append("글자 수 예산을 넘어 일부는 다음에 보냄")
+            break
+        budget -= len(block)
+        parts.append(block)
+        prep[str(t["key"])] = "\n".join((label, title, text))
+    if red:
+        notes.append("보내기 전에 이메일·학번·이름 등을 가림")
+    inputs["_prep"] = prep
+    inputs["_names"] = {_norm_name(c): c for c in comps}
+    head = "평가 항목 / grading components: " + " | ".join(comps)
+    return head + "\n\n" + "\n\n".join(parts), notes
+
+
+def _map_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    prep, names = inputs.get("_prep") or {}, inputs.get("_names") or {}
+    out, errors, seen = [], [], set()
+    for d in obj.get("links") or []:
+        key = str(d.get("key"))
+        if key not in prep:
+            errors.append(f"{key}: 목록에 없는 key / unknown key")
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        comp = d.get("component")
+        if comp is None or (isinstance(comp, str) and not comp.strip()):
+            out.append({"key": key, "component": None, "evidence": None})
+            continue
+        name = names.get(_norm_name(comp))
+        if name is None:
+            errors.append(f"{key}: component는 평가 항목 목록의 이름 그대로여야 합니다 / component must be one of the listed names")
+            continue
+        ev = _flat(str(d.get("evidence") or ""))
+        if not _quoted(ev, prep[key]):
+            errors.append(f"{key}: evidence가 그 항목의 글에 그대로 없음 / evidence not verbatim in that item's text")
+            continue
+        out.append({"key": key, "component": name, "evidence": unplace(ev)[:300]})
+    if errors and not final:
+        raise _Invalid("; ".join(errors[:6]))
+    return {"links": out, "skipped": errors}
+
+
+def _count_build(inputs: dict) -> tuple[str, list]:
+    lines = [redact(_flat(str(x)), inputs.get("names"))[0][:300] for x in inputs.get("lines") or []]
+    text, cut = cap_text("\n".join(lines), MAX_TEXT)
+    notes = [f"글이 길어 {MAX_TEXT:,}자만 보냄"] if cut else []
+    low = inputs.get("low")
+    head = (f"평가 항목 / component: {_flat(str(inputs.get('component') or ''))[:60]} "
+            f"(계열 / kind: {inputs.get('family') or ''})\n"
+            + (f"이미 본 번호로 최소 {low}개 / at least {low} already seen\n" if low else ""))
+    return head + text, notes
+
+
+def _count_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    n = obj.get("count")
+    if n is None:
+        return {"count": None, "evidence": None}
+    low = inputs.get("low") or 1
+    if n < low:
+        raise _Invalid(f"count {n}는 이미 본 최소 개수 {low}보다 작습니다 / count is below the {low} already seen")
+    ev = _flat(str(obj.get("evidence") or ""))
+    if not _quoted(ev, sent):
+        raise _Invalid("evidence는 입력 글에서 한 글자도 바꾸지 말고 그대로 복사해야 합니다 / evidence must be verbatim")
+    return {"count": int(n), "evidence": unplace(ev)[:300]}
+
+
 TASKS: dict[str, AiTask] = {}
 
 
@@ -694,6 +782,47 @@ register(AiTask(
                 "evidence": {"type": "string", "maxLength": 800}}}}}},
     build_input=_triage_build,
     post_validate=_triage_validate,
+))
+
+register(AiTask(
+    name="map_score_item",
+    purpose="규칙으로 못 정한 점수·마감이 어느 평가 항목(강의계획서의 비중 항목)에 해당하는지 고른다",
+    instructions=(
+        "작업: 아래 '연결할 것'마다 평가 항목 목록에서 해당하는 항목 이름을 하나 고르세요. 모르면 component를 null로.\n"
+        "Task: for each item below, pick the ONE grading component from the list that it belongs to, or null if unsure.\n"
+        "- component는 목록의 이름을 글자 그대로 / component must be copied exactly from the list.\n"
+        "- 예: 'Lab0' 점수표는 실습 과제라 'Homework assignments'(w/ short reports)일 수 있음 / e.g. lab scores often count "
+        "as homework assignments.\n"
+        "- evidence: 그 항목의 라벨·출처·글에서 판단 근거를 한 글자도 바꾸지 말고 그대로 복사 / copy the evidence verbatim "
+        "from that item's label, source or text.\n"
+        "- 목록에 없는 key를 만들지 마세요 / never invent keys. 다른 정보는 넣지 마세요."),
+    schema={"type": "object", "required": ["links"], "properties": {
+        "links": {"type": "array", "maxItems": MAP_MAX_THINGS, "items": {
+            "type": "object", "required": ["key", "component"], "properties": {
+                "key": {"type": "string", "minLength": 1, "maxLength": 300},
+                "component": {"type": "string", "maxLength": 80},
+                "evidence": {"type": "string", "maxLength": 400}}}}}},
+    build_input=_map_build,
+    post_validate=_map_validate,
+))
+
+register(AiTask(
+    name="count_items",
+    purpose="규칙으로 명시·단서를 못 찾았을 때 실습·과제 같은 세부 항목이 학기에 모두 몇 개인지 찾는다",
+    instructions=(
+        "작업: 아래 강의 글 줄들에서 이 평가 항목(예: 실습 Lab)이 학기 전체에 모두 몇 개인지 찾으세요. "
+        "글에 근거가 없으면 count를 null로. 추측하지 마세요.\n"
+        "Task: from the course text lines below, find how many of these items (e.g. labs) there are in the whole term. "
+        "If the text does not say, return null. Do not guess.\n"
+        "- 'Lab 0~6'은 7개, 'Next labs: A → B → C'는 지금 번호 뒤에 3개가 더 있다는 뜻 / 'Lab 0~6' means 7; "
+        "'Next labs: A → B → C' means three more after the current one.\n"
+        "- evidence: 근거 줄을 입력 글에서 한 글자도 바꾸지 말고 그대로 복사 / copy the evidence line verbatim.\n"
+        "- 다른 정보는 넣지 마세요 / include no other data."),
+    schema={"type": "object", "required": ["count"], "properties": {
+        "count": {"type": "integer", "minimum": 1, "maximum": 30},
+        "evidence": {"type": "string", "maxLength": 400}}},
+    build_input=_count_build,
+    post_validate=_count_validate,
 ))
 
 

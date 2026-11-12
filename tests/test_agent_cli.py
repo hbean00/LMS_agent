@@ -531,3 +531,64 @@ def test_ai_and_grade_settings_routes(tmp_path):
         call("/api/grades/settings", {"student_id": "x"})
     call("/api/grades/settings", {"student_id": None})
     assert "student_id" not in s.data["settings"]
+
+
+# ---------------------------------------------------------------- 평가 항목 연결·개수(계약 14-2·14-4)
+
+MAP_INPUT = {"components": ["Homework assignments", "Midterm quiz", "Final quiz"],
+             "things": [{"key": "txt:announcement:abc", "label": "Quiz 1", "title": "Quiz 1 결과 (ta@example.ac.kr)",
+                         "text": "Quiz 1: 8/10 — 학번 2026123433 문의는 조교에게"}]}
+
+
+def test_map_score_item_validates_names_and_quotes(store):
+    fake = FakeCLI({"links": [{"key": "txt:announcement:abc", "component": "midterm QUIZ", "evidence": "Quiz 1 결과"}]})
+    res = agent_cli.run_task("map_score_item", MAP_INPUT, runner=fake, command=CMD, store=store)
+    assert res.ok and res.data["links"] == [{"key": "txt:announcement:abc", "component": "Midterm quiz",
+                                             "evidence": "Quiz 1 결과"}]
+    sent = fake.calls[0]["input"]
+    assert "ta@example.ac.kr" not in sent and "2026123433" not in sent and "[이메일]" in sent
+    assert "Homework assignments | Midterm quiz | Final quiz" in sent
+    # 목록에 없는 이름·지어낸 인용 → 고쳐 묻고, 그래도면 버린다
+    bad = FakeCLI({"links": [{"key": "txt:announcement:abc", "component": "Quizzes", "evidence": "Quiz 1 결과"}]})
+    res = agent_cli.run_task("map_score_item", MAP_INPUT, runner=bad, command=CMD)
+    assert res.ok and res.data["links"] == [] and res.attempts == 2 and "목록" in bad.calls[1]["input"]
+    bad = FakeCLI({"links": [{"key": "txt:announcement:abc", "component": "Final quiz", "evidence": "기말 퀴즈입니다"}]})
+    res = agent_cli.run_task("map_score_item", MAP_INPUT, runner=bad, command=CMD)
+    assert res.ok and res.data["links"] == []
+    unknown = FakeCLI({"links": [{"key": "nope", "component": None}]})
+    res = agent_cli.run_task("map_score_item", MAP_INPUT, runner=unknown, command=CMD)
+    assert res.ok and res.data["links"] == [] and res.data["skipped"]
+    none = FakeCLI({"links": [{"key": "txt:announcement:abc", "component": None}]})
+    assert agent_cli.run_task("map_score_item", MAP_INPUT, runner=none, command=CMD).data["links"][0]["component"] is None
+
+
+def test_count_items_needs_quote_and_at_least_observed(store):
+    lines = ["Next labs: P&R → STA → SRAM", "Lab3 Assignment"]
+    ok = FakeCLI({"count": 7, "evidence": "Next labs: P&R → STA → SRAM"})
+    res = agent_cli.run_task("count_items", {"component": "Homework assignments", "family": "lab", "lines": lines,
+                                             "low": 4}, runner=ok, command=CMD)
+    assert res.ok and res.data == {"count": 7, "evidence": "Next labs: P&R → STA → SRAM"}
+    assert "최소 4개" in ok.calls[0]["input"]
+    low = FakeCLI({"count": 3, "evidence": "Lab3 Assignment"})
+    res = agent_cli.run_task("count_items", {"component": "X", "family": "lab", "lines": lines, "low": 4},
+                             runner=low, command=CMD)
+    assert not res.ok and res.attempts == 2
+    fake_quote = FakeCLI({"count": 9, "evidence": "There are 9 labs"})
+    assert not agent_cli.run_task("count_items", {"component": "X", "family": "lab", "lines": lines, "low": 4},
+                                  runner=fake_quote, command=CMD).ok
+    too_many = FakeCLI({"count": 31, "evidence": "Lab3 Assignment"})
+    assert not agent_cli.run_task("count_items", {"component": "X", "family": "lab", "lines": lines},
+                                  runner=too_many, command=CMD).ok
+    unknown = FakeCLI({"count": None})
+    assert agent_cli.run_task("count_items", {"component": "X", "family": "lab", "lines": lines},
+                              runner=unknown, command=CMD).data == {"count": None, "evidence": None}
+    assert {"map_score_item", "count_items"} <= set(agent_cli.TASKS)
+
+
+def test_demo_fake_ai_answers_new_tasks():
+    from lms_agent import mock_ai
+    res = agent_cli.run_task("map_score_item", MAP_INPUT, runner=mock_ai.runner, command="claude")
+    assert res.ok and res.attempts == 1 and res.data["links"][0]["component"] is None
+    res = agent_cli.run_task("count_items", {"component": "X", "family": "lab", "lines": ["Lab 1"]},
+                             runner=mock_ai.runner, command="claude")
+    assert res.ok and res.attempts == 1 and res.data["count"] is None

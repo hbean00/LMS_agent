@@ -74,7 +74,8 @@ def test_user_decision_during_ai_wins(tmp_path, canvas):
     core.sync(canvas, a)
     a.data["settings"].update(ai_cli=True, ai_auto_triage=True)
     a.save()
-    targets = [v["id"] for v in _review(a)]
+    # 데모의 시험 후보(ASIC 'Quiz', 계약 14-9)는 마감 낱말이 없어 가짜 AI가 보류(keep)한다 → 마감 후보만 고른다
+    targets = [v["id"] for v in _review(a) if v["kind"] != "시험"]
     assert len(targets) >= 2
     user_pick = targets[0]
 

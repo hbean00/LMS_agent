@@ -79,9 +79,14 @@ def _decide(text: str) -> dict:
 
 
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """triage_review만 흉내 낸다. 다른 작업(평가 비중·마감 찾기)은 '찾지 못함'으로 답한다(데모는 규칙이 찾는다)."""
+    """triage_review만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수)은 '찾지 못함'으로 답한다(데모는 규칙이 찾는다)."""
     if "### id: " in (input or ""):
         model = json.dumps(_decide(input), ensure_ascii=False)
+    elif "### key: " in (input or ""):   # map_score_item: 모르면 null
+        keys = re.findall(r"^### key: (.+)$", input, re.M)
+        model = json.dumps({"links": [{"key": k.strip(), "component": None} for k in keys]}, ensure_ascii=False)
+    elif '"count"' in (input or "") and '"links"' not in (input or ""):   # count_items: 근거 없으면 null
+        model = json.dumps({"count": None}, ensure_ascii=False)
     else:
         model = json.dumps({"components": [], "deadlines": [], "evidence": ""}, ensure_ascii=False)
     out = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": model,

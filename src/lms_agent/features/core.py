@@ -18,11 +18,15 @@ SETTINGS = {"include_canvas": True, "weekly_summary": True, "review_reminder": F
 
 
 def items(ctx):
-    """항목(사용자 결정 반영) + 주차·짧은 과목명. 여러 칸이 같이 쓴다."""
+    """항목(사용자 결정 반영) + 주차·짧은 과목명 + 평가 항목 연결(component·component_by, 계약 14-9). 여러 칸이 같이 쓴다.
+    제외(hidden)한 과목의 항목은 store.view()가 이미 뺀다(계약 15장)."""
     def make():
+        from .. import gradebook
         cache = ctx.app.store.data.get("cache")
         its = ctx.app.store.view()
-        core.annotate(its, semester(ctx), cache)
+        sem = semester(ctx)
+        core.annotate(its, sem, cache)
+        gradebook.link_items(ctx.app.store, its, sem)
         return its
     return ctx.get("items", make)
 
@@ -32,7 +36,12 @@ def semester(ctx):
 
 
 def courses(ctx):
-    return ctx.get("courses", lambda: core.course_summaries(ctx.app.store.data.get("cache")))
+    """과목 목록 + mode·mode_suggest·read_counts(계약 15장). 제외한 과목도 들어 있다(화면의 '제외한 과목'용)."""
+    def make():
+        from .. import course_modes
+        d = ctx.app.store.data
+        return course_modes.annotate_courses(core.course_summaries(d.get("cache")), d)
+    return ctx.get("courses", make)
 
 
 # ------------------------------------------------------------ 상태
@@ -103,6 +112,29 @@ def update_item(app, body, item_id):
     out = app.state()
     out["replaced"] = replaced
     return out
+
+
+@router.route("POST", r"/api/item/(?P<item_id>[\w\-]+)/component")
+def item_component(app, body, item_id):
+    """마감·시험 항목을 평가 항목에 직접 연결 {"component": 이름|null}(null = 연결하지 않음), 되돌리기 {"reset": true}
+    (사용자 연결을 지워 규칙·AI가 다시 정함) — 계약 14-9."""
+    from .. import gradebook
+    try:
+        gradebook.set_item_component(app.store, item_id, body)   # 잘못된 이름은 ValueError → 400
+    except KeyError:
+        raise ApiError(404, "항목을 찾을 수 없습니다. 동기화 후 다시 시도하세요") from None
+    app.store.save()
+    return app.state()
+
+
+@router.route("POST", r"/api/course/(?P<course_id>[\w\-]+)/mode")
+def course_mode(app, body, course_id):
+    """과목 종류 {"mode": "normal"|"pass_fail"|"hidden"} — 계약 15장. 제외하면 그 과목 일정은 다음 구글 반영 때 지워진다."""
+    from .. import course_modes
+    course_modes.set_mode(app.store, course_id, body.get("mode"))   # 잘못되면 ValueError → 400
+    app.store.save()
+    app.emit("changed")
+    return app.state()
 
 
 @router.route("POST", r"/api/manual")

@@ -72,7 +72,12 @@ def cmd_demo(args) -> None:
     home = Path(tempfile.mkdtemp(prefix="lms-agent-demo-"))
     cfg = {"canvas_url": base, "token": DEMO_TOKEN}
     from . import mock_ai  # 데모의 [AI로 정리]는 가짜 AI(실제 서비스로 글을 보내지 않음)
-    app = App(_store(home), home, cfg=cfg, demo=True,
+    from .mock_canvas import DEMO_STUDENT_ID
+    store = _store(home)
+    # 데모만: 가짜 점수표의 내 줄(가짜 학번)을 찾게 학번을 미리 넣는다 → 성적 화면에 LAB 세부 점수가 보인다(계약 14장).
+    # 설정에서 지우면 '학번을 넣으면 내 점수를 찾아 드려요' 안내를 볼 수 있다.
+    store.data["settings"].setdefault("student_id", DEMO_STUDENT_ID)
+    app = App(store, home, cfg=cfg, demo=True,
               google=(DEMO_CLIENT_ID, DEMO_CLIENT_SECRET), google_urls=urls(gbase),
               ai_runner=mock_ai.runner, ai_command=mock_ai.DEMO_COMMAND)
     app.do_sync()

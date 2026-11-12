@@ -48,7 +48,7 @@ def find(store, course, due):
 
 def test_report_counts(demo):
     _, _, _, r = demo
-    assert (r["courses"], r["assignments"], r["errors"]) == (4, 5, [])
+    assert (r["courses"], r["assignments"], r["errors"]) == (5, 5, [])   # 105 연구실 안전 교육(과제·공지 없음)
     assert r["no_deadline"] == 1  # Weekly log 9
 
 
@@ -245,3 +245,50 @@ def test_server_flow_to_calendar(running):
 
     code, body, _ = _req(url + "/api/setup", "POST", app.token, {"canvas_url": "x", "token": "y"})
     assert code == 400  # 데모에서는 설정 변경 불가
+
+
+def test_server_grades_links_exams_and_modes(running):
+    """계약 14·15장 칸이 화면 API에 그대로 나온다(데모: ASIC 'Updated Grading Policy'·퀴즈 공지, 105 교육 과목)."""
+    app, url = running
+    state = json.loads(_req(url + "/api/state", token=app.token)[1])
+    asic = next(c for c in state["grades"]["courses"] if c["course_id"] == "101")
+    names = [x["name"] for x in asic["config"]["components"]]
+    assert names == ["Homework assignments", "Midterm project", "Midterm quiz", "Final project", "Final quiz", "Attendance"]
+    hw = asic["config"]["components"][0]
+    assert set(hw) >= {"members", "derived", "count", "schedule", "date_status"}
+    # 이 시험은 첨부를 받지 않아(Lab6.pdf의 'Next labs' 단서 없음) 관찰만: LAB 0·1(점수 공지 제목)·3~6 → 최소 7개
+    assert (hw["count"]["n"], hw["count"]["low"], hw["count"]["basis"]) == (None, 7, "observed")
+    assert {"LAB4 보고서", "LAB5 예비보고서"} <= {s["title"] for s in hw["schedule"]}
+    assert asic["remaining"][0] == {"component": "Homework assignments", "weight": 30.0, "count_left": None, "range": None}
+    assert state["grades"]["score_files_waiting"] == 0 and state["grades"]["score_files_unmatched"] == []
+    quiz = next(i for i in state["items"] if i["course_id"] == "101" and i["kind"] == "시험")
+    assert (quiz["title"], quiz["component"], quiz["component_by"]) == ("Quiz", "Midterm quiz", "rules")
+    assert parse_iso(quiz["due"]) == at(5)
+    up = state["exams"]["upcoming"]
+    final = next(i for i in state["items"] if i["course_id"] == "103" and i["kind"] == "시험")   # 평가 항목이 없는 과목
+    assert [(r["course_short"], r["component"], r["weight"], r["item_id"]) for r in up] == [
+        ("ASIC설계(영강)", "Midterm quiz", 5.0, quiz["id"]), ("반도체공학", None, None, final["id"])]
+    assert parse_iso(up[1]["due"]) == at(30, 15, 0) and up[1]["title"] == "기말고사" and up[1]["status"] == "review"
+    assert {"course_id": "101", "course_short": "ASIC설계(영강)", "component": "Final quiz", "weight": 5.0} \
+        in state["exams"]["not_announced"]
+    cs = {c["id"]: c for c in state["courses"]}
+    assert cs["105"]["mode_suggest"]["mode"] == "hidden" and cs["104"]["mode_suggest"]["mode"] == "pass_fail"
+    assert all(set(c["read_counts"]) == {"announcements", "board_posts", "messages", "pdfs", "attachments"}
+               for c in cs.values())
+    code, body, _ = _req(url + "/api/course/105/mode", "POST", app.token, {"mode": "hidden"})
+    assert code == 200 and {c["id"]: c for c in json.loads(body)["courses"]}["105"]["mode"] == "hidden"
+    assert _req(url + "/api/course/105/mode", "POST", app.token, {"mode": "x"})[0] == 400
+    assert _req(url + "/api/grades/101/count", "POST", app.token, {"component": "Homework assignments", "n": 99})[0] == 400
+    code, body, _ = _req(url + f"/api/item/{quiz['id']}/component", "POST", app.token, {"component": "Final quiz"})
+    assert code == 200 and json.loads(body)["exams"]["upcoming"][0]["component"] == "Final quiz"
+    # 연결을 끊으면(null) 연결 안 된 시험으로 남는다 — 같은 시험이 두 번 나오지 않는다
+    code, body, _ = _req(url + f"/api/item/{quiz['id']}/component", "POST", app.token, {"component": None})
+    up = json.loads(body)["exams"]["upcoming"]
+    assert code == 200 and [r["item_id"] for r in up].count(quiz["id"]) == 1
+    assert next(r for r in up if r["item_id"] == quiz["id"])["component"] is None
+    # 제외(rejected)한 시험·제외(hidden)한 과목의 시험은 빠진다
+    code, body, _ = _req(url + f"/api/item/{final['id']}", "POST", app.token, {"decision": "rejected"})
+    assert code == 200 and final["id"] not in [r["item_id"] for r in json.loads(body)["exams"]["upcoming"]]
+    _req(url + f"/api/item/{final['id']}", "POST", app.token, {"decision": "pending"})
+    code, body, _ = _req(url + "/api/course/103/mode", "POST", app.token, {"mode": "hidden"})
+    assert code == 200 and not [r for r in json.loads(body)["exams"]["upcoming"] if r["course_id"] == "103"]

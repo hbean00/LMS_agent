@@ -42,10 +42,13 @@ def test_estimate_and_needed_for_remaining_exam(store):
     assert dsp["using_default_dist"] and dsp["needed"]
     assert {n["component"] for n in dsp["needed"]} == {"기말고사"}
     assert sec["priorities"] and sec["priorities"][0]["course"] == "디지털신호처리"
-    # 설정이 없는 과목은 추정 없이 빈 칸
+    # 점수가 없는 과목은 추정 없이(데모 ASIC은 'Updated Grading Policy' 공지로 비중만 자동으로 들어가 있다)
     asic = next(x for x in sec["courses"] if x["course_id"] == "101")
-    assert asic["estimate"] is None and asic["config"]["components"] == []
+    assert asic["estimate"] is None and asic["auto"]
+    assert [c["name"] for c in asic["config"]["components"]][:2] == ["Homework assignments", "Midterm project"]
     assert asic["canvas_score"] == 92.5
+    rb = next(x for x in sec["courses"] if x["course_id"] == "103")   # 설정이 없는 과목은 빈 칸
+    assert rb["estimate"] is None and rb["config"]["components"] == []
 
 
 def test_missing_weight_is_not_called_no_remaining(store):

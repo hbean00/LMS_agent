@@ -13,6 +13,22 @@ from .extract import title_tokens
 from .timeutil import iso, now_local, parse_iso, parse_local_input
 
 DECISIONS = ("approved", "rejected", "pending")
+COURSE_MODES = ("normal", "pass_fail", "hidden")
+
+
+def course_mode(data: dict, course_id) -> str:
+    """과목 종류(계약 15장): store.data["course_prefs"][cid]["mode"] — 없으면 "normal"."""
+    if course_id is None:
+        return "normal"
+    p = (data.get("course_prefs") or {}).get(str(course_id)) or {}
+    m = p.get("mode") if isinstance(p, dict) else None
+    return m if m in COURSE_MODES else "normal"
+
+
+def hidden_courses(data: dict) -> set[str]:
+    """제외(hidden)한 과목 id들. 항목은 계속 만들되 화면·캘린더·성적·알림·AI 정리에서 뺀다(계약 15장)."""
+    return {str(cid) for cid, p in (data.get("course_prefs") or {}).items()
+            if isinstance(p, dict) and p.get("mode") == "hidden"}
 
 
 def _specific_title(title: str) -> bool:
@@ -260,13 +276,18 @@ class Store:
         self.data["last_export"] = {"at": iso(now_local()),
                                     "items": {it["id"]: f"{it.get('due')}|{it.get('title')}" for it in items}}
 
-    def view(self) -> list[dict]:
+    def view(self, include_hidden: bool = False) -> list[dict]:
+        """화면용 항목(사용자 결정 반영). 제외(hidden)한 과목의 항목은 빼고 돌려준다 — 대시보드·확인함·학기·캘린더(.ics·구글)·
+        보상·알림·AI 정리가 모두 이것을 쓰므로 한곳에서 빠진다(계약 15장). 저장된 항목·결정은 그대로라 다시 보이면 바로 돌아온다."""
         seen = self.data.get("seen") or {}
         export = self.data.get("last_export") or {"at": None, "items": {}}
         gcal = self.data.get("gcal") or {}
         gcal_events = gcal.get("events") or {}
+        hidden = set() if include_hidden else hidden_courses(self.data)
         out = []
         for it in self.data["items"]:
+            if hidden and str(it.get("course_id")) in hidden:
+                continue
             u = self.data["user"].get(it["id"], {})
             title = u.get("title") or it["title"]
             due = u.get("due") or it.get("due")

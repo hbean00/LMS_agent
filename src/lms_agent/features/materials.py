@@ -12,6 +12,10 @@ from pathlib import Path
 
 from .. import materials
 from ..api import ApiError, router
+from ..store import hidden_courses
+
+ANNOUNCEMENT_POST = "board:announcements-"   # core._announcement_files의 가상 게시판(board_id "announcements")
+ANNOUNCEMENT_FILES = "공지 첨부 파일"
 
 # 앱에서 바로 열면 프로그램이 실행되는 형식. 게시판 첨부는 누구나 올릴 수 있으니 폴더에서 직접 확인하게 한다.
 RUNNABLE = {".exe", ".com", ".bat", ".cmd", ".scr", ".pif", ".msi", ".msp", ".msc", ".cpl", ".lnk", ".url",
@@ -57,11 +61,16 @@ def materials_state(app, ctx):
     d = app.store.data
     shorts = ctx.get("materials_shorts", lambda: materials.short_names_of(d.get("cache")))
     items = []
+    hidden = hidden_courses(d)
     for key, m in (d.get("downloads") or {}).items():
         path = m.get("path") or ""
+        ann = str(m.get("post_key") or "").startswith(ANNOUNCEMENT_POST)
         items.append({
             "key": key, "course_short": m.get("course_short") or shorts.get(str(m.get("course_id"))),
-            "board_title": m.get("board_title"), "post_title": m.get("post_title"), "filename": m.get("filename"),
+            # 공지 본문에 링크된 파일을 모은 가상 게시판은 화면에서 '공지 첨부 파일'(저장 폴더 이름 '공지'는 그대로: board_folder)
+            "board_title": ANNOUNCEMENT_FILES if ann else m.get("board_title"), "board_folder": m.get("board_title"),
+            "course_hidden": str(m.get("course_id")) in hidden,
+            "post_title": m.get("post_title"), "filename": m.get("filename"),
             "size": m.get("size"), "posted_at": m.get("posted_at"), "downloaded_at": m.get("downloaded_at"),
             "pdf_ok": m.get("pdf_ok"), "post_key": m.get("post_key"), "exists": bool(path) and os.path.isfile(path),
         })

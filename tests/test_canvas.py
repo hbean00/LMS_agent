@@ -85,7 +85,7 @@ def test_whoami(mock):
 def test_courses_include_syllabus(mock):
     _, cv = mock
     courses = {c["id"]: c for c in cv.courses()}
-    assert sorted(courses) == [101, 102, 103, 104]
+    assert sorted(courses) == [101, 102, 103, 104, 105]   # 105: 정규 수업이 아닌 교육(계약 15장 '제외' 제안)
     assert "ASIC설계" in courses[101]["name"] and courses[101]["course_code"] == "EE401"
     assert "기말고사" in courses[103]["syllabus_body"]
     assert courses[101]["enrollments"][0]["computed_current_score"] == 92.5

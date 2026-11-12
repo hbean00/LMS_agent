@@ -537,3 +537,80 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 첫 요약 카드 행: "일정에 넣은 마감"(다가오는 scheduled), "확인할 후보"(review 전부), "받은 자료".
 - Item에 `orig_due`, `orig_title`(직접 고쳤을 때 원래 값, 아니면 null).
 - 화면: 겹치는 창은 한 번에 하나(소식 → 튜토리얼 제안 → 튜토리얼 → "이제 앱을 안 열어도 돼요" 카드), 화면별 팁은 튜토리얼을 거절했을 때만. 충돌 고르기 창(`#pick-dlg`), 대체된 후보는 승인한 줄 밑에 접힘. 날짜 축은 자기 날짜 칸 안(23:59 = 칸의 85%).
+
+## 14. 점수 → 평가 항목 연결과 세부 점수(LAB 등) (사용자 요청 2026-11-13, v0.5)
+
+사용자: "LAB0, LAB1…이 사실 Homework assignment인데 서비스가 알아서 반영하려면? 강의계획서와 다른 항목이 어디에 해당하는지 반영하는 기능 + 총 몇 개의 LAB인지 어떻게 알까."
+원칙: 규칙 → (켜져 있으면) AI → 사용자 순. 자동 연결은 근거와 함께 보이고, 사용자가 바꾸면 그게 이긴다. 평가 비중(`auto_fill`)의 자동 표시는 연결·개수 때문에 사라지지 않는다.
+
+### 14-1. 점수 후보의 키
+`gradebook.candidates()`의 모든 후보에 안정적인 `key`: 성적 PDF는 `"pdf:<pdf_texts 키>"`(기존), 글 속 점수 문장은 `"txt:<source_type>:<sha1(course_id|source_title|label|score)[:12]>"`.
+
+### 14-2. 어느 평가 항목인지(연결)
+- `gradebook.link_candidates(store, course_id, components, cands) -> {key: {"component": 이름|None, "by": "rules"|"ai"|"user", "reason": str, "evidence": str|None}}`.
+- 순서: 사용자(`store.data["grade_links"][cid][key] = {"component": 이름|null, "at"}`, null = "이 과목 성적에 넣지 않음") → AI 기억(`store.data["grade_links_ai"][cid][key]`) → 규칙.
+- 규칙: 후보 라벨의 **계열**(lab·실습 / hw·homework·과제·assignment / report·레포트·보고서 / quiz·퀴즈 / midterm·중간 / final·기말 / project·프로젝트 / attendance·출석)을 항목 이름의 낱말과, 비중 근거 문장(`auto_source`)의 `(w/ …)` 별칭(예: Homework assignments ← "short reports", Midterm project ← "midterm report")에 맞춘다.
+  lab 계열은 이름에 lab·실습이 있는 항목 → 없으면 homework·hw·과제·assignment 항목 → 없으면 report 별칭 항목. midterm·final처럼 후보가 둘 이상이면(예: Midterm project / Midterm quiz) 라벨·출처 제목의 다른 낱말(project·quiz·exam·시험·report)로 가르고, 그래도 둘 이상이거나 없으면 `component: None`(화면: "어느 항목인지 골라 주세요").
+- 다른 과목·과목 모르는 후보는 연결하지 않는다.
+- AI 작업 `map_score_item`(agent_cli, 동기화 뒤 자동 단계에서 규칙이 못 정한 것만, AI가 켜져 있을 때): 답의 항목 이름이 목록에 있어야 하고 근거 인용이 보낸 글에 그대로 있어야 한다. 결과는 `grade_links_ai`에 기억.
+
+### 14-3. 세부 점수(members)
+- 연결된 후보는 그 항목의 `members`가 된다(상태를 만들 때 계산, 설정에 저장하지 않음 — 비중이 공지로 바뀌어도 다시 붙는다):
+  `courses[].config.components[i].members = [{"key", "label", "score", "max_score", "mean", "sd", "n", "rank", "source_type", "source_title", "posted_at", "url", "link_by", "link_reason"}]`(라벨 번호 순). 같은 라벨이 여러 번(다시 공지)이면 가장 최근 것.
+- members가 있는 항목은 점수를 직접 넣지 않는다: `components[i].derived = {"score_pct", "mean_pct", "sd_pct", "received", "basis": "per_item"|"average"}`. 기본은 세부 점수마다 같은 비중.
+
+### 14-4. 몇 개인지(count)
+- `components[i].count = {"n", "low", "high", "basis": "stated"|"hint"|"observed"|"user", "evidence", "source_title", "by": "rules"|"ai"|"user"} | null`.
+- 규칙 — 명시(`stated`): "Lab 0~6", "Lab0-Lab6", "총 7개(의) 실습/랩/과제", "7 labs", "7 lab assignments", "과제 7회" → n. 단서(`hint`): 같은 글에서 가장 큰 LabK 뒤의 "Next labs: A → B → C", "다음 실습: A, B, C" → n = K + 1 + 목록 수(예: Lab3.pdf "Next labs: P&R → STA → SRAM" → 7).
+  관찰(`observed`): 과목 글 전체(점수 라벨, 찾은 마감 제목, 게시판 글 제목, 받은 자료 파일 이름)에서 본 번호 → `low` = 0번이 있으면 최대 번호 + 1, 아니면 최대 번호, `high` = null.
+- AI 작업 `count_items`(규칙이 명시·단서를 못 찾고 AI가 켜져 있을 때): 그 계열 낱말이 있는 줄들을 보내 {count|null, evidence}를 받는다. 인용이 그대로 있어야 하고, count는 관찰 `low` 이상 30 이하.
+- 사용자: `POST /api/grades/<cid>/count {"component": 이름, "n": 정수|null}` → `store.data["grade_counts"][cid][정규화한 이름] = {"n", "at"}`(null = 지우기).
+- 우선순위: 사용자 > 명시 > 단서(규칙) > 단서(AI) > 관찰.
+
+### 14-5. 추정에 넣기
+- `gradebook.expand_components(components)` → `grades.estimate`에 넣을 목록. members 없는 항목은 그대로.
+  members 있고 n을 아는(관찰만이 아닌) 항목: 받은 세부 점수마다 `{"name": "<항목> · <라벨>", "weight": W/n, …점수}`, 남은 것 하나 `{"name": "<항목> 남은 <n−r>개", "weight": W·(n−r)/n}`(점수 없음 → 남은 평가).
+  n을 모르면(관찰만): 받은 것의 평균 비율로 W 전체를 하나로(점수·평균 = 평균 비율, 표준편차 = 비율 평균), 메모 "남은 개수를 몰라 받은 것 평균으로 어림".
+- 필요 점수·우선순위는 남은 가상 항목을 남은 평가로 본다. `courses[].remaining = [{"component", "weight", "count_left", "range": [lo, hi] | null}]`. 추정 메모에 개수 근거를 넣는다.
+
+### 14-6. 요청
+- `POST /api/grades/<cid>/link {"key", "component": 이름|null}` → 사용자 연결, `{"key", "reset": true}` → 사용자 연결 지우기(규칙·AI로 돌아감). 응답은 새 state.
+- `POST /api/grades/<cid>/count` (14-4). 연결·개수는 `save_course`가 아니므로 평가 비중의 `auto` 표시를 지우지 않는다.
+
+### 14-7. 학번 안내
+- `state.grades.score_files_waiting`: 학번이 없을 때 받아 둔 성적 PDF 수(`is_score_file`), 학번이 있으면 0. `state.grades.score_files_unmatched`: 학번은 있는데 내 줄을 못 찾은 성적 PDF 파일 이름 목록.
+- 화면: 성적 화면 맨 위 안내("점수표 PDF 2개가 있어요. 학번을 넣으면 내 점수를 찾아 드려요" + 학번 칸), 설정에도 같은 학번 칸. 못 찾은 파일이 있으면 "학번을 확인해 주세요".
+
+### 14-8. 실제 데이터 기준(ASIC, 95079)
+학번을 넣으면 Lab0·Lab1 성적 PDF → "Homework assignments"(30%)의 members 2개, count n=7(단서: Lab3.pdf "Next labs: P&R (IC Compiler II) → STA (PrimeTime) → SRAM"), 남은 5개 = 30%×5/7 ≈ 21.4%. 학번이 없어도 count는 보인다(관찰 low 4 = LAB 0~3, 단서 7).
+
+### 14-9. 평가 항목의 일정(시험 일정) (사용자 제보 2026-11-13: "ASIC 퀴즈 같은 시험 일정이 어디에 있는지 안 보인다")
+- 찾은 마감·시험 항목(Item)도 14-2와 같은 규칙(→ AI → 사용자)으로 평가 항목에 연결한다. Item 추가 필드: `component`(이름|null), `component_by`("rules"|"ai"|"user").
+  같은 계열 항목이 둘 이상이면(Midterm quiz / Final quiz) 근거 문장의 midterm·중간 / final·기말 낱말, 없으면 학기 앞쪽 절반(`semester.week_now` 기준 주차 ≤ 주 수/2)인지로 가른다. 실제 예: 공지 "short quiz session (+ explanation on midterm project) … on Oct. 22" → Midterm quiz.
+- 사용자 연결: `POST /api/item/<id>/component {"component": 이름|null}`(같은 그룹 키 방식으로 `store.data["item_links"][item_id]`).
+- `courses[].config.components[i].schedule = [{"item_id", "title", "due", "kind", "status", "past": bool}]`, `date_status: "announced" | "past" | "not_announced"`(연결된 항목이 없으면 not_announced).
+- `state.exams = {"upcoming": [{"course_id", "course_short", "component", "weight", "title", "due", "item_id", "status"}], "not_announced": [{"course_id", "course_short", "component", "weight"}]}` — 시험 계열(quiz·exam·시험·고사·중간·기말 중 project/report가 아닌 것) 평가 항목만. 지난 시험은 upcoming에서 뺀다.
+- 화면: 대시보드에 "시험 일정" 칸(다가오는 시험 + "날짜 미공지: ASIC Final quiz 5%"), 과목 화면에 과목별 "평가 지도"(항목 | 비중 | 일정 | 받은 점수 | 개수), 학기 화면의 시험 마름모는 그대로.
+
+## 15. 과목 종류: 성적 있음 / P/NP / 제외 (사용자 요청 2026-11-13: "테니스는 패논패, 인권과 성평등은 실제로 듣는 수업이 아니라 제외 기능")
+- `POST /api/course/<cid>/mode {"mode": "normal" | "pass_fail" | "hidden"}` → `store.data["course_prefs"][cid] = {"mode", "at"}`. 응답은 새 state.
+- `state.courses[]` 추가: `mode`(기본 "normal"), `mode_suggest: {"mode", "reason", "evidence"} | null`.
+- **제외(hidden)**: 항목은 계속 만들되(다시 보이면 바로 돌아오게) 대시보드·확인함·학기·캘린더(.ics·구글 — 다음 반영 때 그 과목 일정은 지워짐)·성적·우선순위·소식 카드·보상(주 완주 계산)·백그라운드 알림·AI 정리 대상에서 뺀다. 첨부 자동 다운로드도 새로 받지 않는다(받은 파일은 둠). 과목 화면 아래 "제외한 과목"에 [다시 보기].
+- **P/NP(pass_fail)**: 마감·일정은 그대로. 성적: 학점·상위 % 추정을 하지 않고 "P/NP 과목 — 학점 추정 안 함"(점수는 보여 줌), 공부 우선순위에서 뺀다, 성적 반응은 등급 없이 담백하게(`band: null`).
+- 제안(근거 있을 때만, 사용자가 [맞아요]로 정함 — 저절로 바꾸지 않음):
+  - hidden: 과목 코드·이름에 학기 표시가 없고(다른 과목들이 공통으로 가진 "262R (서울-학부)" 같은 앞머리가 없음) `[학생]` 같은 대괄호 머리가 있거나 '교육'·'training'으로 끝나며, 공지·게시판·강의계획서가 하나도 없을 때. 실제 예: "[학생] [한국어] 2026 인권과 성평등 교육 - 03분반" → "정규 수업이 아닌 것 같아요(과목 코드에 학기 표시가 없고 공지·게시판이 없음)".
+  - pass_fail: 강의계획서·공지·게시판·PDF에 "P/NP", "Pass/Fail", "Pass/Non-pass", "패스/논패스", "합격/불합격", "S/U"가 있을 때(근거 문장 인용). 실제 테니스는 그런 글이 없어 제안하지 않는다(사용자가 직접).
+
+### 14-10. 구현 결과 (서버·화면, v0.5)
+- 규칙은 `links.py`(계열·별칭·연결 `match`·시험 항목 `is_exam_component`·개수 `stated`/`hint`/`observed_low`), 과목 종류는 `course_modes.py`, 연결·세부 점수·개수·일정·시험은 `gradebook.py`(`link_candidates`, `members_of`, `derived_of`, `expand_components`, `remaining_of`, `link_items`, `exams_of`, `set_link`, `set_count`, `set_item_component`, `ai_links`). `section()`은 설정의 깊은 사본으로 계산(저장값을 바꾸지 않음).
+- 단서 개수: 0번을 본 과목이면 n = K + 1 + 목록 수, 아니면 n = K + 목록 수(1번부터 세는 과목). 화살표는 `→`와 `->` 둘 다. "7 labs" 꼴은 복수형만(실제 강의계획서 시간표 "8 Report"·"10 Project1 Presentation"을 개수로 읽지 않게), 이름에 숫자가 있는 항목(Project1)은 세지 않음.
+- `count`: `low`는 늘 관찰 최솟값, n을 알면 `high = n`, 관찰만이면 `high: null`. 추가 `seen`(본 번호), `family`. 관찰만인 `remaining`: `weight: null`, `count_left: null`, `range: [W·(low−r)/low, W]`.
+- 펼친 가상 항목 이름 "<항목> · <라벨>", "<항목> 남은 N개" — `needed[]`에 `parent`. 비중 표시는 소수 한 자리(계산은 그대로).
+- 추가 필드: `grades.courses[]`의 `links`, `mode`, `pass_fail`, `pf_note`("P/NP 과목 — 학점 추정 안 함"); `candidates[]`의 `component`, `link_by`, `link_reason`, `link_evidence`, `n`, `rank`; Item의 `component_reason`.
+- 연결 규칙 추가: Item이 시험이면 시험 계열 항목, 과제면 그 밖을 먼저. 라벨에 midterm·final이 없으면 그 낱말이 없는 항목을 먼저("Report 2" → Homework assignments).
+- `score_files_*`는 파일 이름에 score·점수·성적·grade가 있는 것만(내용만으로 고르면 실제 `Midterm_project.pdf`가 걸림).
+- 과목 종류: 사용자가 한 번이라도 고르면(성적 있음 포함) 제안을 멈춘다. P/NP 제안은 같은 줄에 성적 낱말이 있을 때만(테스트벤치의 "PASS/FAIL" 제외). 제외 제안은 그 과목 자체의 학기 머리 유무로 판단.
+- 제외: `Store.view(include_hidden=False)`가 기본으로 숨긴 과목을 뺀다 → 대시보드·확인함·학기·캘린더(.ics·구글)·알림·AI 정리가 함께 빠진다(저장된 항목·결정은 그대로). `POST /api/course/<cid>/mode`는 "changed"를 내보내 다음 구글 반영에서 그 과목 일정을 지운다. 학기 날짜 계산(중앙값)은 거르지 않는다.
+- 자료: 공지 첨부 묶음의 화면 이름 `board_title` = "공지 첨부 파일", 디스크 폴더 이름은 `board_folder`("공지")로 그대로. `state.courses[].read_counts` — `board_posts`는 공지 첨부 묶음 제외, `attachments`는 포함.
+- 데모: ASIC에 Updated Grading Policy·성적 PDF 2개(가짜 학번)·퀴즈 공지·Lab6.pdf "Next labs: …", Capstone에 P/NP 문장, 과목 105 "[학생] [한국어] 2026 연구실 안전 교육 - 01분반"(제외 제안), 데모만 가짜 학번 2026000002.
+- 화면: 성적 표의 세부 점수 줄·연결 칩(`openChooser`, `#pick-dlg` 재사용, 되돌리기)·개수 줄(고치기)·남은 비중, 학번 안내 띠(`sidBanner`)와 설정 → 성적 칸, 대시보드 "시험 일정"(`examSection`), 과목 "평가 지도"(`gradeMapBlock`), 과목 종류 단추(`modeControl`)와 제안 칩, 제외한 과목 묶음, 과목별 읽은 글 수.

@@ -541,8 +541,11 @@ def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) 
         from .materials import fetch, plan
     except ImportError:
         return {}, {}, []
+    from .store import hidden_courses
     shorts = {c["id"]: short_course_name(c["name"]) for c in cache.get("courses", [])}
-    jobs = plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder))
+    hidden = hidden_courses(store.data)   # 제외한 과목은 새로 받지 않는다(받은 파일은 둠, 계약 15장)
+    jobs = [j for j in plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder))
+            if str(j.get("course_id")) not in hidden]
     if not jobs:
         return {}, {}, []
     return fetch(jobs, lambda att: _attachment_bytes(canvas, att), pdf_reader=pdf_reader)
@@ -558,11 +561,13 @@ def _auto_weights(store, ai_enabled: bool, session=None) -> list[str]:
     return auto_fill(store, srcs, ai_enabled, session=session) or []
 
 
-_AI_KEYS = ("user", "grades", "weights_auto")  # 자동 단계(평가 비중·AI 정리)가 바꾸는 칸: id → 값
+# 자동 단계(평가 비중·AI 정리·평가 항목 연결/개수)가 바꾸는 칸: id → 값
+_AI_KEYS = ("user", "grades", "weights_auto", "grade_links_ai", "grade_counts_ai")
 
 
 def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_valid=None) -> dict:
-    """동기화 뒤 자동 단계: 평가 비중 찾기, (켜져 있으면) AI 확인함 정리. 한 번의 AiSession을 나눠 써서 호출 한도가 함께 적용된다.
+    """동기화 뒤 자동 단계: 평가 비중 찾기, (켜져 있으면) AI 평가 항목 연결·개수, AI 확인함 정리.
+    한 번의 AiSession을 나눠 써서 호출 한도가 함께 적용된다.
     AI는 몇십 초 걸릴 수 있어 잠금 밖에서 돌리고, 저장할 때 파일을 다시 읽어 **그 사이 사용자가 손대지 않은 칸만** 덮는다
     (백그라운드 동기화가 앱에서 방금 한 사용자 결정을 지우지 않게)."""
     out: dict = {}
@@ -578,6 +583,11 @@ def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_
     logs = _auto_weights(store, ai_enabled, session)
     if logs:
         out["auto_weights"] = logs
+    if session is not None:   # 규칙이 못 정한 점수·마감의 평가 항목, 명시·단서 없는 개수(계약 14-2·14-4)
+        from .gradebook import ai_links
+        r = ai_links(store, session)
+        if r.get("asked") or r.get("counted") or r.get("error"):
+            out["ai_grade_links"] = r
     triage = None
     if session is not None and store.data["settings"].get("ai_auto_triage"):
         from .agent_cli import auto_triage

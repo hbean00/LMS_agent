@@ -205,6 +205,13 @@ a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
 .side-title { font-weight: 600; }
 .side-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; color: var(--graphite); }
 .pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* 시험 일정 칸 */
+.ex-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 2px 10px; }
+.ex-row .dday { margin-top: 1px; }
+.ex-row .side-meta .linkish { font-size: 13px; }
+.ex-na { margin-top: 12px; }
+.ex-na .sub-h { font-size: 13px; color: var(--graphite); }
+.ex-na ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); font-size: 14px; }
 
 /* 날짜별 목록 */
 .agenda { display: grid; }
@@ -294,6 +301,39 @@ a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
 .mini-title { font-weight: 600; }
 .mini-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; color: var(--graphite); }
 .mini-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+/* 과목 머리: 이름·읽은 글 수 + 과목 종류(성적 있음 | P/NP | 제외) */
+.cd-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; }
+.cd-head > div:first-child { min-width: 0; flex: 1 1 18em; }
+.cd-read { margin-top: 2px; font-size: 13px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.mode-box { display: grid; justify-items: end; gap: 4px; }
+.mode-box .help { font-size: 12px; text-align: right; }
+.sugs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 18px; }
+.sug { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px 10px 14px; border: 1px solid var(--rule-strong); border-left: 3px solid var(--burgundy); border-radius: 8px; font-size: 14px; }
+.sug-t { flex: 1 1 22em; min-width: 0; }
+.sug-q { display: block; margin-top: 2px; font-size: 12.5px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.sug-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.hid-courses { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.hid-courses ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
+.hid-courses li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 36px; font-size: 14px; }
+/* 평가 지도(과목): 항목 | 비중 | 일정 | 받은 점수 | 개수 */
+.gmap-sec { margin-top: 18px; }
+.gmap-sec h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+.gmap-sec h3 a { font-size: 13px; font-weight: 500; }
+.mtbl { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+.mtbl th { padding: 0 8px 8px; border-bottom: 1px solid var(--ink); text-align: left; font-size: 12px; font-weight: 600; color: var(--graphite); }
+.mtbl td { padding: 9px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; word-break: normal; }
+.mtbl .r { text-align: right; font-variant-numeric: tabular-nums; }
+.mtbl col.c-w { width: 64px; }
+.mtbl col.c-s { width: 30%; }
+.mtbl col.c-g { width: 17%; }
+.mtbl col.c-n { width: 13%; }
+.mtbl .m-sub { display: block; font-size: 12px; color: var(--graphite); }
+.sch { display: block; font-variant-numeric: tabular-nums; }
+.sch.is-past { color: var(--graphite); }
+.sch.is-past .sch-d { text-decoration: line-through; text-decoration-color: var(--rule-strong); }
+.sch-d { font-weight: 600; }
+.comp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 6px; font-size: 13px; color: var(--graphite); }
+.comp-line .linkish { font-size: 13px; }
 
 /* ---------- 성적 ---------- */
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 26px; }
@@ -365,6 +405,45 @@ a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
 .cand blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--rule-strong); font-size: 14px; white-space: pre-wrap; }
 .vals { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .vals span b { font-weight: 600; }
+/* 평가 지도(성적): 세부 점수(LAB 등)를 항목 아래에 모으고, 개수·남은 비중·연결 근거를 함께 */
+.gtable tr.has-sub > td { border-bottom: 0; }
+.gtable tr.g-sub > td { padding: 0 4px 12px; border-bottom: 1px solid var(--rule); }
+.g-derived { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-height: 34px; padding: 7px 10px; border-radius: 6px; background: var(--desk); font-size: 13px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.g-derived b { font-size: 14px; color: var(--ink); }
+.g-derived .g-basis { flex-basis: 100%; font-size: 12px; }
+.gmap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-left: 4px; padding: 8px 0 2px 12px; border-left: 2px solid var(--rule-strong); }
+.gmap-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 13px; }
+.gmap-line > b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.gmap-q { min-width: 0; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.gmap-line .linkish { font-size: 13px; }
+.gmap-line .gin { width: 76px; height: 30px; }
+.mem-list { list-style: none; margin: 2px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.mem { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 0 12px; min-height: 38px; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.mem:hover { background: var(--desk); }
+.mem-l { font-weight: 700; overflow-wrap: anywhere; word-break: normal; }
+.mem-v { display: flex; flex-wrap: wrap; gap: 0 12px; font-variant-numeric: tabular-nums; }
+.mem-v b { font-weight: 600; }
+.mem-src { grid-column: 2 / -1; font-size: 12px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.link-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; height: 26px; padding: 0 9px; border: 1px solid var(--rule-strong); border-radius: 13px; background: var(--paper); color: var(--graphite); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-chip:hover { border-color: var(--burgundy); color: var(--burgundy); }
+.link-chip.is-user { border-color: var(--ink); color: var(--ink); }
+.g-sched { display: block; margin-top: 4px; font-size: 12px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.cand-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
+.cand-why { margin-top: 4px; font-size: 12.5px; color: var(--graphite); }
+.cand-sum { margin-top: 8px; font-size: 13px; }
+.excl { margin-top: 10px; font-size: 13px; }
+.excl > summary { cursor: pointer; color: var(--graphite); }
+.excl ul { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; display: grid; gap: 6px; border-left: 2px solid var(--rule); }
+.excl li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+/* 학번 안내: 성적 화면 맨 위 */
+.sid-banner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 22px; padding: 12px 14px; border: 1px solid var(--rule-strong); border-left: 3px solid var(--burgundy); border-radius: 8px; }
+.sid-title { font-size: 15px; font-weight: 700; }
+.sid-title.is-warn { color: var(--burgundy); }
+.sid-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sid-row .gin { width: 168px; }
+.sid-why { font-size: 13px; color: var(--graphite); }
+.p-np { margin-top: 10px; padding: 12px 14px; border-radius: 8px; background: var(--desk); font-size: 14px; }
+.p-np b { font-weight: 700; }
 
 /* ---------- 확인함 ---------- */
 .inbox-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: start; }
@@ -990,6 +1069,10 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
               <h2 id="h-google" class="sec-h">구글 캘린더</h2>
               <div id="google-box" aria-live="polite"></div>
             </section>
+            <section id="pane-grades" class="pane" aria-labelledby="h-grades-set" hidden>
+              <h2 id="h-grades-set" class="sec-h">성적</h2>
+              <div id="grades-box"></div>
+            </section>
             <section id="pane-tour" class="pane" aria-labelledby="h-tour">
               <h2 id="h-tour" class="sec-h">튜토리얼</h2>
               <p class="help">화면마다 무엇을 하는지 차례로 짚어 줘요. 1분이면 끝나요.</p>
@@ -1136,7 +1219,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   const DYN = {
     dash: ['dash-body'], semester: ['sem-body'], courses: ['courses-body'], materials: ['materials-body'], grades: ['grades-body'],
     inbox: ['ai-bar', 'review-list', 'review-past', 'approved-box', 'nodl-box', 'inbox-groups'],
-    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'materials-box', 'ai-box', 'mascot-box']
+    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'materials-box', 'ai-box', 'mascot-box', 'grades-box']
   };
   const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -1333,6 +1416,63 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     const c = state.courses.find((x) => x && x.name === name);
     return c ? courseShort(c) : '';
   }
+  // 받침이 있으면 앞 조사(을·은·이), 없으면 뒤 조사(를·는·가): ‘Lab0’을, ‘테니스’를. 끝의 괄호·기호는 건너뛰고 읽는다
+  function josaQ(word, withF, without) {
+    const w = String(word || '').replace(/[^0-9A-Za-z가-힣]+$/, '');
+    const last = w.slice(-1);
+    const ch = last.charCodeAt(0);
+    let final;
+    if (ch >= 0xAC00 && ch <= 0xD7A3) final = (ch - 0xAC00) % 28 !== 0;
+    else if (/[0-9]/.test(last)) final = '013678'.indexOf(last) >= 0;
+    else final = /[blmn]/i.test(last);
+    return '‘' + word + '’' + (final ? withF : without);
+  }
+
+  // ---------------------------------------------------------------- 과목 종류: 성적 있음 / P/NP / 제외 (계약 15)
+  // 서버가 courses[].mode를 주지 않으면(예전 서버) 고르는 칸을 보이지 않고 오늘처럼 동작한다
+  const courseById = (id) => (state ? state.courses.find((c) => c && String(c.id) === String(id)) || null : null);
+  const modeSupported = () => !!state && state.courses.some((c) => c && Object.prototype.hasOwnProperty.call(c, 'mode'));
+  function modeOf(id) {
+    const c = courseById(id);
+    const m = c && c.mode;
+    return m === 'hidden' || m === 'pass_fail' ? m : 'normal';
+  }
+  let hiddenCourses = [];   // 숨긴 과목(제외한 과목 목록에만 보임)
+  // 숨긴 과목의 항목·성적·시험·소식은 화면 전체에서 뺀다(서버가 이미 뺐어도 그대로 무해함). P/NP 과목은 공부 우선순위에서 뺀다
+  function applyCourseModes(s) {
+    const hid = new Set(), hidShort = new Set(), pf = new Set(), pfShort = new Set();
+    for (const c of s.courses) {
+      if (!c) continue;
+      if (c.mode === 'hidden') { hid.add(String(c.id)); if (c.short_name) hidShort.add(c.short_name); }
+      else if (c.mode === 'pass_fail') { pf.add(String(c.id)); if (c.short_name) pfShort.add(c.short_name); }
+    }
+    hiddenCourses = s.courses.filter((c) => c && c.mode === 'hidden');
+    const isHid = (x) => !!x && ((x.course_id !== null && x.course_id !== undefined && hid.has(String(x.course_id))) || (!!x.course_short && hidShort.has(x.course_short)));
+    if (hid.size) s.items = s.items.filter((i) => !(i && i.course_id !== null && i.course_id !== undefined && hid.has(String(i.course_id))));
+    const G = s.grades && typeof s.grades === 'object' ? s.grades : null;
+    if (G) {
+      if (Array.isArray(G.courses)) G.courses = G.courses.filter((c) => !hid.has(String(c.course_id)));
+      if (Array.isArray(G.candidates)) G.candidates = G.candidates.filter((c) => !isHid(c));
+      if (Array.isArray(G.priorities)) G.priorities = G.priorities.filter((p) => !(p && ((p.course_id && (hid.has(String(p.course_id)) || pf.has(String(p.course_id)))) || hidShort.has(p.course) || pfShort.has(p.course))));
+    }
+    const E = s.exams && typeof s.exams === 'object' ? s.exams : null;
+    if (E && hid.size) for (const k of ['upcoming', 'not_announced']) if (Array.isArray(E[k])) E[k] = E[k].filter((x) => !isHid(x));
+    const C = s.celebrations && typeof s.celebrations === 'object' ? s.celebrations : null;
+    if (C && hid.size) {
+      if (Array.isArray(C.pending)) C.pending = C.pending.filter((p) => !isHid(p));
+      if (Array.isArray(C.news)) {
+        C.news = C.news.filter((n) => {
+          if (!n || !Array.isArray(n.items) || !n.items.length) return true;
+          const keep = n.items.filter((x) => !isHid(x));
+          if (keep.length === n.items.length) return true;
+          if (!keep.length) return false;
+          n.items = keep;
+          if (typeof n.count === 'number') n.count = Math.min(n.count, keep.length);
+          return true;
+        });
+      }
+    }
+  }
   const isActive = (i) => i.status === 'scheduled' || i.status === 'review';
   const activeDated = () => state.items.filter((i) => isActive(i) && parseDate(i.due));
   function inRange(it, a, b) { const t = dueMs(it); return t !== null && t >= a.getTime() && t < b.getTime(); }
@@ -1464,6 +1604,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     if (!s.settings || typeof s.settings !== 'object') s.settings = {};
     const n = Date.parse(s.now);
     skew = isNaN(n) ? 0 : n - Date.now();
+    applyCourseModes(s);
     normalizeGroups(s);
     state = s;
     if (setupPhase === 'syncing' && !s.syncing && !syncing) { firstSyncSettled(s); return; }
@@ -1644,6 +1785,41 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     d.showModal();
     opts[0].focus();
   }
+  // 같은 모양의 고르기 창(평가 항목 고르기·과목 숨기기 확인). o = {title, desc, options:[{label, sub, current, go, onPick}], actions:[{label, onClick}], primary:{label, onClick}}
+  function openChooser(o) {
+    const d = $('pick-dlg');
+    if (d.open) d.close();
+    pickOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const close = () => { if (d.open) d.close(); };
+    const opts = (o.options || []).map((x, i, all) => {
+      const b = h('button', { type: 'button', class: 'pick-opt' + (x.current ? ' is-newest' : ''), 'aria-current': x.current ? 'true' : null },
+        h('span', { class: 'pick-when', style: 'font-size:15px' }, x.label),
+        h('span', { class: 'pick-go' }, x.current ? '지금' : x.go || '이걸로'),
+        x.sub ? h('span', { class: 'pick-src' }, x.sub) : null);
+      b.addEventListener('click', () => { close(); if (!x.current) x.onPick(); });
+      b.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+        ev.preventDefault();
+        const list = d.querySelectorAll('.pick-opt');
+        const nx = list[(i + (ev.key === 'ArrowDown' ? 1 : all.length - 1)) % all.length];
+        if (nx) nx.focus();
+      });
+      return b;
+    });
+    const act = (a, cls) => h('button', { type: 'button', class: 'btn ' + cls, on: { click: () => { close(); a.onClick(); } } }, a.label);
+    d.replaceChildren();
+    add(d, [
+      h('h2', { class: 'dlg-title', id: 'pick-title' }, o.title),
+      o.desc ? h('p', { class: 'dlg-body', id: 'pick-desc' }, o.desc) : null,
+      opts.length ? h('div', { class: 'pick-opts' }, opts) : null,
+      h('div', { class: 'dlg-actions', style: 'flex-wrap:wrap' },
+        (o.actions || []).map((a) => act(a, 'btn-quiet')),
+        h('button', { type: 'button', class: 'btn btn-line', on: { click: close } }, '취소'),
+        o.primary ? act(o.primary, 'btn-primary') : null)]);
+    d.showModal();
+    const first = o.primary ? d.querySelector('.dlg-actions .btn-primary') : (opts.find((b) => !b.hasAttribute('aria-current')) || opts[0]);
+    if (first) first.focus();
+  }
   $('pick-dlg').addEventListener('close', () => {
     const o = pickOpener;
     pickOpener = null;
@@ -1779,7 +1955,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         h('div', { class: 'arow-title' }, it.title || ''),
         h('div', { class: 'arow-meta' },
           h('span', null, courseLabel(it)),
-          it.kind === '시험' ? h('span', null, '시험') : null,
+          it.kind === '시험' ? h('span', null, '시험' + (it.component ? ' · ' + compName(it.course_id, it.component) : '')) : null,
           methodTag(it, false),
           isReview ? h('span', { class: it.conflict ? 'warn' : null }, it.conflict ? '마감이 둘로 적혀 있어요' : '아직 확인 전') : null,
           missed ? h('span', { class: 'warn' }, '제출 표시 없음') : null)),
@@ -2734,6 +2910,9 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         }))));
     }
 
+    const ex = examSection();
+    if (ex) side.appendChild(ex);
+
     const g = gstate();
     const want = desiredCounts();
     const stale = state.items.some((i) => i.export_stale);
@@ -2772,6 +2951,59 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       side.appendChild(h('section', null, h('p', { class: 'help' }, '마감을 못 찾은 Canvas 과제 ' + nodl + '개. ', h('a', { href: '#inbox' }, '확인함에서 보기'))));
     }
     return side;
+  }
+  // 시험 일정(계약 14-9 state.exams): 다가오는 시험 + 날짜가 아직 공지되지 않은 시험 항목. 서버가 아직 주지 않으면 '시험' 항목만으로
+  function examsData() {
+    const E = state.exams && typeof state.exams === 'object' ? state.exams : null;
+    const t0 = startOfDay(new Date(nowMs())).getTime();
+    // '시험' 항목은 평가 항목에 연결되지 않았어도(그 과목 비중을 모를 때) 시험 일정에 넣는다
+    const fromItems = state.items.filter((i) => i.kind === '시험' && isActive(i) && dueMs(i) !== null && dueMs(i) >= t0)
+      .map((i) => ({ course_id: i.course_id, course_short: i.course_short, component: i.component || null, weight: null, title: i.title, due: i.due, item_id: i.id, status: i.status }));
+    if (E) {
+      const up = (Array.isArray(E.upcoming) ? E.upcoming : []).filter((x) => x && parseDate(x.due) && parseDate(x.due).getTime() >= t0);
+      const ids = new Set(up.map((x) => x.item_id).filter(Boolean));
+      for (const x of fromItems) if (!ids.has(x.item_id)) up.push(x);
+      up.sort((a, b) => parseDate(a.due) - parseDate(b.due));
+      return { up, na: (Array.isArray(E.not_announced) ? E.not_announced : []).filter(Boolean) };
+    }
+    return { up: fromItems.sort((a, b) => parseDate(a.due) - parseDate(b.due)), na: [] };
+  }
+  // 평가 항목의 비중: 시험 목록에 없으면 그 과목 성적 설정에서
+  function compWeight(courseId, name, given) {
+    if (given !== null && given !== undefined && isFinite(Number(given))) return Number(given);
+    if (!name) return null;
+    const gc = gradeCourse(courseId);
+    const L = gc && gc.config && Array.isArray(gc.config.components) ? gc.config.components.find((x) => x && x.name === name) : null;
+    return L && L.weight !== null && L.weight !== undefined && isFinite(Number(L.weight)) ? Number(L.weight) : null;
+  }
+  const compName = (courseId, name, w) => { const x = compWeight(courseId, name, w); return name + (x !== null ? ' ' + pct(x) : ''); };
+  function examSection() {
+    const { up, na } = examsData();
+    if (!up.length && !na.length) return null;
+    const shownUp = up.slice(0, 5);
+    return h('section', { 'aria-labelledby': 'ds-exam' },
+      h('h2', { class: 'sec-h', id: 'ds-exam' }, '시험 일정', h('span', { class: 'sec-n' }, up.length ? '다가오는 ' + up.length + '개' : '날짜 미공지 ' + na.length + '개')),
+      shownUp.length ? h('ul', { class: 'side-list' }, shownUp.map((x) => {
+        const d = parseDate(x.due);
+        const diff = dayDiff(d);
+        const it = x.item_id ? findItem(x.item_id) : null;
+        const review = x.status === 'review' || (it && it.status === 'review');
+        return h('li', { class: 'ex-row' },
+          h('span', { class: 'dday' + (diff <= 2 ? ' soon' : '') }, ddayText(diff)),
+          h('div', null,
+            h('div', { class: 'side-title' }, [x.course_short, x.title].filter(Boolean).join(' ')),
+            h('div', { class: 'side-meta' },
+              h('span', { class: 'tnum' }, fmtShortDT(d)),
+              x.component ? h('span', null, compName(x.course_id, x.component, x.weight)) : null,
+              review ? h('button', { type: 'button', class: 'linkish', 'data-key': 'exgo-' + (x.item_id || x.title), on: { click: () => (it && choiceGroup(it) ? openPick(it) : goInbox(x.item_id)) } }, '확인 전 · 확인하기') : null)));
+      })) : null,
+      up.length > shownUp.length ? h('p', { class: 'help', style: 'margin-top:6px' }, '그 뒤 ' + (up.length - shownUp.length) + '개는 ', h('a', { href: '#semester' }, '학기'), '에서 볼 수 있어요.') : null,
+      na.length === 1 ? h('p', { class: 'help', style: shownUp.length ? 'margin-top:12px' : null },
+        h('b', { style: 'color:var(--ink);font-weight:600' }, [na[0].course_short, compName(na[0].course_id, na[0].component, na[0].weight)].filter(Boolean).join(' ')),
+        ' — 아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.') : null,
+      na.length > 1 ? h('div', { class: 'ex-na' }, h('h3', { class: 'sub-h' }, '날짜 미공지 ' + na.length + '개'),
+        h('ul', null, na.slice(0, 6).map((x) => h('li', null, [x.course_short, compName(x.course_id, x.component, x.weight)].filter(Boolean).join(' ')))),
+        h('p', { class: 'help', style: 'margin-top:4px' }, '아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.')) : null);
   }
   function resultText(r) {
     return '추가 ' + num(r.created) + ' · 수정 ' + num(r.updated) + ' · 유지 ' + num(r.unchanged) + ' · 삭제 ' + num(r.deleted);
@@ -2959,9 +3191,10 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   }
   function courseRows() {
     const now = nowMs();
-    const rows = state.courses.filter((c) => c && c.id !== null && c.id !== undefined).map((c) =>
+    const rows = state.courses.filter((c) => c && c.id !== null && c.id !== undefined && c.mode !== 'hidden').map((c) =>
       summarize(c, state.items.filter((i) => String(i.course_id) === String(c.id)), now));
     const known = new Set(state.courses.map((c) => String(c && c.id)));
+    // 숨긴 과목의 항목은 applyCourseModes에서 이미 빠졌다(known에는 남아 '기타'로 새지 않음)
     const orphan = state.items.filter((i) => isActive(i) && (i.course_id === null || i.course_id === undefined || !known.has(String(i.course_id))));
     if (orphan.length) rows.push(summarize({ id: '__other__', short_name: '기타' }, orphan, now));
     return rows;
@@ -2980,7 +3213,14 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     const body = $('courses-body');
     body.replaceChildren();
     const rows = courseRows();
-    if (!rows.length) { body.appendChild(h('p', { class: 'empty' }, '과목 정보가 아직 없어요. 동기화해 주세요.')); return; }
+    const sugs = modeSuggestions();
+    if (sugs) body.appendChild(sugs);
+    if (!rows.length) {
+      body.appendChild(h('p', { class: 'empty' }, hiddenCourses.length ? '보이는 과목이 없어요. 아래 ‘제외한 과목’에서 다시 볼 수 있어요.' : '과목 정보가 아직 없어요. 동기화해 주세요.'));
+      const hb = hiddenCoursesBlock();
+      if (hb) body.appendChild(hb);
+      return;
+    }
     const missed = [];
     for (const r of rows) for (const i of r.past) if (!i.submitted) missed.push(i);
     if (missed.length) {
@@ -3000,7 +3240,8 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         const score = fmtScore(r.c.current_score);
         const graded = typeof r.c.graded === 'number' && typeof r.c.assignments === 'number' ? '채점 ' + r.c.graded + '/' + r.c.assignments : null;
         return h('tr', { class: id === selCourse ? 'is-sel' : null, on: { click: (e) => { if (!e.target.closest('a,button,input,label')) select(id); } } },
-          h('td', null, h('button', { type: 'button', class: 'cell-btn', 'aria-pressed': String(id === selCourse), 'data-key': 'crs-' + id, on: { click: () => select(id) } }, courseShort(r.c))),
+          h('td', null, h('button', { type: 'button', class: 'cell-btn', 'aria-pressed': String(id === selCourse), 'data-key': 'crs-' + id, on: { click: () => select(id) } }, courseShort(r.c)),
+            r.c.mode === 'pass_fail' ? [' ', tag('P/NP', 'quiet', 'P/NP 과목: 학점 추정을 하지 않아요')] : null),
           h('td', null, next ? [h('span', { style: 'font-weight:600' }, next.title || ''), h('span', { class: 'cell-sub' }, whenText(nd) + (next.status === 'review' ? ', 확인 전' : '') + (r.upcoming.length > 1 ? ', 그 뒤 ' + (r.upcoming.length - 1) + '개' : ''))] : h('span', { class: 'cell-sub' }, '없음')),
           h('td', null, r.past.length ? ['제출 ' + r.sub, r.unsub ? h('span', { class: 'warn' }, ', 미제출 ' + r.unsub) : ', 미제출 0'] : h('span', { class: 'cell-sub' }, '없음')),
           h('td', null, r.review ? h('a', { href: '#inbox' }, r.review + '개') : h('span', { class: 'cell-sub' }, '없음')),
@@ -3021,8 +3262,14 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       }
     }
     evs.sort((a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0));
+    const rc = readCountsLine(r.c);
     body.appendChild(h('section', { class: 'cdetail', 'aria-labelledby': 'cdetail-h' },
-      h('h2', { class: 'sec-h', id: 'cdetail-h' }, courseShort(r.c)),
+      h('div', { class: 'cd-head' },
+        h('div', null,
+          h('h2', { class: 'sec-h', id: 'cdetail-h' }, courseShort(r.c), r.c.mode === 'pass_fail' ? tag('P/NP · 학점 추정 안 함', 'quiet') : null),
+          rc),
+        modeControl(r.c)),
+      gradeMapBlock(r.c),
       h('div', { class: 'cdetail-grid' },
         h('div', null,
           h('section', null, h('h3', null, '다음 일정'), r.upcoming.length ? h('ul', { class: 'arows' }, r.upcoming.map((i) => agendaRow(i, true))) : h('p', { class: 'empty' }, '남은 일정이 없어요.')),
@@ -3037,6 +3284,175 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
               extLink(ev.url, ev.source_title || '(제목 없음)') || h('b', null, ev.source_title || '(제목 없음)'),
               h('div', { class: 'ev-meta' }, h('span', null, SOURCE[ev.source_type] || '출처'), d ? h('span', null, fmtShortDT(d)) : null));
           })) : h('p', { class: 'empty' }, '근거 글이 없어요.')))));
+    const hb = hiddenCoursesBlock();
+    if (hb) body.appendChild(hb);
+  }
+  // 이 과목에서 지금까지 읽은 글 수(서버 courses[].read_counts). '공지 2개만 읽었다'로 오해하지 않게 전체를 보여 준다
+  function readCountsLine(c) {
+    const rc = c && c.read_counts && typeof c.read_counts === 'object' ? c.read_counts : null;
+    if (!rc) return null;
+    const parts = [['announcements', '공지'], ['board_posts', '게시판 글'], ['messages', '메시지'], ['pdfs', 'PDF'], ['attachments', '첨부']]
+      .filter(([k]) => typeof rc[k] === 'number').map(([k, l]) => l + ' ' + rc[k]);
+    if (!parts.length) return null;
+    return h('p', { class: 'cd-read', title: '동기화 때는 바뀐 글만 다시 읽어요. 여기 수는 지금까지 이 과목에서 읽어 둔 전체예요.' }, '읽은 글: ' + parts.join(' · '));
+  }
+  const MODES = [['normal', '성적 있음'], ['pass_fail', 'P/NP'], ['hidden', '제외']];
+  function modeControl(c) {
+    if (!modeSupported() || !c || c.id === '__other__') return null;
+    const cur = modeOf(c.id);
+    return h('div', { class: 'mode-box' },
+      h('div', { class: 'seg', role: 'group', 'aria-label': courseShort(c) + ' 과목 종류' }, MODES.map(([m, l]) =>
+        h('button', { type: 'button', 'aria-pressed': String(cur === m), 'data-key': 'mode-' + c.id + '-' + m, on: { click: () => setMode(c, m) } }, l))),
+      h('p', { class: 'help' }, cur === 'pass_fail' ? '점수는 보이고 학점·순위 추정은 안 해요' : '제외하면 대시보드·캘린더에서 빠져요'));
+  }
+  function setMode(c, m, opts) {
+    opts = opts || {};
+    const prev = modeOf(c.id);
+    if (m === prev) return Promise.resolve();
+    if (m === 'hidden' && !opts.confirmed) { confirmHide(c); return Promise.resolve(); }
+    const name = courseShort(c);
+    return post('/api/course/' + encodeURIComponent(c.id) + '/mode', { mode: m }).then((s) => {
+      applyState(s);
+      if (opts.quiet) { toast('되돌렸어요 · ' + name); return; }
+      const msg = m === 'hidden' ? josaQ(name, '을', '를') + ' 숨겼어요. 과목 화면 아래 ‘제외한 과목’에서 다시 볼 수 있어요'
+        : m === 'pass_fail' ? josaQ(name, '은', '는') + ' P/NP 과목으로 볼게요. 점수는 보이고 학점 추정은 안 해요'
+        : prev === 'hidden' ? josaQ(name, '을', '를') + ' 다시 보여 드려요. 다음 반영 때 캘린더에도 돌아가요'
+        : josaQ(name, '은', '는') + ' 성적 있는 과목으로 볼게요';
+      toast(msg, () => setMode(c, prev, { confirmed: true, quiet: true }));
+    }, (err) => toast(err.message));
+  }
+  function confirmHide(c) {
+    const name = courseShort(c);
+    openChooser({
+      title: josaQ(name, '을', '를') + ' 숨겨요',
+      desc: '캘린더에서도 빠져요 — 언제든 다시 볼 수 있어요. 마감·점수 기록은 지우지 않아요.',
+      primary: { label: '숨기기', onClick: () => setMode(c, 'hidden', { confirmed: true }) }
+    });
+  }
+  // 제안(계약 15): 근거가 있을 때만 서버가 준다. 저절로 바꾸지 않고 사용자가 고른다. [아니에요]는 이 PC에도 기억
+  const SUG_KEY = 'lms-agent.mode-sug-no';
+  function sugDismissed() { try { return JSON.parse(localStorage.getItem(SUG_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function dismissSug(c, sg) {
+    try { const m = sugDismissed(); m[String(c.id)] = sg.mode; localStorage.setItem(SUG_KEY, JSON.stringify(m)); } catch (e) { /* 기억 못 해도 동작함 */ }
+    // 사용자가 정했다는 기록(지금 종류 그대로)을 남겨 서버도 다시 제안하지 않게
+    post('/api/course/' + encodeURIComponent(c.id) + '/mode', { mode: modeOf(c.id) }).then(applyState, () => render());
+    toast('알겠어요. ' + josaQ(courseShort(c), '은', '는') + ' 그대로 둘게요');
+    render();
+  }
+  function modeSuggestions() {
+    if (!modeSupported()) return null;
+    const no = sugDismissed();
+    const list = state.courses.filter((c) => {
+      const sg = c && c.mode_suggest;
+      return sg && typeof sg === 'object' && (sg.mode === 'hidden' || sg.mode === 'pass_fail') && modeOf(c.id) !== sg.mode && no[String(c.id)] !== sg.mode;
+    });
+    if (!list.length) return null;
+    return h('div', { class: 'sugs', role: 'region', 'aria-label': '과목 종류 제안' }, list.map((c) => {
+      const sg = c.mode_suggest;
+      const hide = sg.mode === 'hidden';
+      // "정규 수업이 아닌 것 같아요(과목 코드에 …)" → "정규 수업이 아닌 것 같아요 — 과목 코드에 …"
+      const reason = String(sg.reason || (hide ? '정규 수업이 아닌 것 같아요' : 'P/NP 과목 같아요')).replace(/\s*\(([^()]+)\)\s*$/, ' — $1');
+      return h('div', { class: 'sug' },
+        h('p', { class: 'sug-t' }, h('b', null, courseShort(c)), ' ', reason,
+          sg.evidence ? h('span', { class: 'sug-q' }, '근거: ‘' + String(sg.evidence) + '’') : null),
+        h('div', { class: 'sug-acts' },
+          h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-key': 'sug-yes-' + c.id, on: { click: () => setMode(c, sg.mode) } }, hide ? '제외할게요' : 'P/NP로 할게요'),
+          h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'sug-no-' + c.id, on: { click: () => dismissSug(c, sg) } }, '아니에요')));
+    }));
+  }
+  function hiddenCoursesBlock() {
+    if (!hiddenCourses.length) return null;
+    return h('section', { class: 'hid-courses', 'aria-labelledby': 'hid-h' },
+      h('h2', { class: 'sub-h', id: 'hid-h' }, '제외한 과목 ' + hiddenCourses.length + '개'),
+      h('p', { class: 'help', style: 'margin-top:2px' }, '대시보드·확인함·학기·성적·캘린더에서 뺀 과목이에요. 기록은 남아 있어 다시 보면 바로 돌아와요.'),
+      h('ul', null, hiddenCourses.map((c) => h('li', null,
+        h('span', { style: 'font-weight:600' }, courseShort(c)),
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'unhide-' + c.id, on: { click: () => setMode(c, 'normal') } }, '다시 보기')))));
+  }
+  // 과목의 평가 지도(계약 14-9): 항목 | 비중 | 일정 | 받은 점수 | 개수. 고치는 곳은 성적 화면
+  const EXAM_RE = /quiz|퀴즈|exam|시험|고사|중간|기말|midterm|final/i;
+  const NOT_EXAM_RE = /project|프로젝트|report|보고서|레포트|리포트/i;
+  function isExamComp(courseId, L) {
+    const E = state.exams && typeof state.exams === 'object' ? state.exams : null;
+    if (E) {
+      const same = (x) => x && String(x.course_id) === String(courseId) && x.component === L.name;
+      return (Array.isArray(E.upcoming) && E.upcoming.some(same)) || (Array.isArray(E.not_announced) && E.not_announced.some(same)) || (Array.isArray(L.schedule) && L.schedule.some((s) => s && s.kind === '시험'));
+    }
+    return EXAM_RE.test(L.name || '') && !NOT_EXAM_RE.test(L.name || '');
+  }
+  // 그 항목의 일정: 서버 schedule, 없으면 component가 이 항목인 마감·시험
+  function compSchedule(courseId, L) {
+    if (Array.isArray(L.schedule)) return L.schedule.filter((x) => x && x.due);
+    return state.items.filter((i) => String(i.course_id) === String(courseId) && i.component === L.name && i.due && (isActive(i) || i.status === 'scheduled'))
+      .sort(byDue).map((i) => ({ item_id: i.id, title: i.title, due: i.due, kind: i.kind, status: i.status, past: dueMs(i) < nowMs() }));
+  }
+  function schedCell(courseId, L, max) {
+    const list = compSchedule(courseId, L);
+    if (!list.length) {
+      // '미공지'는 서버가 그렇게 판단했을 때만(예전 서버에서 시험 이름만 보고 단정하지 않게)
+      if (L.date_status === 'not_announced' && isExamComp(courseId, L)) return tag('날짜 미공지', 'dash', '아직 날짜 공지가 없어요. 올라오면 알려 드릴게요');
+      return h('span', { class: 'm-sub' }, '-');
+    }
+    // 다가오는 일정 먼저(가까운 순), 남는 칸에 지난 일정(최근 순, 흐리게)
+    const pastOf = (x) => (typeof x.past === 'boolean' ? x.past : (parseDate(x.due) || 0) < nowMs());
+    const ordered = list.filter((x) => !pastOf(x)).concat(list.filter(pastOf).reverse());
+    const shown = ordered.slice(0, max || 3);
+    return [shown.map((x) => {
+      const d = parseDate(x.due);
+      const past = pastOf(x);
+      return h('span', { class: 'sch' + (past ? ' is-past' : ''), title: (x.title || '') + (d ? ' · ' + fmtDateTime(d) : '') },
+        h('span', { class: 'sch-d' }, d ? fmtShort(d) : '날짜 없음'), x.title ? ' ' + x.title : '', x.status === 'review' ? h('span', { class: 'm-sub' }, '확인 전') : null);
+    }), list.length > shown.length ? h('span', { class: 'm-sub' }, '그 밖에 ' + (list.length - shown.length) + '개') : null];
+  }
+  const members = (L) => (L && Array.isArray(L.members) ? L.members.filter(Boolean) : []);
+  const countOf = (L) => (L && L.count && typeof L.count === 'object' ? L.count : null);
+  const countN = (cnt) => (cnt && cnt.n !== null && cnt.n !== undefined && isFinite(Number(cnt.n)) && cnt.basis !== 'observed' ? Number(cnt.n) : null);
+  function scoreCell(L) {
+    const dv = L.derived && typeof L.derived === 'object' ? L.derived : null;
+    const ms = members(L);
+    if (dv && dv.score_pct !== null && dv.score_pct !== undefined) {
+      return [h('b', null, fmtNum(dv.score_pct) + '%'), h('span', { class: 'm-sub' }, (num(dv.received) || ms.length) + '개 평균')];
+    }
+    if (L.score !== null && L.score !== undefined && L.score !== '') return h('b', null, fmtNum(L.score) + '/' + fmtNum(L.max_score || 100));
+    return h('span', { class: 'm-sub' }, ms.length ? ms.length + '개 받음' : '-');
+  }
+  function countCell(L) {
+    const cnt = countOf(L);
+    const got = members(L).length || num(L.derived && L.derived.received);
+    const n = countN(cnt);
+    const waiting = num((state.grades || {}).score_files_waiting);
+    if (n !== null) {
+      return [h('b', null, got ? got + '/' + n : '모두 ' + n + '개'),
+        h('span', { class: 'm-sub' }, cnt.basis === 'user' ? '직접 넣음' : got ? '받음/전체' : waiting ? '점수는 학번을 넣으면 찾아요' : '아직 받은 점수 없음')];
+    }
+    if (cnt && num(cnt.low)) return [h('b', null, '최소 ' + num(cnt.low)), h('span', { class: 'm-sub' }, '지금까지 본 수')];
+    return h('span', { class: 'm-sub' }, got ? got + '개 받음' : '-');
+  }
+  function gradeMapBlock(c) {
+    if (!c || c.id === '__other__') return null;
+    const gc = gradeCourse(c.id);
+    if (!gc) return null;
+    const comps = courseComps(c.id);
+    const toGrades = h('a', { href: '#grades', on: { click: () => { selGrade = String(c.id); } } }, comps.length ? '성적에서 고치기' : '성적에서 넣기');
+    if (!comps.length) {
+      return h('section', { class: 'gmap-sec', 'aria-labelledby': 'gmap-h' }, h('h3', { id: 'gmap-h' }, '평가 지도', toGrades),
+        h('p', { class: 'empty' }, '평가 비중을 아직 몰라요. 강의계획서나 공지에서 찾으면 여기에 항목별 비중·일정·점수가 나와요.'));
+    }
+    const wsum = comps.reduce((a, x) => a + (Number(x.weight) || 0), 0);
+    return h('section', { class: 'gmap-sec', 'aria-labelledby': 'gmap-h' },
+      h('h3', { id: 'gmap-h' }, '평가 지도', h('span', { class: 'sec-n' }, '비중 합 ' + fmtNum(wsum) + '%'), toGrades),
+      h('table', { class: 'mtbl' },
+        h('colgroup', null, h('col'), h('col', { class: 'c-w' }), h('col', { class: 'c-s' }), h('col', { class: 'c-g' }), h('col', { class: 'c-n' })),
+        h('thead', null, h('tr', null, h('th', { scope: 'col' }, '항목'), h('th', { scope: 'col', class: 'r' }, '비중'), h('th', { scope: 'col' }, '일정'),
+          h('th', { scope: 'col' }, '받은 점수'), h('th', { scope: 'col' }, '개수'))),
+        h('tbody', null, comps.map((L) => h('tr', null,
+          h('td', null, h('span', { style: 'font-weight:600' }, L.name)),
+          h('td', { class: 'r' }, L.weight !== null && L.weight !== undefined && L.weight !== '' ? pct(L.weight) : '-'),
+          h('td', null, schedCell(c.id, L, 3)),
+          h('td', null, scoreCell(L)),
+          h('td', null, countCell(L)))))),
+      gc.missing_note || weightMissing(gc) > 0.5 ? h('p', { class: 'help', style: 'margin-top:6px' }, gc.missing_note ? String(gc.missing_note) : '나머지 ' + fmtNum(weightMissing(gc)) + '%는 평가 항목이 없어요.') : null,
+      comps.some((x) => x.auto) ? h('p', { class: 'help', style: 'margin-top:6px' }, '비중은 강의 글에서 자동으로 찾았어요' + (gc.auto_source ? ': ‘' + String(gc.auto_source).replace(/\s+/g, ' ').slice(0, 90) + (String(gc.auto_source).length > 90 ? '…' : '') + '’' : '') + '. 틀렸으면 성적에서 고쳐 주세요.') : null);
   }
 
   // ---------------------------------------------------------------- 성적
@@ -3062,7 +3478,8 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     const dist = {};
     for (const g of gradeList()) dist[g] = str(base[g] === undefined ? 0 : base[g]);
     return {
-      components: (cfg.components || []).map((c) => ({ name: c.name || '', weight: str(c.weight), score: str(c.score), max_score: str(c.max_score), mean: str(c.mean), sd: str(c.sd), fixed: !!c.fixed, source: c.source || '', auto: !!c.auto })),
+      // orig: 저장된 이름(고치는 중에도 세부 점수·개수·일정을 그 항목에서 찾게)
+      components: (cfg.components || []).map((c) => ({ name: c.name || '', orig: c.name || '', weight: str(c.weight), score: str(c.score), max_score: str(c.max_score), mean: str(c.mean), sd: str(c.sd), fixed: !!c.fixed, source: c.source || '', auto: !!c.auto })),
       custom: !!cfg.dist, dist, class_size: str(cfg.class_size), dirty: false, sig: JSON.stringify(cfg)
     };
   }
@@ -3109,6 +3526,8 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     if (!selGrade || !gradeCourse(selGrade)) selGrade = String(G.courses[0].course_id);
     const gc = gradeCourse(selGrade);
     const d = getDraft(gc);
+    const sb = sidBanner(G);
+    if (sb) body.appendChild(sb);
     const waiting = pendingGrades();
     if (waiting.length) {
       body.appendChild(h('div', { class: 'grade-wait', role: 'status' },
@@ -3120,18 +3539,27 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       const dr = gradeDrafts.get(id);
       return h('button', { type: 'button', class: 'tab', 'aria-pressed': String(id === selGrade), 'data-key': 'gtab-' + id, on: { click: () => { selGrade = id; render(); } } },
         c.short_name || '과목',
-        // 학점 비율을 직접 넣은 과목만 학점을 보여 주고, 기본 비율이면 위치(상위 %)만
-        c.estimate && c.estimate.grade ? (courseDistIsUser(c) ? h('span', { class: 'tab-grade' }, c.estimate.grade)
+        // 학점 비율을 직접 넣은 과목만 학점을 보여 주고, 기본 비율이면 위치(상위 %)만. P/NP 과목은 추정하지 않는다
+        isPF(c) ? h('span', { class: 'tab-grade' }, 'P/NP')
+        : c.estimate && c.estimate.grade ? (courseDistIsUser(c) ? h('span', { class: 'tab-grade' }, c.estimate.grade)
           : isFinite(Number(c.estimate.top)) ? h('span', { class: 'tab-grade', title: '기본 비율이라면 ' + c.estimate.grade }, '상위 ' + pct(c.estimate.top)) : null) : null,
         h('span', { class: 'tab-dirty', hidden: !(dr && dr.dirty) }, '저장 전'));
     })));
-    const main = h('div', null, estimateBlock(gc, d), neededBlock(gc), editorBlock(gc, d));
-    const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G), studentIdBlock(G));
+    const main = h('div', null, estimateBlock(gc, d), isPF(gc) ? null : neededBlock(gc), editorBlock(gc, d));
+    const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G), studentIdBlock(G, !!sb));
     body.appendChild(h('div', { class: 'g-grid' }, main, side));
   }
+  // P/NP 과목(계약 15): 점수는 보여 주고 학점·상위 % 추정은 하지 않는다
+  const isPF = (gc) => !!gc && (gc.mode === 'pass_fail' || gc.pass_fail === true || modeOf(gc.course_id) === 'pass_fail');
   function estimateBlock(gc, d) {
     const est = gc.estimate;
     const cs = fmtScore(gc.canvas_score);
+    if (isPF(gc)) {
+      return h('section', { class: 'g-sec', 'aria-labelledby': 'g-est-h' },
+        h('h2', { class: 'sec-h', id: 'g-est-h' }, 'P/NP 과목'),
+        h('p', { class: 'p-np' }, h('b', null, String(gc.pf_note || 'P/NP 과목 — 학점 추정 안 함').replace(/[.。]?\s*$/, '. ')), '받은 점수는 아래 평가 항목에 그대로 보여요. Canvas 현재 점수 ' + (cs || '비공개') + '.'),
+        h('p', { class: 'help', style: 'margin-top:6px' }, '성적 있는 과목이면 ', h('a', { href: '#courses', on: { click: () => { selCourse = String(gc.course_id); } } }, '과목 화면'), '에서 바꿀 수 있어요.'));
+    }
     const sec = h('section', { class: 'g-sec', 'aria-labelledby': 'g-est-h' },
       h('h2', { class: 'sec-h', id: 'g-est-h' }, '반에서의 위치 추정'),
       h('p', { class: 'help' }, 'Canvas 현재 점수 ' + (cs || '비공개') + '. 아래 값은 공개된 평균·표준편차로 어림한 추정치예요.'),
@@ -3228,27 +3656,51 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       inputmode: field === 'name' ? null : 'decimal', 'aria-label': (c.name || (i + 1) + '번째 항목') + ' ' + label, 'data-key': key(i, field),
       on: { input: (e) => { c[field] = e.target.value; d.dirty = true; liveGrades(id); } }
     }, extra || {}));
-    const rows = d.components.map((c, i) => h('tr', null,
-      h('td', null, input(c, i, 'name', '이름', { maxlength: '40', placeholder: '예) 중간고사' }),
-        c.auto ? h('span', { class: 'g-src' }, tag('자동', 'quiet chip-auto', '강의 글에서 자동으로 찾은 비중이에요' + (c.source ? ': ' + c.source : '') + '. 고쳐서 저장하면 직접 넣은 값이 됩니다.'), ' 강의 글에서 찾음') : null,
-        c.auto && c.source ? h('details', { class: 'g-auto' }, h('summary', null, '찾은 문장'), h('blockquote', null, c.source)) : null,
-        !c.auto && c.source ? h('span', { class: 'g-src' }, '출처: ' + c.source) : null,
-        rowStatus(c) ? h('span', { class: 'g-src' }, rowStatus(c)) : null),
-      h('td', null, input(c, i, 'weight', '비중(%)')),
-      h('td', null, input(c, i, 'score', '내 점수')),
-      h('td', null, input(c, i, 'max_score', '만점', { placeholder: '100' })),
-      h('td', null, input(c, i, 'mean', '평균')),
-      h('td', null, input(c, i, 'sd', '표준편차')),
-      h('td', { class: 'c' }, h('input', { type: 'checkbox', checked: c.fixed, 'data-key': key(i, 'fixed'), 'aria-label': (c.name || '항목') + ' 순위 계산에서 빼기',
-        on: { change: (e) => { c.fixed = e.target.checked; d.dirty = true; liveGrades(id); } } })),
-      h('td', { class: 'c' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': (c.name || '항목') + ' 지우기', 'data-key': key(i, 'del'),
-        on: { click: () => { d.components.splice(i, 1); d.dirty = true; focusKey = 'g-add-' + id; render(); } } }, icon('trash')))));
+    // 저장된 항목(세부 점수·개수·일정이 붙은 모양). 이름을 고치는 중이어도 저장된 이름으로 찾는다
+    const liveComps = (gc.config && Array.isArray(gc.config.components)) ? gc.config.components : [];
+    const liveOf = (c) => liveComps.find((x) => x && x.name === (c.orig || c.name)) || null;
+    let anyMap = false;
+    const rows = [];
+    d.components.forEach((c, i) => {
+      const L = liveOf(c);
+      const ms = members(L);
+      const dv = L && L.derived && typeof L.derived === 'object' ? L.derived : null;
+      const derived = ms.length > 0 || !!dv;
+      // 세부 점수나 개수가 있는 항목만 아래에 펼친다(서버 remaining은 점수 없는 모든 항목을 담으므로 기준으로 쓰지 않음)
+      const sub = L && (ms.length || countOf(L));
+      if (sub) anyMap = true;
+      const sched = L ? compSchedule(gc.course_id, L) : [];
+      const isPast = (x) => (typeof x.past === 'boolean' ? x.past : parseDate(x.due) < new Date(nowMs()));
+      const nextS = sched.find((x) => !isPast(x)) || null;
+      const lastS = !nextS && sched.length ? sched[sched.length - 1] : null;
+      rows.push(h('tr', { class: sub ? 'has-sub' : null },
+        h('td', null, input(c, i, 'name', '이름', { maxlength: '40', placeholder: '예) 중간고사' }),
+          c.auto ? h('span', { class: 'g-src' }, tag('자동', 'quiet chip-auto', '강의 글에서 자동으로 찾은 비중이에요' + (c.source ? ': ' + c.source : '') + '. 고쳐서 저장하면 직접 넣은 값이 됩니다.'), ' 강의 글에서 찾음') : null,
+          c.auto && c.source ? h('details', { class: 'g-auto' }, h('summary', null, '찾은 문장'), h('blockquote', null, c.source)) : null,
+          !c.auto && c.source && !derived ? h('span', { class: 'g-src' }, '출처: ' + c.source) : null,
+          nextS ? h('span', { class: 'g-sched' }, '일정 ' + fmtShortDT(parseDate(nextS.due)) + (nextS.status === 'review' ? ' · 확인 전' : ''))
+            : lastS ? h('span', { class: 'g-sched' }, '지난 일정 ' + fmtShort(parseDate(lastS.due)) + (lastS.title ? ' ' + lastS.title : ''))
+            : L && L.date_status === 'not_announced' && isExamComp(gc.course_id, L) ? h('span', { class: 'g-sched' }, '날짜 미공지') : null,
+          !derived && rowStatus(c) ? h('span', { class: 'g-src' }, rowStatus(c)) : null),
+        h('td', null, input(c, i, 'weight', '비중(%)')),
+        derived ? h('td', { colspan: '4' }, derivedCell(L, ms, dv)) : [
+          h('td', null, input(c, i, 'score', '내 점수')),
+          h('td', null, input(c, i, 'max_score', '만점', { placeholder: '100' })),
+          h('td', null, input(c, i, 'mean', '평균')),
+          h('td', null, input(c, i, 'sd', '표준편차'))],
+        h('td', { class: 'c' }, h('input', { type: 'checkbox', checked: c.fixed, 'data-key': key(i, 'fixed'), 'aria-label': (c.name || '항목') + ' 순위 계산에서 빼기',
+          on: { change: (e) => { c.fixed = e.target.checked; d.dirty = true; liveGrades(id); } } })),
+        h('td', { class: 'c' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': (c.name || '항목') + ' 지우기', 'data-key': key(i, 'del'),
+          on: { click: () => { d.components.splice(i, 1); d.dirty = true; focusKey = 'g-add-' + id; render(); } } }, icon('trash')))));
+      if (sub) rows.push(h('tr', { class: 'g-sub' }, h('td', { colspan: '8' }, gmapPanel(gc, L, ms))));
+    });
     const msg = gradeMsg.get(id);
     const over = weightSum(d) > 100.5;
     const badDist = d.custom && Math.abs(distSum(d) - 100) > 0.01;
     return h('section', { class: 'g-sec', 'aria-labelledby': 'g-ed-h' },
       h('h2', { class: 'sec-h', id: 'g-ed-h' }, '평가 항목', h('span', { class: 'sec-n' + (over ? ' warn' : ''), id: 'g-wsum' }, wsumText(d))),
       h('p', { class: 'help' }, '강의계획서의 평가 비중과 공개된 평균·표준편차를 넣으세요. 모르는 칸은 비워 두면 계산에서 빼요. 출석처럼 모두 비슷하게 받는 항목은 ‘순위 제외’를 켜세요.'),
+      anyMap ? h('p', { class: 'help', style: 'margin-top:2px' }, 'LAB처럼 여러 번 받는 점수는 그 항목 아래에 모아 평균을 내요. 연결이 틀렸으면 점수 옆 ‘바꾸기’를 누르세요.') : null,
       h('table', { class: 'gtable' },
         h('thead', null, h('tr', null,
           h('th', { scope: 'col' }, '항목'), h('th', { scope: 'col', class: 'w-num r' }, '비중 %'), h('th', { scope: 'col', class: 'w-num r' }, '내 점수'),
@@ -3260,7 +3712,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
           d.components.push({ name: '', weight: '', score: '', max_score: '', mean: '', sd: '', fixed: false, source: '' });
           d.dirty = true; focusKey = key(d.components.length - 1, 'name'); render();
         } } }, icon('plus'), '항목 추가')),
-      h('div', { class: 'g-block' },
+      isPF(gc) ? null : h('div', { class: 'g-block' },
         h('h3', { class: 'sub-h' }, '학점 비율', h('span', { class: 'sec-n' + (badDist ? ' warn' : ''), id: 'g-dsum' }, dsumText(d))),
         h('label', { class: 'check-line' },
           h('input', { type: 'checkbox', checked: d.custom, 'data-key': 'g-custom-' + id, on: { change: (e) => {
@@ -3340,52 +3792,313 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     const dr = gradeDrafts.get(String(gc.course_id));
     return !!label && (((gc.config && gc.config.components) || []).some(same) || !!(dr && dr.components.some(same)));
   }
+  // ---------------------------------------------------------------- 점수 → 평가 항목 연결(계약 14). 서버가 key를 주지 않으면 예전처럼 직접 넣기만
+  const valsOf = (c) => [['점수', c.score, c.max_score ? '/' + fmtNum(c.max_score) : ''], ['평균', c.mean], ['표준편차', c.sd], ['최고', c.high], ['최저', c.low]]
+    .filter((v) => v[1] !== null && v[1] !== undefined).map((v) => h('span', null, v[0] + ' ', h('b', null, fmtNum(v[1]) + (v[2] || ''))));
+  function candCard(c, acts, why) {
+    const d = parseDate(c.posted_at);
+    return h('div', { class: 'cand' },
+      h('div', { class: 'side-meta' }, h('span', { style: 'font-weight:600;color:var(--ink)' }, c.course_short || '과목 미상'),
+        h('span', null, (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’'), d ? h('span', null, fmtShort(d)) : null,
+        c.url ? extLink(c.url, '원문') : null),
+      c.sentence ? h('blockquote', null, c.sentence) : null,
+      h('div', { class: 'vals' }, c.label ? h('span', null, '항목 ', h('b', null, c.label)) : null, valsOf(c)),
+      Array.isArray(c.notes) && c.notes.length ? h('ul', { class: 'notes-list', style: 'margin-top:6px' }, c.notes.map((n) => h('li', null, String(n)))) : null,
+      why ? h('p', { class: 'cand-why' }, why) : null,
+      h('div', { class: 'cand-acts' }, acts));
+  }
+  // 후보의 지금 연결: 세부 점수(members)에 들어 있으면 그 항목, 아니면 서버가 후보에 적어 준 값(component·link_by 또는 link{})
+  function candLink(c) {
+    if (c.key && c.course_id) {
+      for (const L of courseComps(c.course_id)) for (const m of members(L)) if (m.key === c.key) return { component: L.name, by: m.link_by || null, reason: m.link_reason || null, member: true };
+    }
+    const lk = c.link && typeof c.link === 'object' ? c.link : null;
+    return { component: (lk ? lk.component : c.component) || null, by: (lk ? lk.by : c.link_by) || null, reason: (lk ? lk.reason : c.link_reason) || null, member: false };
+  }
   function candidatesBlock(G) {
     const all = Array.isArray(G.candidates) ? G.candidates : [];
     // 고른 과목의 후보만(다른 과목 것은 수만 알려 줌)
     const cands = all.filter((c) => String(c.course_id) === selGrade);
     const others = all.length - cands.length;
-    const valsOf = (c) => [['점수', c.score, c.max_score ? '/' + fmtNum(c.max_score) : ''], ['평균', c.mean], ['표준편차', c.sd], ['최고', c.high], ['최저', c.low]]
-      .filter((v) => v[1] !== null && v[1] !== undefined).map((v) => h('span', null, v[0] + ' ', h('b', null, fmtNum(v[1]) + (v[2] || ''))));
+    const otherLine = others > 0 ? h('p', { class: 'help', style: 'margin-top:8px' }, '다른 과목 후보 ' + others + '개는 그 과목 탭에서 볼 수 있어요.') : null;
+    const manualBtn = (c, i, cls, text) => candidateIn(c)
+      ? h('span', { class: 'tag tag-quiet', 'data-key': 'cand-' + i }, icon('check'), '넣음')
+      : h('button', { type: 'button', class: cls, 'data-key': 'cand-' + i, on: { click: () => applyCandidate(c) } }, text);
+    const gc = gradeCourse(selGrade);
+    const linkMode = !!gc && courseComps(selGrade).length > 0 && cands.some((c) => typeof c.key === 'string' && c.key);
+    if (!linkMode) {
+      return h('section', { class: 'g-sec', 'aria-labelledby': 'g-cand-h' },
+        h('h2', { class: 'sec-h', id: 'g-cand-h' }, '점수 후보', h('span', { class: 'sec-n' }, cands.length + '개')),
+        h('p', { class: 'help' }, '공지·메시지에서 찾은 이 과목의 점수 문장이에요. 맞으면 항목에 넣은 뒤 확인하고 저장하세요. 저절로 넣지 않아요.'),
+        cands.length ? cands.map((c) => candCard(c, manualBtn(c, all.indexOf(c), 'btn btn-line btn-sm', '항목에 넣기')))
+          : h('p', { class: 'empty', style: 'margin-top:8px' }, '이 과목에서 찾은 점수 문장이 아직 없어요.'),
+        otherLine);
+    }
+    const linked = [], excluded = [], open = [];
+    for (const c of cands) {
+      const lk = candLink(c);
+      if (lk.member) linked.push(c);
+      else if (lk.by === 'user' && !lk.component) excluded.push({ c, lk });
+      else open.push({ c, lk });
+    }
     return h('section', { class: 'g-sec', 'aria-labelledby': 'g-cand-h' },
-      h('h2', { class: 'sec-h', id: 'g-cand-h' }, '점수 후보', h('span', { class: 'sec-n' }, cands.length + '개')),
-      h('p', { class: 'help' }, '공지·메시지에서 찾은 이 과목의 점수 문장이에요. 맞으면 항목에 넣은 뒤 확인하고 저장하세요. 저절로 넣지 않아요.'),
-      cands.length ? cands.map((c) => {
-        const d = parseDate(c.posted_at);
-        const done = candidateIn(c);
-        const i = all.indexOf(c);
-        return h('div', { class: 'cand' },
-          h('div', { class: 'side-meta' }, h('span', { style: 'font-weight:600;color:var(--ink)' }, c.course_short || '과목 미상'),
-            h('span', null, (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’'), d ? h('span', null, fmtShort(d)) : null,
-            c.url ? extLink(c.url, '원문') : null),
-          h('blockquote', null, c.sentence || ''),
-          h('div', { class: 'vals' }, c.label ? h('span', null, '항목 ', h('b', null, c.label)) : null, valsOf(c)),
-          Array.isArray(c.notes) && c.notes.length ? h('ul', { class: 'notes-list', style: 'margin-top:6px' }, c.notes.map((n) => h('li', null, String(n)))) : null,
-          h('div', { style: 'margin-top:8px' }, done
-            ? h('span', { class: 'tag tag-quiet', 'data-key': 'cand-' + i }, icon('check'), '넣음')
-            : h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'cand-' + i, on: { click: () => applyCandidate(c) } }, '항목에 넣기')));
-      }) : h('p', { class: 'empty', style: 'margin-top:8px' }, '이 과목에서 찾은 점수 문장이 아직 없어요.'),
-      others > 0 ? h('p', { class: 'help', style: 'margin-top:8px' }, '다른 과목 후보 ' + others + '개는 그 과목 탭에서 볼 수 있어요.') : null);
+      h('h2', { class: 'sec-h', id: 'g-cand-h' }, '점수 후보', h('span', { class: 'sec-n' + (open.length ? ' warn' : '') }, open.length ? '골라 줄 것 ' + open.length + '개' : cands.length + '개')),
+      h('p', { class: 'help' }, '공지·메시지·점수표에서 찾은 이 과목 점수예요. 어느 평가 항목인지 정해지면 왼쪽 평가 항목 아래에 모여 추정에 들어가요.'),
+      linked.length ? h('p', { class: 'cand-sum' }, h('b', null, '평가 항목에 들어간 점수 ' + linked.length + '개'), ' — 왼쪽 항목 아래에서 근거와 함께 볼 수 있어요.') : null,
+      open.map(({ c, lk }) => candCard(c, [
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'cpick-' + (c.key || all.indexOf(c)), on: { click: () => openLinkChooser(gc, c, lk.component, lk.by, lk.reason) } }, '항목 고르기'),
+        manualBtn(c, all.indexOf(c), 'linkish', '직접 넣기')
+      ], h('span', null, h('b', { style: 'color:var(--burgundy)' }, '어느 항목인지 골라 주세요'), lk.reason ? ' · ' + lk.reason : lk.component ? ' · 지금: ' + lk.component : ''))),
+      !cands.length ? h('p', { class: 'empty', style: 'margin-top:8px' }, '이 과목에서 찾은 점수가 아직 없어요.') : null,
+      excluded.length ? (() => {
+        const det = h('details', { class: 'excl' }, h('summary', { 'data-key': 'grp-excl-' + selGrade }, '성적에 넣지 않은 점수 ' + excluded.length + '개'),
+          h('ul', null, excluded.map(({ c, lk }) => h('li', null,
+            h('span', { style: 'font-weight:600' }, c.label || '점수'),
+            h('span', { class: 'tnum' }, c.score !== null && c.score !== undefined ? fmtNum(c.score) + (c.max_score ? '/' + fmtNum(c.max_score) : '') + '점' : ''),
+            h('button', { type: 'button', class: 'linkish', 'data-key': 'cundo-' + (c.key || all.indexOf(c)), on: { click: () => linkPost(gc, c, null, true, false, lk) } }, '되돌리기')))));
+        det.open = openGroups.has('excl-' + selGrade);
+        det.addEventListener('toggle', () => { if (det.open) openGroups.add('excl-' + selGrade); else openGroups.delete('excl-' + selGrade); });
+        return det;
+      })() : null,
+      otherLine);
   }
-  let sidError = '';
-  function studentIdBlock(G) {
-    if (!Object.prototype.hasOwnProperty.call(G, 'student_id_set')) return null;
-    const inp = h('input', { type: 'text', class: 'gin', id: 'g-sid', 'data-key': 'g-sid', autocomplete: 'off', spellcheck: 'false', inputmode: 'text',
-      maxlength: '12', placeholder: G.student_id_set ? '바꿀 학번' : '학번', 'aria-describedby': 'g-sid-help' });
-    const save = (v) => {
-      sidError = '';
-      post('/api/grades/settings', { student_id: v }).then((s) => { focusKey = 'g-sid'; applyState(s); toast(v ? '학번을 저장했어요. 점수표 PDF에서 내 줄을 찾아요' : '학번을 지웠어요'); },
-        (err) => { sidError = err.message; focusKey = 'g-sid'; render(); });
+  const LINK_BY = { rules: '규칙으로 연결', ai: 'AI가 연결', user: '직접 고름' };
+  function openLinkChooser(gc, cand, cur, by, reason) {
+    const comps = courseComps(gc.course_id);
+    const nm = cand.label || '이 점수';
+    const prev = { component: cur || null, by: by || null };
+    openChooser({
+      title: josaQ(nm, '은', '는') + ' 어느 평가 항목인가요?',
+      desc: cur ? '지금: ' + compName(gc.course_id, cur) + ' (' + (LINK_BY[by] || '자동 연결') + (reason ? ' · ' + reason : '') + '). 고른 것이 자동 연결보다 우선해요.'
+        : (reason ? String(reason).replace(/[.。]?\s*$/, '. ') : '') + '고르면 그 항목의 세부 점수로 들어가 추정에 반영돼요.',
+      options: comps.map((c) => ({ label: c.name + (c.weight !== null && c.weight !== undefined && c.weight !== '' ? ' ' + pct(c.weight) : ''),
+        sub: members(c).length ? '세부 점수 ' + members(c).length + '개' : null, current: c.name === cur, onPick: () => linkPost(gc, cand, c.name, false, false, prev) }))
+        .concat([{ label: '이 과목 성적에 넣지 않음', sub: '추정에서 빼요. 언제든 되돌릴 수 있어요.', current: !cur && by === 'user', onPick: () => linkPost(gc, cand, null, false, false, prev) }]),
+      actions: by === 'user' ? [{ label: '자동으로 정하게 두기', onClick: () => linkPost(gc, cand, null, true, false, prev) }] : []
+    });
+  }
+  function linkPost(gc, cand, comp, reset, quiet, prev) {
+    const cid = String(gc.course_id);
+    const nm = cand.label || '이 점수';
+    const body = reset ? { key: cand.key, reset: true } : { key: cand.key, component: comp };
+    return post('/api/grades/' + encodeURIComponent(cid) + '/link', body).then((s) => {
+      applyState(s);
+      if (quiet) { toast('되돌렸어요 · ' + nm); return; }
+      const msg = reset ? josaQ(nm, '은', '는') + ' 다시 자동으로 연결해요'
+        : comp ? josaQ(nm, '을', '를') + ' ‘' + comp + '’에 넣었어요. 추정을 다시 계산했어요'
+        : josaQ(nm, '은', '는') + ' 이 과목 성적에서 뺐어요';
+      const p = prev || {};
+      toast(msg, () => (p.by === 'user' ? linkPost(gc, cand, p.component, false, true) : linkPost(gc, cand, null, true, true)));
+    }, (err) => toast(err.message));
+  }
+  // 세부 점수 묶음의 이름(LAB, HW, 실습): 라벨에서 번호를 뗀 것. 모르면 빈 문자열
+  const FAM_UI = { lab: 'LAB', hw: 'HW', quiz: '퀴즈', report: '보고서', project: '프로젝트' };
+  function famLabel(L, ms) {
+    const cnt = countOf(L);
+    const given = cnt && (cnt.label || cnt.unit || (cnt.family ? FAM_UI[cnt.family] || cnt.family : null));
+    if (given) return String(given);
+    const lab = ms.length ? String(ms[0].label || '') : '';
+    const base = lab.replace(/[\s_\-#.]*\d+\s*$/, '').trim();
+    if (base) return /^[A-Za-z]{1,6}$/.test(base) ? base.toUpperCase() : base;
+    if (cnt && /\blab/i.test(String(cnt.evidence || ''))) return 'LAB';
+    return '';
+  }
+  const remainingOf = (gc, name) => (gc && Array.isArray(gc.remaining) ? gc.remaining.find((r) => r && r.component === name) || null : null);
+  function derivedCell(L, ms, dv) {
+    const fam = famLabel(L, ms);
+    const got = num(dv && dv.received) || ms.length;
+    const has = (k) => dv && dv[k] !== null && dv[k] !== undefined && isFinite(Number(dv[k]));
+    const basis = dv && dv.basis === 'average' ? ' · 남은 개수를 몰라 받은 것 평균으로 어림' : '';
+    const tip = '세부 점수에서 계산한 값이라 직접 넣지 않아요.' + (dv && dv.basis === 'per_item' ? ' 추정에는 세부 점수 하나마다 같은 비중으로 넣어요.' : '');
+    return h('div', { class: 'g-derived', title: tip },
+      has('score_pct') ? h('span', null, '내 점수 ', h('b', null, fmtNum(dv.score_pct) + '%')) : h('span', null, '내 점수 아직 없음'),
+      has('mean_pct') ? h('span', null, '평균 ' + fmtNum(dv.mean_pct) + '%') : null,
+      has('sd_pct') ? h('span', null, '표준편차 ' + fmtNum(dv.sd_pct) + '%p') : null,
+      h('span', { class: 'g-basis' }, (fam ? fam + ' ' : '세부 점수 ') + got + '개 평균 · 자동 계산' + basis));
+  }
+  let countEdit = null, countErr = '';
+  const srcName2 = (t) => String(t || '').replace(/^첨부\s*['‘]([^'’]+)['’]$/, '$1');
+  function countLine(gc, L, ms, fam) {
+    const cid = String(gc.course_id);
+    const ek = cid + '\u0001' + L.name;
+    const cnt = countOf(L);
+    const got = ms.length || num(L.derived && L.derived.received);
+    if (countEdit === ek) return countEditor(gc, L, fam, cnt, got);
+    const n = countN(cnt);
+    const famS = fam ? fam + ' ' : '';
+    const edit = (label) => h('button', { type: 'button', class: 'linkish', 'data-key': 'cnt-edit-' + cid + '-' + L.name,
+      on: { click: () => { countEdit = ek; countErr = ''; focusKey = 'cnt-in-' + cid; render(); } } }, label);
+    if (n !== null) {
+      let basis = null;
+      if (cnt.basis === 'user') basis = h('span', { class: 'gmap-q' }, '· 직접 넣음');
+      else if (cnt.evidence || cnt.source_title) {
+        const ev = String(cnt.evidence || '').replace(/\s+/g, ' ').trim();
+        basis = h('span', { class: 'gmap-q', title: ev || null }, '· ' + (cnt.by === 'ai' ? 'AI가 찾은 ' : '') + '근거: ' + (cnt.source_title ? srcName2(cnt.source_title) + ' ' : '') +
+          (ev ? '‘' + (ev.length > 70 ? ev.slice(0, 69) + '…' : ev) + '’' : '') + (cnt.basis === 'hint' ? ' (다음 목록까지 세어 봤어요)' : ''));
+      }
+      return h('p', { class: 'gmap-line' }, h('b', null, got ? famS + n + '개 중 ' + got + '개 받음' : famS + '모두 ' + n + '개 · 받은 점수는 아직 없어요'), basis, h('span', { class: 'gmap-q' }, '·'), edit('고치기'),
+        cnt.basis === 'user' ? h('button', { type: 'button', class: 'linkish', on: { click: () => saveCount(gc, L, null, n) } }, '자동으로 찾기') : null);
+    }
+    const lo = cnt ? num(cnt.low) : 0;
+    if (lo) {
+      return h('p', { class: 'gmap-line' }, h('b', null, '최소 ' + lo + '개'),
+        h('span', { class: 'gmap-q' }, '(지금까지 본 ' + (fam || '번호') + (cnt.high ? ', 많으면 ' + cnt.high + '개' : '') + ') — 몇 개인지 알려 주세요'), edit('개수 넣기'));
+    }
+    if (got) return h('p', { class: 'gmap-line' }, h('b', null, famS + got + '개 받음'), h('span', { class: 'gmap-q' }, '— 모두 몇 개인지 알려 주면 남은 비중을 계산해요'), edit('개수 넣기'));
+    return null;
+  }
+  function countEditor(gc, L, fam, cnt, got) {
+    const cid = String(gc.course_id);
+    const n = countN(cnt);
+    const inp = h('input', { type: 'number', class: 'gin r', min: String(Math.max(1, got)), max: '60', step: '1', 'data-key': 'cnt-in-' + cid,
+      value: n !== null ? String(n) : cnt && num(cnt.low) ? String(num(cnt.low)) : '', 'aria-label': L.name + ' 전체 개수' });
+    const cancel = () => { countEdit = null; countErr = ''; focusKey = 'cnt-edit-' + cid + '-' + L.name; render(); };
+    const save = () => {
+      const v = inp.value.trim();
+      if (!/^\d+$/.test(v) || Number(v) < 1) { countErr = '1 이상의 정수로 넣어 주세요.'; focusKey = 'cnt-in-' + cid; render(); return; }
+      if (Number(v) < got) { countErr = '이미 받은 ' + got + '개보다 적을 수 없어요.'; focusKey = 'cnt-in-' + cid; render(); return; }
+      saveCount(gc, L, Number(v), cnt && cnt.basis === 'user' ? n : null);
     };
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(inp.value.trim() || null); } });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    return h('div', null,
+      h('p', { class: 'gmap-line' }, h('span', null, (fam ? fam + ' ' : '') + '모두'), inp, h('span', null, '개'),
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', on: { click: save } }, '저장'),
+        h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: cancel } }, '취소'),
+        h('span', { class: 'gmap-q' }, '강의계획서나 공지에 적힌 전체 개수를 넣어 주세요')),
+      countErr ? h('p', { class: 'inline-error', role: 'alert' }, countErr) : null);
+  }
+  function saveCount(gc, L, n, prevUser, quiet) {
+    const cid = String(gc.course_id);
+    return post('/api/grades/' + encodeURIComponent(cid) + '/count', { component: L.name, n }).then((s) => {
+      countEdit = null; countErr = '';
+      focusKey = 'cnt-edit-' + cid + '-' + L.name;
+      applyState(s);
+      if (quiet) { toast('되돌렸어요 · ' + L.name); return; }
+      toast(n === null ? josaQ(L.name, '은', '는') + ' 개수를 다시 자동으로 찾아요' : josaQ(L.name, '을', '를') + ' 모두 ' + n + '개로 봤어요. 남은 비중을 다시 계산했어요',
+        () => saveCount(gc, L, prevUser === undefined ? null : prevUser, null, true));
+    }, (err) => { countErr = err.message; render(); });
+  }
+  function remainLine(gc, L) {
+    const r = remainingOf(gc, L.name);
+    if (!r) return null;
+    const rg = Array.isArray(r.range) && r.range.length === 2 && r.range.every((x) => isFinite(Number(x))) ? r.range.map(Number) : null;
+    const n = countN(countOf(L));
+    const left = typeof r.count_left === 'number' ? r.count_left : null;
+    if (rg && Math.abs(rg[1] - rg[0]) > 0.05) {
+      return h('p', { class: 'gmap-line' }, h('b', null, '남은 비중 ' + pct(Math.min(rg[0], rg[1])) + '–' + pct(Math.max(rg[0], rg[1]))), h('span', { class: 'gmap-q' }, '· 개수가 확실하지 않아 범위로 봤어요(추정)'));
+    }
+    if (left !== null && r.weight !== null && r.weight !== undefined) {
+      return h('p', { class: 'gmap-line' }, h('b', null, '남은 ' + left + '개 · ' + pct(r.weight)),
+        n && L.weight !== null && L.weight !== undefined ? h('span', { class: 'gmap-q' }, '(' + pct(L.weight) + ' × ' + left + '/' + n + ', 아직 점수가 없는 평가로 계산해요)') : null);
+    }
+    if (r.weight !== null && r.weight !== undefined) return h('p', { class: 'gmap-line' }, h('b', null, '남은 비중 ' + pct(r.weight)));
+    return null;
+  }
+  function memberRow(gc, L, m) {
+    const d = parseDate(m.posted_at);
+    const has = (k) => m[k] !== null && m[k] !== undefined && m[k] !== '' && isFinite(Number(m[k]));
+    return h('li', { class: 'mem' },
+      h('span', { class: 'mem-l' }, m.label || '세부 점수'),
+      h('span', { class: 'mem-v' },
+        has('score') ? h('span', null, '내 점수 ', h('b', null, fmtNum(m.score) + (has('max_score') ? '/' + fmtNum(m.max_score) : ''))) : h('span', { class: 'help' }, '내 점수 없음'),
+        has('mean') ? h('span', null, '평균 ' + fmtNum(m.mean)) : null,
+        has('sd') ? h('span', null, '표준편차 ' + fmtNum(m.sd)) : null,
+        has('rank') ? h('span', null, (has('n') ? fmtNum(m.n, 0) + '명 중 ' : '') + fmtNum(m.rank, 0) + '등') : has('n') ? h('span', null, fmtNum(m.n, 0) + '명') : null),
+      linkChip(gc, m, L.name),
+      h('span', { class: 'mem-src' }, (SOURCE[m.source_type] || '글') + (m.source_title ? ' ‘' + m.source_title + '’' : ''), d ? ' · ' + fmtShort(d) : '',
+        m.url ? [' · ', extLink(m.url, '원문')] : null, m.link_reason ? ' · 연결 근거: ' + m.link_reason : null));
+  }
+  function linkChip(gc, m, cur) {
+    const by = m.link_by || null;
+    const label = by === 'user' ? '직접 연결' : by === 'ai' ? 'AI 연결' : '자동 연결';
+    return h('button', { type: 'button', class: 'link-chip' + (by === 'user' ? ' is-user' : ''), 'data-key': 'lnk-' + (m.key || m.label),
+      title: label + (m.link_reason ? ': ' + m.link_reason : '') + '. 누르면 다른 항목으로 바꿀 수 있어요',
+      'aria-label': (m.label || '점수') + ', ' + cur + '에 ' + label + ', 바꾸기',
+      on: { click: () => openLinkChooser(gc, m, cur, by, m.link_reason) } }, label + ' · 바꾸기');
+  }
+  function gmapPanel(gc, L, ms) {
+    const fam = famLabel(L, ms);
+    const G = state.grades || {};
+    return h('div', { class: 'gmap' },
+      countLine(gc, L, ms, fam),
+      remainLine(gc, L),
+      ms.length ? h('ul', { class: 'mem-list', 'aria-label': L.name + ' 세부 점수' }, ms.map((m) => memberRow(gc, L, m)))
+        : h('p', { class: 'gmap-line' }, h('span', { class: 'gmap-q' }, '아직 받은 ' + (fam || '세부') + ' 점수가 없어요.' + (num(G.score_files_waiting) ? ' 위에서 학번을 넣으면 점수표 PDF에서 찾아 여기에 넣어요.' : ''))));
+  }
+
+  // ---------------------------------------------------------------- 학번(점수표에서 내 줄 찾기, 계약 14-7)
+  const SID_WHY = '학번은 이 PC에만 저장하고, 화면에는 가려서 보여 주고, AI로 보내지 않아요. 점수표 PDF에서 내 줄을 찾는 데만 써요.';
+  let sidErr = { where: '', msg: '' };
+  const hasSid = (G) => !!G && Object.prototype.hasOwnProperty.call(G, 'student_id_set');
+  const unmatchedFiles = (G) => (G && Array.isArray(G.score_files_unmatched) ? G.score_files_unmatched.filter(Boolean).map(String) : []);
+  function saveSid(v, k) {
+    sidErr = { where: '', msg: '' };
+    const before = num((state.grades || {}).score_files_waiting) + unmatchedFiles(state.grades).length;
+    return post('/api/grades/settings', { student_id: v }).then((s) => {
+      focusKey = k;
+      applyState(s);
+      if (!v) { toast('학번을 지웠어요'); return; }
+      const un = unmatchedFiles(s.grades).length;
+      toast(un ? '학번을 저장했어요. 점수표 ' + un + '개에서는 내 줄을 못 찾았어요 — 학번을 확인해 주세요'
+        : before ? '학번을 저장했어요. 점수표 ' + before + '개에서 내 점수를 찾았어요' : '학번을 저장했어요. 점수표가 올라오면 내 줄을 찾아 드릴게요');
+    }, (err) => { sidErr = { where: k, msg: err.message }; focusKey = k; render(); });
+  }
+  function sidForm(G, where) {
+    const k = 'sid-' + where;
+    const inp = h('input', { type: 'text', class: 'gin', id: k, 'data-key': k, autocomplete: 'off', spellcheck: 'false', inputmode: 'text', maxlength: '12',
+      placeholder: G.student_id_set ? '바꿀 학번' : '학번', 'aria-label': '학번', 'aria-describedby': k + '-why' });
+    const save = () => saveSid(inp.value.trim() || null, k);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    return [
+      G.student_id_set ? h('p', { class: 'ok-msg' }, '저장된 학번 ', h('b', { class: 'tnum' }, G.student_id_masked || '(가려 둠)')) : null,
+      h('div', { class: 'sid-row' }, inp,
+        h('button', { type: 'button', class: 'btn ' + (where === 'top' ? 'btn-primary' : 'btn-line') + ' btn-sm', 'data-key': k + '-save', on: { click: save } },
+          G.student_id_set ? '바꾸기' : where === 'top' ? '내 점수 찾기' : '저장'),
+        G.student_id_set ? h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': k + '-del', on: { click: () => saveSid(null, k) } }, '지우기') : null),
+      sidErr.where === k && sidErr.msg ? h('p', { class: 'inline-error', role: 'alert' }, sidErr.msg) : null,
+      h('p', { class: 'sid-why', id: k + '-why' }, SID_WHY)
+    ];
+  }
+  // 성적 화면 맨 위: 점수표가 있는데 학번이 없을 때, 학번은 있는데 내 줄을 못 찾았을 때
+  function sidBanner(G) {
+    if (!hasSid(G)) return null;
+    const waiting = num(G.score_files_waiting);
+    const un = unmatchedFiles(G);
+    if (!waiting && !un.length) return null;
+    const files = un.slice(0, 2).join(', ') + (un.length > 2 ? ' 외 ' + (un.length - 2) + '개' : '');
+    return h('section', { class: 'sid-banner', 'aria-labelledby': 'sid-b-h' },
+      h('p', { class: 'sid-title' + (waiting ? '' : ' is-warn'), id: 'sid-b-h' },
+        waiting ? '점수표 PDF ' + waiting + '개가 있어요. 학번을 넣으면 내 점수를 찾아 드려요' : '학번을 확인해 주세요 (' + files + '에서 내 줄을 못 찾았어요)'),
+      h('p', { class: 'sid-why' }, waiting ? '성적 공지에 붙은 점수표에는 학번별 점수가 적혀 있어요. 학번으로 내 줄만 찾아 평가 항목에 넣어요.'
+        : '저장한 학번이 점수표의 학번과 다르거나, 그 점수표에 내 줄이 없을 수 있어요.'),
+      sidForm(G, 'top'));
+  }
+  function studentIdBlock(G, bannerShown) {
+    if (!hasSid(G)) return null;
     return h('section', { class: 'g-sec', 'aria-labelledby': 'g-sid-h' },
       h('h2', { class: 'sec-h', id: 'g-sid-h' }, '점수표에서 내 점수 찾기'),
-      h('p', { class: 'help', id: 'g-sid-help' }, '성적 공지에 붙은 점수표 PDF에서 내 줄만 찾아 점수 후보로 올려요. 학번은 이 PC에만 저장, 화면에는 가려서 표시해요.'),
-      G.student_id_set ? h('p', { class: 'ok-msg', style: 'margin-top:6px' }, '저장된 학번 ', h('b', { class: 'tnum' }, G.student_id_masked || '')) : null,
-      h('div', { class: 'size-row' }, inp,
-        h('button', { type: 'button', class: 'btn btn-line btn-sm', on: { click: () => save(inp.value.trim() || null) } }, '저장'),
-        G.student_id_set ? h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => save(null) } }, '지우기') : null),
-      sidError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:6px' }, sidError) : null);
+      h('p', { class: 'help' }, '성적 공지에 붙은 점수표 PDF에는 학번별 점수가 있어요. 학번으로 내 줄만 찾아 점수 후보로 올려요. 설정에서도 바꿀 수 있어요.'),
+      bannerShown ? h('p', { class: 'help', style: 'margin-top:6px' }, h('button', { type: 'button', class: 'linkish', on: { click: () => { const el = $('sid-top'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus({ preventScroll: true }); } } } }, '위 안내 칸에 학번을 넣어 주세요'))
+        : h('div', { style: 'margin-top:8px;display:grid;gap:6px' }, sidForm(G, 'side')));
+  }
+  function renderGradesPane() {
+    const pane = $('pane-grades');
+    const box = $('grades-box');
+    box.replaceChildren();
+    const G = state.grades && typeof state.grades === 'object' ? state.grades : null;
+    pane.hidden = !hasSid(G);
+    if (!hasSid(G)) return;
+    const waiting = num(G.score_files_waiting);
+    const un = unmatchedFiles(G);
+    add(box, [
+      h('h3', { class: 'sub-h' }, '점수표에서 내 점수 찾기'),
+      h('p', { class: 'help', style: 'margin-top:2px' }, '성적 공지에 붙은 점수표 PDF에서 학번으로 내 줄만 찾아 성적 화면의 평가 항목에 넣어요.'),
+      waiting ? h('p', { class: 'warn', style: 'margin-top:6px;font-size:14px' }, '점수표 PDF ' + waiting + '개가 학번을 기다리고 있어요.') : null,
+      un.length ? h('p', { class: 'warn', style: 'margin-top:6px;font-size:14px' }, '학번을 확인해 주세요 (' + un.slice(0, 2).join(', ') + (un.length > 2 ? ' 외 ' + (un.length - 2) + '개' : '') + '에서 내 줄을 못 찾았어요)') : null,
+      h('div', { style: 'margin-top:10px;display:grid;gap:6px' }, sidForm(G, 'set'))
+    ]);
   }
   function applyCandidate(c) {
     const target = c.course_id && gradeCourse(c.course_id) ? String(c.course_id) : selGrade;
@@ -3443,6 +4156,43 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     const due = parseDate(it.edited && origDue(it) ? origDue(it) : it.due);
     return { phrase: relPhrase(q.text), base, due, src: SOURCE[q.source_type] || '글' };
   }
+  // ---------------------------------------------------------------- 마감·시험 항목 → 평가 항목(계약 14-9 Item.component)
+  const hasCompField = (it) => !!it && Object.prototype.hasOwnProperty.call(it, 'component');
+  function courseComps(courseId) {
+    const gc = gradeCourse(courseId);
+    return gc && gc.config && Array.isArray(gc.config.components) ? gc.config.components.filter((c) => c && c.name) : [];
+  }
+  const BY_WORD = { rules: '규칙으로 연결', ai: 'AI가 연결', user: '직접 고름' };
+  // 보여 줄지: 서버가 component 칸을 주고, 그 과목에 평가 항목이 있으며, 연결돼 있거나 시험일 때
+  const showComp = (it) => hasCompField(it) && courseComps(it.course_id).length > 0 && (!!it.component || it.kind === '시험');
+  function openItemComp(it) {
+    const comps = courseComps(it.course_id);
+    const cur = it.component || null;
+    const by = it.component_by;
+    openChooser({
+      title: josaQ(it.title || '이 항목', '은', '는') + ' 어느 평가 항목인가요?',
+      desc: cur ? '지금: ' + compName(it.course_id, cur) + (BY_WORD[by] ? ' (' + BY_WORD[by] + ')' : '') + '. 고르면 그 항목의 일정으로 보여요.' : '고르면 과목의 평가 지도와 시험 일정에 그 항목으로 보여요.',
+      options: comps.map((c) => ({ label: c.name + (c.weight !== null && c.weight !== undefined ? ' ' + pct(c.weight) : ''), current: c.name === cur, onPick: () => setItemComp(it, c.name) }))
+        .concat([{ label: '어느 평가 항목도 아님', sub: '평가 지도와 시험 일정에서 빼요. 마감은 그대로예요.', current: !cur && by === 'user', onPick: () => setItemComp(it, null) }])
+    });
+  }
+  function setItemComp(it, name, quiet) {
+    const prev = it.component || null;
+    return post('/api/item/' + encodeURIComponent(it.id) + '/component', { component: name }).then((s) => {
+      applyState(s);
+      if (quiet) { toast('되돌렸어요 · ' + (it.title || '')); return; }
+      toast((name ? josaQ(it.title || '이 항목', '을', '를') + ' ‘' + name + '’에 연결했어요' : josaQ(it.title || '이 항목', '은', '는') + ' 평가 항목에서 뺐어요'),
+        () => setItemComp(it, prev, true));
+    }, (err) => { cardErrors.set(it.id, err.message); render(); });
+  }
+  function compLine(it) {
+    if (!showComp(it)) return null;
+    const by = BY_WORD[it.component_by] || '';
+    return h('p', { class: 'comp-line', title: it.component_reason ? '연결 근거: ' + it.component_reason : null },
+      it.component ? [h('span', null, '평가 항목 ', h('b', { style: 'color:var(--ink);font-weight:600' }, compName(it.course_id, it.component)), '에 해당'), by ? h('span', null, '· ' + by) : null]
+        : h('span', null, '어느 평가 항목(시험)인지 아직 몰라요'),
+      h('button', { type: 'button', class: 'linkish', 'data-key': 'comp-' + it.id, on: { click: () => openItemComp(it) } }, it.component ? '바꾸기' : '고르기'));
+  }
   const decisionWord = (it) => it.status === 'replaced' ? '다른 날짜로 대체됨'
     : it.decision === 'approved' ? (it.decided_by === 'ai' ? 'AI가 승인' : '승인') : it.decision === 'rejected' ? (it.decided_by === 'ai' ? 'AI가 제외' : '제외') : '승인 전';
   function evidenceChain(it) {
@@ -3460,6 +4210,9 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       { k: '출처 글', done: ev.length > 0, v: ev.length ? [ev.map(srcLine), seen ? h('div', { class: 'src-meta' }, fmtShortDT(seen) + ' 확인 때 처음 찾음') : null] : '저장된 출처가 없어요' },
       { k: '찾은 문장', done: quotes.length > 0, v: quotes.length ? quotes.map((e) => h('blockquote', null, e.text)) : '문장이 저장되지 않았어요' },
       { k: '날짜 읽기', done: true, v: read.length ? h('ul', null, read) : '글에 적힌 날짜·시간 그대로예요' },
+      showComp(it) ? { k: '평가 항목', done: !!it.component, wait: !it.component, v: [
+        it.component ? compName(it.course_id, it.component) + '에 해당' + (BY_WORD[it.component_by] ? ' (' + BY_WORD[it.component_by] + (it.component_reason && it.component_by !== 'user' ? ' · ' + it.component_reason : '') + ')' : '') : '어느 평가 항목인지 아직 몰라요',
+        ' ', h('button', { type: 'button', class: 'linkish', style: 'font-size:13px', 'data-key': 'ccomp-' + it.id, on: { click: () => openItemComp(it) } }, it.component ? '바꾸기' : '고르기')] } : null,
       it.edited ? { k: '직접 고침', done: true, v: od ? '원문 ' + fmtShortDT(od) + ' → ' + (parseDate(it.due) ? fmtShortDT(parseDate(it.due)) : '마감 없음') + '로 고쳤어요' : '제목이나 마감을 직접 고쳤어요' } : null,
       { k: '승인', done: it.decision === 'approved', wait: it.decision !== 'approved', v: it.status === 'replaced' ? '같은 과제의 다른 날짜를 넣어서 이 날짜는 대체됐어요'
         : it.decision === 'approved' ? (dec ? fmtShortDT(dec) + ' 일정에 넣음' : '일정에 넣음') : it.decision === 'rejected' ? (dec ? fmtShortDT(dec) + ' 제외함' : '제외함') : '아직 정하지 않았어요' },
@@ -3596,6 +4349,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         it.edited ? tag(od ? '직접 고침 (원문 ' + fmtMD(od) + ')' : '직접 고침', 'quiet', od ? '원래 글의 마감: ' + fmtShortDT(od) : null) : null,
         it.edited ? h('button', { type: 'button', class: 'linkish', style: 'font-size:13px', on: { click: () => itemPost(it, { title: null, due: null }, '원래 값으로 되돌렸어요') } }, '원래대로') : null),
       quote ? h('p', { class: 'rc-quote', title: quote.text }, quote.text) : h('p', { class: 'rc-quote is-empty' }, '저장된 문장이 없어요'),
+      compLine(it),
       aiNote(it, true),
       conflictNote(it),
       linked ? h('p', { class: 'rc-note', title: 'Canvas 과제 ‘' + (linked.title || '') + '’' }, 'Canvas 과제 ', h('b', null, '‘' + (linked.title || '') + '’'),
@@ -3741,7 +4495,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
           return h('li', { class: 'done-row', id: 'item-' + it.id, 'data-item': it.id },
             h('div', null, h('div', { class: 'side-title' }, it.title || ''),
               h('div', { class: 'side-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null, methodTag(it, false), aiChip(it)),
-              aiNote(it, false)),
+              aiNote(it, false), compLine(it)),
             h('div', null, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'undo-' + it.id,
               on: { click: () => itemPost(it, { decision: 'pending' }, (it.decided_by === 'ai' ? 'AI가 한 결정을 되돌렸어요 · ' : '확인함으로 되돌렸어요 · ') + (it.title || '')) } }, it.decided_by === 'ai' ? '되돌리기' : '확인 전으로')),
             miniChain(it),
@@ -3862,6 +4616,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         return h('button', { type: 'button', class: 'linkish', 'data-key': 'matdl-' + it.id + '-' + what, on: { click: () => (it.status === 'review' ? goInbox(it.id) : it.status === 'scheduled' ? go('#dash', () => showRow(it.id))() : goInbox(it.id)) } }, label);
       }));
   }
+  // "공지 12개 중 파일이 붙은 2개"(과목의 read_counts를 알 때), 모르면 "파일이 붙은 공지 2개"
+  function noticeHint(short, n) {
+    const c = state.courses.find((x) => x && (courseShort(x) === short));
+    const total = c && c.read_counts && typeof c.read_counts.announcements === 'number' ? c.read_counts.announcements : null;
+    return total !== null && total >= n ? '공지 ' + total + '개 중 파일이 붙은 ' + n + '개' : '파일이 붙은 공지 ' + n + '개';
+  }
   function renderMaterials() {
     const body = $('materials-body');
     body.replaceChildren();
@@ -3881,9 +4641,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     // 과목 → 게시판 → 글 → 파일
     const courses = [];
     const find = (arr, key, make) => { let x = arr.find((y) => y.key === key); if (!x) { x = make(); arr.push(x); } return x; };
+    // Canvas 공지의 첨부는 서버가 가상 게시판(board_id "announcements", 제목 '공지')으로 묶는다: 공지 전체가 아니라 '파일이 붙은 공지'라고 밝힌다
+    const isNotice = (f) => /^board:announcements-/.test(String(f.post_key || '')) || f.board_id === 'announcements' || f.board_source === 'canvas';
     for (const it of items) {
       const c = find(courses, it.course_short || '과목 미상', () => ({ key: it.course_short || '과목 미상', boards: [] }));
-      const b = find(c.boards, it.board_title || '게시판', () => ({ key: it.board_title || '게시판', posts: [] }));
+      const bk = isNotice(it) ? '\u0001notice' : it.board_title || '게시판';
+      const b = find(c.boards, bk, () => ({ key: bk, notice: isNotice(it), title: isNotice(it) ? '공지 첨부 파일' : it.board_title || '게시판', posts: [] }));
       const p = find(b.posts, it.post_key || it.post_title || it.key, () => ({ key: it.post_key || it.post_title || it.key, title: it.post_title || '제목 없음', at: it.posted_at, files: [] }));
       p.files.push(it);
     }
@@ -3891,7 +4654,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       body.appendChild(h('section', { class: 'mat-course', 'aria-label': c.key },
         h('h2', { class: 'sec-h' }, c.key, h('span', { class: 'sec-n' }, '파일 ' + c.boards.reduce((a, b) => a + b.posts.reduce((x, p) => x + p.files.length, 0), 0) + '개')),
         c.boards.map((b) => h('div', { class: 'mat-board' },
-          h('h3', { class: 'sub-h' }, b.key),
+          h('h3', { class: 'sub-h' }, b.title || b.key, b.notice ? h('span', { class: 'sec-n' }, noticeHint(c.key, b.posts.length)) : null),
           b.posts.map((p) => {
             const d = parseDate(p.at);
             const fromFiles = new Set();
@@ -4112,7 +4875,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     renderFirstSync();
     $('canvas-conf').hidden = !conf || reconfiguring;
     for (const id of ['pane-google', 'pane-options', 'pane-file', 'pane-runs', 'pane-tour']) $(id).hidden = !conf;
-    if (!conf) { for (const id of ['pane-bg', 'pane-materials', 'pane-ai', 'pane-mascot']) $(id).hidden = true; return; }
+    if (!conf) { for (const id of ['pane-bg', 'pane-materials', 'pane-ai', 'pane-mascot', 'pane-grades']) $(id).hidden = true; return; }
     renderAccount();
     $('include-canvas').checked = !!state.settings.include_canvas;
     const hasWeekly = Object.prototype.hasOwnProperty.call(state.settings, 'weekly_summary');
@@ -4141,7 +4904,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       const errs = Array.isArray(r.errors) ? r.errors.filter(Boolean) : [];
       box.appendChild(h('div', { class: 'report' },
         h('p', null, '마지막 동기화 ' + (d ? fmtDateTime(d) : '-')),
-        h('p', null, '읽은 것: ' + parts.join(', ')),
+        h('p', null, '지금까지 읽은 것: ' + parts.join(', ')),
         h('p', null, '찾은 마감 후보 ' + num(r.candidates) + '개, 확인 필요 ' + num(r.needs_review) + '개, 마감 없음 ' + num(r.no_deadline) + '개'),
         r.ai_triage && typeof r.ai_triage === 'object' ? h('p', { class: r.ai_triage.ok === false ? 'inline-error' : null }, r.ai_triage.ok === false ? 'AI 자동 정리 실패: ' + (r.ai_triage.error || '') : 'AI 자동 정리 ' + num(r.ai_triage.applied) + '개') : null,
         num(r.ai_skipped_user_changed) ? h('p', null, '내가 이미 손댄 후보 ' + num(r.ai_skipped_user_changed) + '개는 AI가 건드리지 않았어요') : null,
@@ -4155,6 +4918,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     renderMaterialsPane();
     renderAiPane();
     renderMascotPane();
+    renderGradesPane();
   }
 
   // ---------------------------------------------------------------- 계정
@@ -4515,7 +5279,8 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
           h('span', null, '‘' + (t.title || '') + '’'),
           t.course_name ? h('span', { class: 'help' }, shortForName(t.course_name)) : null,
           h('span', { class: 'help' }, t.reason || ''),
-          h('span', { class: num(t.found) ? null : 'help' }, num(t.found) ? '마감 ' + num(t.found) + '개 찾음' : '찾은 마감 없음')))) : h('p', { class: 'help' }, '바뀐 글이 없어 다시 읽지 않았어요.'),
+          h('span', { class: num(t.found) ? null : 'help' }, num(t.found) ? '마감 ' + num(t.found) + '개 찾음' : '찾은 마감 없음')))) : h('p', { class: 'help' }, '바뀐 글이 없어 다시 읽지 않았어요' + (num(r.skipped) ? ' · ' + num(r.skipped) + '곳을 확인했는데 모두 그대로였어요(이미 읽어 둔 글)' : '') + '.'),
+        targets.length && num(r.skipped) ? h('p', { class: 'help', style: 'margin-top:6px' }, '그 밖의 ' + num(r.skipped) + '곳은 바뀌지 않아 이미 읽어 둔 내용을 그대로 썼어요.') : null,
         num(r.requests) || num(r.conversations_fetched) ? h('p', { class: 'help', style: 'margin-top:6px' },
           [num(r.requests) ? 'Canvas에 ' + num(r.requests) + '번 물어봤어요' : '', num(r.conversations_fetched) ? '본문을 받은 메시지 대화 ' + num(r.conversations_fetched) + '개' : ''].filter(Boolean).join(' · ')) : null,
         errs.length ? h('ul', { class: 'run-targets', style: 'margin-top:6px' }, errs.map((e) => h('li', { class: 'inline-error' }, String(e)))) : null));
@@ -4961,10 +5726,10 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       const src = s.source === 'default' ? ' (추정: Canvas에 학기 날짜가 없어 통상 학기로 잡음)' : s.source === 'items' ? ' (항목 날짜로 잡음)' : s.source === 'canvas' ? ' (Canvas 학기 날짜)' : '';
       return (st ? fmtDate(st) + ' 개강' : '') + (en ? ', ' + fmtDate(en) + ' 종강' : '') + ', ' + (s.weeks_total || weeksList().length) + '주' + src + (s.note ? '. ' + s.note : '');
     }
-    if (v === 'courses') return state.courses.length + '과목. 점수는 Canvas가 계산한 현재 점수예요';
+    if (v === 'courses') return (state.courses.length - hiddenCourses.length) + '과목' + (hiddenCourses.length ? '(제외 ' + hiddenCourses.length + ')' : '') + '. 점수는 Canvas가 계산한 현재 점수예요';
     if (v === 'grades') return '공개된 평균·표준편차로 반에서의 위치를 어림해요. 실제 순위·학점과 다를 수 있어요';
     if (v === 'inbox') return '공지·메시지·게시판에서 찾은 마감 후보예요. 근거를 보고 맞으면 일정에 넣어요';
-    if (v === 'settings') return setupPhase ? '첫 동기화가 끝나면 대시보드로 넘어가요' : state.configured ? '계정, 캘린더 반영, 확인 기록' : 'Canvas를 연결하면 학기 일정을 만들어요';
+    if (v === 'settings') return setupPhase ? '첫 동기화가 끝나면 대시보드로 넘어가요' : state.configured ? '계정, 캘린더 반영, 성적, 확인 기록' : 'Canvas를 연결하면 학기 일정을 만들어요';
     return '';
   }
   function renderChrome(v) {
@@ -5147,10 +5912,14 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       const run = Array.isArray(s.runs) && s.runs[0];
       const at = s.report && s.report.ai_triage;
       const read = run ? num(run.checked) : null;
+      const kept = run ? num(run.skipped) : 0;
       const aiTxt = at && at.ok !== false && num(at.applied) ? ' AI가 ' + num(at.applied) + '개를 정리했어요' + (typeof at.pending_left === 'number' && at.pending_left ? '(' + at.pending_left + '개 남음)' : '') + '.' : '';
-      // 바뀐 게 없으면 숫자 대신 결론만
-      if (!full && read === 0 && !fresh) toast('바뀐 글이 없어요. 마감 그대로예요.' + aiTxt);
-      else toast((full ? '전체를 다시 확인했어요.' : '동기화했어요.') + (read ? (full ? ' 글 ' : ' 바뀐 글 ') + read + '개를 다시 읽었어요.' : '') + (fresh ? ' 신규 후보 ' + fresh + '개.' : '') + aiTxt);
+      // 몇 곳을 살폈는지(그대로라 건너뛴 곳 포함): '아무것도 안 읽었다'로 보이지 않게
+      const ann = s.report ? num(s.report.announcements) : 0;
+      const looked = (read || 0) + kept;
+      const scope = looked ? (ann ? '공지 ' + ann + '개 등 ' : '') + looked + '곳 확인' : '';
+      if (!full && read === 0 && !fresh) toast('바뀐 글이 없어요' + (scope ? ' · ' + scope : '') + '. 마감 그대로예요.' + aiTxt);
+      else toast((full ? '전체를 다시 확인했어요.' : '동기화했어요.') + (read ? (full ? ' 글 ' : ' 바뀐 글 ') + read + '개를 다시 읽었어요' + (kept ? '(그대로인 ' + kept + '곳은 건너뜀)' : '') + '.' : '') + (fresh ? ' 신규 후보 ' + fresh + '개.' : '') + aiTxt);
     }, (err) => {
       syncing = null;
       $('sync-error').dataset.local = '1';

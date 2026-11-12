@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from . import grades as g
 from .core import short_course_name, week_of
+from .store import course_mode, hidden_courses
 from .timeutil import iso, now_local, parse_iso
 
 TOTAL_KM = 42.195
@@ -138,7 +139,10 @@ def _course_estimate(store, cid, memo: dict):
 
 def _judge(store, cid, score, mean, sd, memo) -> dict:
     """점수의 위치: 평균·표준편차가 있으면 이 점수로, 없으면 과목 추정으로, 둘 다 없으면 판정 없음.
-    letter_basis: 학점을 사용자가 정한 비율로 매겼으면 "user", 기본 비율이면 "default"(화면은 '기본 비율이라면 …'), 학점이 없으면 None."""
+    letter_basis: 학점을 사용자가 정한 비율로 매겼으면 "user", 기본 비율이면 "default"(화면은 '기본 비율이라면 …'), 학점이 없으면 None.
+    P/NP 과목(계약 15장)은 학점·상위 %를 매기지 않는다(band None — 담백하게)."""
+    if course_mode(store.data, cid) == "pass_fail":
+        return {"top": None, "letter": None, "band": None, "basis": None, "letter_basis": None}
     if score is not None and mean is not None and sd is not None and sd > 0:
         try:
             top = g.top_percent(score, mean, sd)
@@ -169,8 +173,11 @@ def _stats(a: dict):
 def _graded_events(store, memo) -> list[dict]:
     cache = store.data.get("cache") or {}
     names = {str(c.get("id")): c.get("name") for c in cache.get("courses", [])}
+    hidden = hidden_courses(store.data)   # 제외한 과목은 성적 반응도 없다(계약 15장)
     out = []
     for a in cache.get("assignments", []):
+        if str(a.get("course_id") or "") in hidden:
+            continue
         sub = a.get("submission") or {}
         score = _num(sub.get("score"))
         if score is None or sub.get("excused"):
@@ -203,7 +210,8 @@ def _candidates(store) -> list[dict]:
     cache = store.data.get("cache") or {}
     sig = (id(store.data.get("cache")), store.data.get("last_sync"), len(store.data.get("manual") or []),
            (store.data.get("settings") or {}).get("student_id"),   # 학번을 넣으면 점수표 PDF에서 내 점수가 생긴다
-           len(store.data.get("pdf_texts") or {}), len(cache.get("pdf_texts") or {}))
+           len(store.data.get("pdf_texts") or {}), len(cache.get("pdf_texts") or {}),
+           tuple(sorted(hidden_courses(store.data))))   # 과목을 제외하면 그 과목 점수는 후보에서 빠진다
     if _CAND_MEMO.get("sig") != sig:
         try:
             found = candidates(store)
@@ -616,7 +624,10 @@ def _rec(v: dict, raw: dict, now: datetime) -> dict:
 def _weight_sigs(store) -> dict:
     """평가 비중이 자동으로 들어간 과목마다 그 비중의 서명(이름·비중)."""
     out = {}
+    hidden = hidden_courses(store.data)
     for cid, cfg in (store.data.get("grades") or {}).items():
+        if str(cid) in hidden:
+            continue
         comps = [c for c in (cfg or {}).get("components") or [] if isinstance(c, dict) and c.get("auto")]
         if comps:
             out[str(cid)] = _hash(*sorted(f"{c.get('name')}:{_fmt(c.get('weight'))}" for c in comps))
@@ -726,7 +737,9 @@ def _news_parts(store, items: list[dict], now: datetime, seen: dict | None = Non
         else:
             new.append(v)
     mats_seen = seen.get("materials") or {}
-    mats = [(k, m) for k, m in (store.data.get("downloads") or {}).items() if k not in mats_seen]
+    hidden = hidden_courses(store.data)
+    mats = [(k, m) for k, m in (store.data.get("downloads") or {}).items()
+            if k not in mats_seen and str((m or {}).get("course_id")) not in hidden]
     w_seen = seen.get("weights") or {}
     weights = [(cid, sig) for cid, sig in _weight_sigs(store).items() if w_seen.get(cid) != sig]
     return new, changes, mats, weights, w_seen

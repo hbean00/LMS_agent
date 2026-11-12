@@ -154,6 +154,11 @@ def _sigma(ws: list[tuple[float, float]], rho: float) -> float:
     return math.sqrt(var) if var > 0 else 0.0
 
 
+def _pc(x: float) -> str:
+    """비중 표시: 소수 첫째 자리까지(세부 점수로 나눈 4.2857% → 4.3%). 계산에는 원래 값을 쓴다."""
+    return f"{round(float(x), 1):g}"
+
+
 def _dist_note(dist: dict) -> str:
     body = " · ".join(f"{g} {dist[g]:g}" for g in GRADES if dist.get(g))
     return f"학점 비율 가정: {body}%" + (" (기본값 — 강의계획서 비율로 바꿀 수 있음)" if dist == DEFAULT_DISTRIBUTION else "")
@@ -181,9 +186,9 @@ def estimate(components: list, dist: dict = DEFAULT_DISTRIBUTION, rho: float = 0
             if not (0 <= c.score <= mx and 0 <= c.mean <= mx):
                 odd.append(c.name)
         elif st == "fixed":
-            fixed.append(f"{c.name}({w:g}%" + (f", {why})" if why else ")"))
+            fixed.append(f"{c.name}({_pc(w)}%" + (f", {why})" if why else ")"))
         else:
-            missing.append(f"{c.name}({w:g}%, {why})")
+            missing.append(f"{c.name}({_pc(w)}%, {why})")
         rows.append({"name": c.name, "weight": w, "top": top, "status": st})
     if not known:
         raise ValueError("점수·평균·표준편차가 모두 있는 평가 항목이 없어 위치를 추정할 수 없습니다")
@@ -212,9 +217,9 @@ def estimate(components: list, dist: dict = DEFAULT_DISTRIBUTION, rho: float = 0
         notes.append("점수·평균·표준편차가 다 있지 않아 제외: " + ", ".join(missing))
     if fixed:
         notes.append("모두 비슷하게 받는 항목으로 보고 순위 계산에서 제외: " + ", ".join(fixed))
-    notes.append(f"반영된 비중 {done_w:g}%만으로 계산" + (f"(전체 {all_w:g}% 중)" if all_w > done_w else ""))
+    notes.append(f"반영된 비중 {_pc(done_w)}%만으로 계산" + (f"(전체 {_pc(all_w)}% 중)" if all_w > done_w + 1e-6 else ""))
     if abs(all_w - 100) > 0.01:
-        notes.append(f"항목 비중 합이 {all_w:g}%입니다(100%가 아님) — 강의계획서 확인")
+        notes.append(f"항목 비중 합이 {_pc(all_w)}%입니다(100%가 아님) — 강의계획서 확인")
     if odd:
         notes.append("점수나 평균이 0~만점 범위를 벗어남(만점 확인 필요): " + ", ".join(odd))
     notes.append(_dist_note(dist))
@@ -259,7 +264,7 @@ def needed_on(components: list, remaining_name: str, target: str, dist: dict = D
             mx = _max(c)
             known.append((w, c.score / mx, c.mean / mx, c.sd / mx))
         else:
-            ignored.append(f"{c.name}({w:g}%, {'고정 항목' if st == 'fixed' else why})")
+            ignored.append(f"{c.name}({_pc(w)}%, {'고정 항목' if st == 'fixed' else why})")
 
     notes = [DISCLAIMER, NORMAL_NOTE, f"평가 항목끼리의 상관 ρ={rho:g} 가정(실제 값은 모름)"]
     if k.mean is not None and k.sd is not None and k.sd > 0:
@@ -359,7 +364,7 @@ def priorities(courses: list[dict]) -> list[dict]:
             why = f"{grade} 아래로 떨어질 위험(z {gap_down:.2f})"
         else:
             why = f"{grade} 유지(아래 경계까지 z {gap_down:.2f})"
-        reason = f"{why} · 남은 비중 {rw:g}%"
+        reason = f"{why} · 남은 비중 {_pc(rw)}%"
         if missing_weight_note(mw):
             reason += f" · {missing_weight_note(mw)}"
         out.append((True, score, i, {"course": c.get("course"), "score": score, "grade": grade,

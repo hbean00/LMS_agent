@@ -92,14 +92,19 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         f"<tr><td>기말고사</td><td>{md(syl[2])} 15:00</td></tr></table>"
     )
     # 101은 고려대식 긴 과목명(short_name 줄이기 확인용). 103은 학교가 점수를 숨긴 경우(None).
+    # 104 강의계획서의 P/NP 문장 → 'P/NP 과목' 제안, 105는 정규 수업이 아닌 교육(학기 표시·공지·게시판 없음) → '제외' 제안(계약 15장).
     courses = [
         {"id": 101, "name": "262R (서울-학부)ASIC설계(영강)(ASIC DESIGN(English))-00분반", "course_code": "EE401",
          "syllabus_body": None},
         {"id": 102, "name": "디지털신호처리", "course_code": "EE342", "syllabus_body": None},
         {"id": 103, "name": "반도체공학", "course_code": "EE361", "syllabus_body": syllabus},
-        {"id": 104, "name": "Capstone Design", "course_code": "CAP400", "syllabus_body": None},
+        {"id": 104, "name": "Capstone Design", "course_code": "CAP400",
+         "syllabus_body": "<p>Grading: this course is graded on a P/NP (Pass/Non-pass) basis.</p>"
+                          "<p>Weekly logs and the final report are required.</p>"},
+        {"id": 105, "name": "[학생] [한국어] 2026 연구실 안전 교육 - 01분반",
+         "course_code": "[학생] [한국어] 2026 연구실 안전 교육 - 01분반", "syllabus_body": None},
     ]
-    scores = {101: 92.5, 102: 81.0, 103: None, 104: 88.0}
+    scores = {101: 92.5, 102: 81.0, 103: None, 104: 88.0, 105: None}
     term = {"id": 1, "name": "데모 학기", "start_at": at(-70, 0), "end_at": at(41, 23, 59)}
     for c in courses:
         c.update(start_at=at(-70, 9), end_at=at(41, 18), workflow_state="available", enrollment_term_id=1,
@@ -119,7 +124,21 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         "102": [assignment(102, 1021, "Homework 5", at(4, 18), ["online_upload"], "unsubmitted", -9)],
         "103": [],
         "104": [assignment(104, 1041, "Weekly log 9", None, ["none"], "unsubmitted", -7)],
+        "105": [],
     }
+    quiz_day = day(5)
+    # 실제 ASIC의 'Updated Grading Policy'·'Announcement about Midterm Week'·'Lab0, Lab1 Score Announcement'와 같은 모양(계약 14장).
+    # 점수 공지는 본문에 Canvas 파일 링크만 있다 → core._announcement_files가 가상 게시판 '공지'로 모아 받는다.
+    policy = ("<p>Dear All,</p><p>I have attached the updated grading policy, which includes the midterm quiz (5%) "
+              "and the final quiz (5%).</p><ul><li>Homework assignments: 30% (w/ short reports)</li>"
+              "<li>Midterm project: 25% (w/ midterm report)</li><li>Midterm quiz: 5%</li>"
+              "<li>Final project: 25% (w/ final report)</li><li>Final quiz: 5%</li><li>Attendance: 10%</li></ul>")
+    midterm_week = ("<p>As I have mentioned in the last lecture, we will have a short quiz session (+ explanation on "
+                    f"midterm project) in the regular class hour on {MONTHS[quiz_day.month - 1]}. {quiz_day.day}, "
+                    f"{quiz_day.year} .</p><p>The quiz covers the lecture materials so far.</p>")
+    scores_post = (f'<p>Lab0 and Lab1 scores are uploaded. Please find your row by your student ID.</p>'
+                   f'<p><a href="{base_url}/courses/101/files/{SCORE_FILES[0]}/download">Lab0_score.pdf</a> '
+                   f'<a href="/courses/101/files/{SCORE_FILES[1]}/download?wrap=1">Lab1_score.pdf</a></p>')
     announcements = [
         announcement(101, 9001, at(-3, 10), "LAB4 보고서 제출 안내",
                      f"<p>LAB4 보고서 마감: {md(6)}({WEEKDAYS[lab4_due.weekday()]}) 23:59</p>"
@@ -132,6 +151,10 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         announcement(104, 9005, at(-4, 11), "Final report",
                      f"<p>Please email your final report to capstone@example.ac.kr by "
                      f"{MONTHS[cap.month - 1]} {cap.day}, 11:59 PM.</p>"),
+        # 아래 셋은 at(-7)~at(0) 밖에 올려 공지 필터 시험(test_canvas)의 기대값을 그대로 둔다
+        announcement(101, 9006, at(-36, 14), "Updated Grading Policy", policy),
+        announcement(101, 9007, at(-20, 10), "Lab0, Lab1 Score Announcement", scores_post),
+        announcement(101, 9008, at(-9, 11), "Announcement about Midterm Week", midterm_week),
     ]
     conversations = [
         conversation(7001, "LAB4 보고서 마감 연장", "course_101", "ASIC설계", at(-1, 20),
@@ -146,8 +169,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     ]
     # LearningX 게시판(실제 고려대 ASIC과 같은 모양): 과제 안내는 여기, 마감은 본문, 자세한 건 첨부 PDF
     lab6 = day(13)
+    # 'Next labs: A -> B'(실제 Lab3.pdf는 '→') → 랩 개수 단서: 0번부터 6번 + 2개 = 9개(계약 14-4)
     lab6_pdf = tiny_pdf([f"Lab 6 Assignment", f"Report due: 23:59 on {lab6.month}/{lab6.day}",
-                         "Submit as a PDF via email."])
+                         "Submit as a PDF via email.", "Next labs: P&R (IC Compiler II) -> SRAM"])
     slides = tiny_pdf(["Week 11 lecture slides"])
 
     def attach(fid, filename, data):
@@ -164,7 +188,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
             9102: [{"id": 46002, "title": "Week 11 강의자료", "created_at": at(-3, 9), "updated_at": at(-3, 9),
                     "content": "<p>11주차 강의자료입니다.</p>", "attachments": [attach(8002, "Week11.pdf", slides)]}],
         }}}
-    files = {8001: lab6_pdf, 8002: slides}
+    files = {8001: lab6_pdf, 8002: slides,
+             SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1)}
+    file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf"}
     return {
         "user": {"id": USER_ID, "name": "데모 학생", "short_name": "데모 학생",
                  "sortable_name": "학생, 데모", "login_id": "demo"},
@@ -174,7 +200,23 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         "conversations": conversations,
         "learningx": learningx,
         "files": files,
+        "file_names": file_names,
     }
+
+
+# 점수표 PDF의 학번은 모두 가짜(2026000001…). 데모 화면은 DEMO_STUDENT_ID로 내 줄을 찾는다(cli demo만 넣는다).
+DEMO_STUDENT_ID = "2026000002"
+SCORE_FILES = (8101, 8102)
+_SCORE_ROWS = [(18, 25), (17, 27), (15, 20), (19, 28), (12, 18), (16, 24), (20, 29), (14, 22)]
+
+
+def score_table_pdf(label: str, shift: int = 0) -> bytes:
+    """'Lab0, Lab1 Score Announcement'의 첨부 같은 점수표: 한 줄에 한 학생(가짜 학번), Prelab(20)·Report(30)·Total(50)."""
+    lines = [f"{label} Score", "No Student ID Prelab(20) Report(30) Total(50)"]
+    for i, (a, b) in enumerate(_SCORE_ROWS, 1):
+        a, b = max(0, a - shift * (i % 3)), min(30, b + shift * (i % 2))
+        lines.append(f"{i} {2026000000 + i} {a} {b} {a + b}")
+    return tiny_pdf(lines)
 
 
 def tiny_pdf(lines: list[str]) -> bytes:
@@ -518,9 +560,10 @@ class _Handler(BaseHTTPRequestHandler):
         body = srv.data.get("files", {}).get(fid)
         if body is None:
             return self._not_found()
-        name = next((a.get("filename") for lx in srv.data.get("learningx", {}).values()
-                     for posts in lx["posts"].values() for p in posts for a in p.get("attachments") or []
-                     if a.get("canvas_file_id") == fid), None) or f"file_{fid}.pdf"
+        name = (srv.data.get("file_names") or {}).get(fid) or next(
+            (a.get("filename") for lx in srv.data.get("learningx", {}).values()
+             for posts in lx["posts"].values() for p in posts for a in p.get("attachments") or []
+             if a.get("canvas_file_id") == fid), None) or f"file_{fid}.pdf"
         self._send(200, {"id": fid, "display_name": name, "filename": name, "content-type": "application/pdf",
                          "size": len(body), "locked": False, "hidden": False,
                          "url": f"{srv.base_url}/files/{fid}/download?download_frd=1&verifier=v{fid}"})
