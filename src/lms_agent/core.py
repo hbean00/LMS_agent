@@ -293,7 +293,7 @@ def _canvas_item(a: dict, course_name: str) -> dict:
                                              or bool(sub.get("submitted_at")))
     due = parse_iso(a.get("due_at"))
     return {"id": f"canvas-{a['course_id']}-{a['id']}", "origin": "canvas", "course_id": a["course_id"],
-            "course_name": course_name, "title": a.get("name") or "과제", "due": iso(due),
+            "course_name": course_name, "title": " ".join((a.get("name") or "").split()) or "과제", "due": iso(due),
             "kind": "시험" if "online_quiz" in types else "과제", "method": method, "email_to": email_to,
             "confidence": None, "notes": [], "evidence": [], "url": a.get("html_url"),
             "canvas_submitted": submitted, "duplicate_of": None, "linked_to": None, "conflict": None,
@@ -581,7 +581,7 @@ def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_
     if session is not None and store.data["settings"].get("ai_auto_triage"):
         from .agent_cli import auto_triage
         triage = auto_triage(store, session=session)
-        out["ai_triage"] = {k: triage.get(k) for k in ("ok", "applied", "error")}
+        out["ai_triage"] = {k: triage.get(k) for k in ("ok", "applied", "error", "pending_left")}
     changed = {}
     for k in _AI_KEYS:
         now_k = store.data.get(k) or {}

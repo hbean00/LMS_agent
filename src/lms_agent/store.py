@@ -6,11 +6,98 @@ import os
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
+from .extract import title_tokens
 from .timeutil import iso, now_local, parse_iso, parse_local_input
 
 DECISIONS = ("approved", "rejected", "pending")
+
+
+def _specific_title(title: str) -> bool:
+    """제목만으로 한 과제를 가리키는지: 번호가 붙은 과제(LAB4, 과제 2) 또는 중간·기말. '마감'·'공지' 같은 제목은 묶지 않는다."""
+    return any(n is not None or k in ("midterm", "final") for k, n in title_tokens(title))
+
+
+def group_key(v: dict) -> str | None:
+    """같은 과제의 '찾은 후보' 묶음 키(계약 13-1). agent_cli(AI 정리)와 화면(store.view)이 함께 쓰는 한 규칙:
+    같은 linked_to(마감 없는 Canvas 과제에 연결됨), 없으면 같은 과목 + 정규화한 제목(공백 없앰·소문자).
+    제목이 한 과제를 가리키지 않으면(번호·중간·기말 없음) 제목으로는 묶지 않는다. 찾은 후보가 아니면 None."""
+    if v.get("origin", "found") != "found":
+        return None
+    if v.get("linked_to"):
+        return f"link:{v['linked_to']}"
+    title = str(v.get("title") or "")
+    if not _specific_title(title):
+        return None
+    course = v.get("course_id") or v.get("course_name") or ""
+    return f"title:{course}:" + "".join(title.split()).lower()
+
+
+def _latest_evidence(v: dict) -> dict:
+    """가장 최근 근거(게시 시각 기준). 근거가 없으면 빈 dict."""
+    ev = [e for e in v.get("evidence") or [] if isinstance(e, dict)]
+    if not ev:
+        return {}
+    return max(ev, key=lambda e: (parse_iso(e.get("posted_at")) or _OLD).timestamp())
+
+
+def _md_hm(due: str | None) -> str:
+    d = parse_iso(due)
+    return f"{d.month}/{d.day} {d:%H:%M}" if d else "날짜 없음"
+
+
+def _apply_groups(out: list[dict], user: dict) -> None:
+    """같은 과제 후보 묶음(계약 13-1): group·alternatives·newest·replaced_by, 승인된 후보가 있으면 나머지는 'replaced',
+    conflict는 제외·대체된 후보를 빼고 다시 계산한다. 승인이 둘 이상이면(옛 기록) 가장 나중에 승인한 것만 남긴다."""
+    groups: dict[str, list[dict]] = {}
+    for v in out:
+        v.update(group=None, alternatives=[], newest=False, replaced_by=None)
+        k = group_key(v)
+        if k:
+            groups.setdefault(k, []).append(v)
+        if v["origin"] == "found":
+            v["conflict"] = None   # 묶음에서 다시 계산(빌드 때 적은 문장은 저장된 항목에 남아 있다)
+    for k, members in groups.items():
+        if len(members) < 2:
+            continue
+        latest = {}
+        for v in members:
+            e = _latest_evidence(v)
+            latest[v["id"]] = (parse_iso(e.get("posted_at")) or _OLD, e)
+        top = max(t for t, _ in latest.values())
+        approved = [v for v in members if v["decision"] == "approved" and v["due"]]
+        winner = None
+        if approved:
+            winner = max(approved, key=lambda v: (str((user.get(v["id"]) or {}).get("decided_at") or ""),
+                                                  latest[v["id"]][0].timestamp(), v["id"]))
+        for v in members:
+            v["group"] = k
+            v["newest"] = latest[v["id"]][0] == top
+            if winner is not None and v is not winner and v["status"] in ("review", "scheduled"):
+                v["status"], v["replaced_by"] = "replaced", winner["id"]
+        if winner is None:
+            active = [v for v in members if v["status"] not in ("rejected", "replaced", "duplicate")]
+            if len({v["due"] for v in active}) >= 2:
+                for v in active:
+                    mine = latest[v["id"]][0]
+                    parts = []
+                    for b in active:
+                        if b is v or b["due"] == v["due"]:
+                            continue
+                        theirs, src = latest[b["id"]]
+                        when = "더 최근 글" if theirs > mine else "이전 글"
+                        parts.append(f"{when}('{src.get('source_title') or '근거'}')에는 {_md_hm(b['due'])}로 적혀 있습니다")
+                    if parts:
+                        v["conflict"] = "같은 과제에 다른 마감이 있습니다: " + "; ".join(parts)
+        order = sorted(members, key=lambda v: (latest[v["id"]][0].timestamp(), v["id"]), reverse=True)
+        for v in members:
+            v["alternatives"] = [{"id": b["id"], "due": b["due"], "status": b["status"], "decision": b["decision"],
+                                  "posted_at": latest[b["id"]][1].get("posted_at"),
+                                  "source_type": latest[b["id"]][1].get("source_type"),
+                                  "source_title": latest[b["id"]][1].get("source_title"),
+                                  "newest": b["newest"]} for b in order if b is not v]
 
 
 def _default() -> dict:
@@ -26,7 +113,9 @@ def _default() -> dict:
     }
 
 
-LOCK_WAIT = 10.0     # 다른 프로세스(백그라운드 동기화)가 저장 중이면 기다리는 최대 시간(초)
+_OLD = datetime(2000, 1, 1, tzinfo=timezone.utc)   # 시각을 모르는 근거(Windows는 1970 근처 timestamp가 안 됨)
+
+LOCK_WAIT = 10.0    # 다른 프로세스(백그라운드 동기화)가 저장 중이면 기다리는 최대 시간(초)
 LOCK_STALE = 60.0    # 이보다 오래된 잠금 파일은 죽은 프로세스가 남긴 것으로 보고 지운다
 
 
@@ -209,6 +298,9 @@ class Store:
                 "conflict": it.get("conflict"), "notes": it.get("notes") or [],
                 "evidence": it.get("evidence") or [], "url": it.get("url"),
                 "edited": bool(u.get("title") or u.get("due")),
+                # 직접 고쳤으면 원래 값(근거 사슬의 "직접 고침 (원문 11/25)")
+                "orig_due": it.get("due") if u.get("due") else None,
+                "orig_title": it["title"] if u.get("title") else None,
                 # 근거 사슬: 처음 발견 → 승인 → 캘린더 파일 포함(받은 뒤 바뀌었으면 export_stale)
                 "first_seen": seen.get(it["id"]), "decided_at": u.get("decided_at"),
                 "decided_by": u.get("decided_by"), "ai_reason": u.get("ai_reason"),
@@ -221,10 +313,25 @@ class Store:
                 "gcal_link": (gcal_events.get(it["id"]) or {}).get("html_link"),
                 "gcal_synced_at": gcal.get("at") if it["id"] in gcal_events else None,
             })
+        _apply_groups(out, self.data["user"])
         out.sort(key=lambda x: (parse_iso(x["due"]) is None, x["due"] or "", x["course_name"], x["title"]))
         return out
 
+    def release_group(self, item_id: str) -> list[str]:
+        """item_id를 승인할 때 부른다: 같은 과제 묶음에서 이미 승인돼 있던 다른 후보를 pending으로 돌린다
+        (한 과제 = 캘린더 일정 하나, 계약 13-1). 돌린 id 목록."""
+        view = self.view()
+        me = next((v for v in view if v["id"] == item_id), None)
+        if me is None or not me.get("group"):
+            return []
+        others = [v["id"] for v in view if v["id"] != item_id and v.get("group") == me["group"]
+                  and v["decision"] == "approved"]
+        for oid in others:
+            self.update_user(oid, {"decision": "pending"}, by="user")
+        return others
+
     def calendar_items(self) -> list[dict]:
+        """캘린더에 넣을 것: 일정(scheduled)만. 같은 과제 묶음에서는 승인된 하나만 scheduled이다(view가 보장)."""
         include_canvas = self.data["settings"].get("include_canvas", True)
         return [v for v in self.view()
                 if v["status"] == "scheduled" and v["due"] and (include_canvas or v["origin"] == "found")]

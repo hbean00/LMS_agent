@@ -314,21 +314,32 @@ def _z(top: float) -> float:
     return _PHI.inv_cdf(1 - t / 100)
 
 
+def missing_weight_note(missing: float) -> str | None:
+    """항목 비중 합이 100이 안 될 때: '나머지 70%는 평가 항목이 없어 계산 못 해요'(계약 13-2). 0이면 None."""
+    if not missing or missing <= 0.01:
+        return None
+    return f"나머지 {missing:g}%는 평가 항목이 없어 계산 못 해요"
+
+
 def priorities(courses: list[dict]) -> list[dict]:
-    """학점 경계에 가깝고 남은 비중이 큰 과목부터. 남은 평가가 없는 과목은 맨 뒤."""
+    """학점 경계에 가깝고 남은 비중이 큰 과목부터. 남은 평가가 없는 과목은 맨 뒤.
+    항목 비중 합이 100이 안 되면(missing_weight > 0) '남은 평가 없음'이라 하지 않고 모르는 비중이 있다고 알린다."""
     out = []
     for i, c in enumerate(courses):
         dist = c.get("dist") or DEFAULT_DISTRIBUTION
         est = c.get("estimate") or {}
         rw = float(c.get("remaining_weight") or 0)
+        mw = float(c.get("missing_weight") or 0)
+        extra = {"missing_weight": mw} if "missing_weight" in c else {}
         if est.get("top") is None:
             out.append((False, 0.0, i, {"course": c.get("course"), "score": 0.0, "grade": None,
-                                        "reason": "점수·평균·표준편차가 부족해 추정 불가"}))
+                                        "reason": "점수·평균·표준편차가 부족해 추정 불가", **extra}))
             continue
         top = float(est["top"])
         grade = letter_for(top, dist)
         if rw <= 0:
-            out.append((False, 0.0, i, {"course": c.get("course"), "score": 0.0, "grade": grade, "reason": "남은 평가 없음"}))
+            why = missing_weight_note(mw) or "남은 평가 없음"
+            out.append((False, 0.0, i, {"course": c.get("course"), "score": 0.0, "grade": grade, "reason": why, **extra}))
             continue
         bands = _bands(dist)
         j = next(n for n, b in enumerate(bands) if b[0] == grade)
@@ -348,8 +359,11 @@ def priorities(courses: list[dict]) -> list[dict]:
             why = f"{grade} 아래로 떨어질 위험(z {gap_down:.2f})"
         else:
             why = f"{grade} 유지(아래 경계까지 z {gap_down:.2f})"
+        reason = f"{why} · 남은 비중 {rw:g}%"
+        if missing_weight_note(mw):
+            reason += f" · {missing_weight_note(mw)}"
         out.append((True, score, i, {"course": c.get("course"), "score": score, "grade": grade,
-                                     "reason": f"{why} · 남은 비중 {rw:g}%"}))
+                                     "reason": reason, **extra}))
     out.sort(key=lambda t: (not t[0], -t[1], t[2]))
     return [t[3] for t in out]
 

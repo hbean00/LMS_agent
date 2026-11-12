@@ -445,7 +445,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 `GET /api/state` → `"celebrations": {"pending": [{"id", "kind": "graded"|"score", "course_short", "title", "score", "max_score", "mean", "sd", "top", "letter", "band", "exam", "source_title", "at"}], "km": 27.6, "total_km": 42.195, "week_now": 11, "weeks_total": 16}`
 `POST /api/celebrations/seen {"ids": [...]}` → 본 것으로 표시 → 새 state.
 
-화면: 동기화 뒤 pending이 있으면 한 번에 하나씩 반응 카드(모달). A는 호들갑(축하·색종이), B는 "너무 고생했어요! 조금만 더 보완해 봅시다"(중간고사면 남은 기말 이야기), C는 위로와 격려, null은 담백한 "점수가 나왔어요". 기말 버전은 "한 학기 완주" 톤. 움직임 줄이기 설정을 존중하고, 성적은 이 PC에서만 다룬다.
+화면: 동기화 뒤 pending이 있으면 한 번에 하나씩 반응 카드(모달). A는 호들갑(축하·색종이), B는 "너무 고생했어요! 조금만 더 다듬으면 돼요"(중간고사면 남은 기말 이야기), C는 위로와 격려, null은 담백한 "점수가 나왔어요". 기말 버전은 "한 학기 완주" 톤. 움직임 줄이기 설정을 존중하고, 성적은 이 PC에서만 다룬다.
 
 ### 11-1. 중간중간 보상 (목표: 사용자가 계속 쓰고 싶게, 종강까지 함께 달리기)
 
@@ -457,7 +457,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 | `km` | km 이정표 도달: 5, 10, 21.1(하프), 30(마의 구간 — 보통 기말 준비기), 35, 42.195(결승) | 하프: "반환점 돌았어요" / 30km: "가장 힘든 구간이에요. 페이스 유지!" / 결승: "한 학기 완주!" |
 | `week_clear` | 지난 주에 마감이 1개 이상 있었고 **전부 제출함**(Canvas 제출 확인 또는 사용자가 체크) | "11주차 완주 · 마감 3개 모두 제출" |
 | `streak` | `week_clear`가 연속 3·5·8주 | "3주 연속 완주 🔥"(이모지는 화면 아이콘으로) |
-| `inbox_zero` | 확인함이 3개 이상 쌓였다가 0개가 됨 | "확인함 비우기 완료 — 놓친 마감 없음" |
+| `inbox_zero` | 확인함이 3개 이상 쌓였다가 0개가 됨 | "확인함 비우기 완료"(마감 모르는 과제가 남아 있으면 그 수를 함께, "놓친 마감 없음"이라고 하지 않음) |
 | `graded` / `score` | 11장 성적 반응 | (11장) |
 
 - 상태: `celebrations.pending`에 같은 모양(`kind`, `id`, `title`, 필요한 숫자)으로 섞여 들어오고, `celebrations.medals`: 받은 보상 목록 `[{"id","kind","title","at","week"}]`, `celebrations.streak`: 현재 연속 완주 주 수.
@@ -491,3 +491,49 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 저장 합치기: AI는 몇십 초 걸릴 수 있어 잠금 밖에서 돈다. 저장할 때 파일을 다시 읽어, 그 사이 다른 프로세스(앱 화면)에서 **사용자가 바꾼 칸은 건드리지 않는다**(사용자 쪽이 이김, report `ai_skipped_user_changed: n`). 대상 칸: `user`, `grades`, `weights_auto`, 그리고 `ai_runs`·`ai_triage`. 그 사이 로그아웃됐으면 아무것도 저장하지 않는다.
 - 추가 검증: AI가 결정하기 직전에 그 항목을 다시 확인(그 사이 사용자가 결정했으면 건너뜀), 이유 120자 이하, 이미 승인된 같은 과제 후보도 셈.
 - 화면(D): 확인함 위 [AI로 정리] 버튼(진행 표시), AI가 반영한 항목에 "AI" 칩 + 이유 + [되돌리기], 설정에 "동기화 뒤 AI가 자동 정리" 토글, AI 실행 기록.
+
+## 13. 처음 쓰는 사용자 리뷰 반영 (2026-11-13, v0.4.1)
+
+독립 리뷰(데모, 처음 쓰는 고려대 학생 관점)의 결함을 고친다. 서버(E-서버)와 화면(E-화면)이 나눠 맡고, 아래 모양을 함께 따른다.
+
+### 13-1. 마감 충돌 = 하나만 고르는 그룹 (리뷰 B2·B3)
+- 같은 과제의 찾은 후보(`origin: "found"`, 같은 `linked_to`, 없으면 같은 과목 + 정규화한 제목 — `agent_cli._group_key`와 같은 규칙)는 **그룹**이다. `store.view()` Item 추가 필드:
+  - `group`: 그룹 키 문자열 | null(후보가 하나뿐이면 null)
+  - `alternatives`: `[{"id", "due", "status", "decision", "posted_at", "source_type", "source_title", "newest": bool}]`(자기 제외, 최신 글 먼저)
+  - `newest`: bool — 이 후보의 가장 최근 근거가 그룹에서 가장 최근인지
+  - `replaced_by`: id | null — 그룹의 다른 후보가 승인돼 있으면 그 id
+- 상태 `status: "replaced"`(새 값): 그룹의 다른 후보가 승인됐고 이 후보는 따로 승인되지 않음 → 캘린더·확인할 것·충돌 수에서 빠진다. 승인한 후보를 되돌리면 다시 `review`.
+- `POST /api/item/<id> {"decision": "approved"}`로 그룹의 한 후보를 승인하면, 같은 그룹에서 이미 승인돼 있던 다른 후보는 `pending`으로 돌린다(한 과제 = 캘린더 일정 하나). 응답 state에 `"replaced": [id…]`.
+- `conflict`(문자열)는 view에서 다시 계산: 제외(`rejected`)·대체(`replaced`)된 후보는 세지 않고, 남은 후보의 마감이 2개 이상 다를 때만. 승인된 후보가 있으면 null.
+
+### 13-2. 성적 표시의 근거 (B5·B6)
+- `state.grades.courses[]` 추가: `weight_total`(항목 비중 합), `weight_missing`(100 − 합, 0 이상). 남은 평가·필요 점수·공부 우선순위는 `weight_missing > 0`이면 "남은 평가 없음"이라고 하지 않는다(`needed`/`priorities` 항목에 `missing_weight: n`).
+- 성적 반응 항목(`celebrations.pending[]`, kind graded/score) 추가: `letter_basis: "user" | "default" | null`(학점 비율을 사용자가 정했는지, 기본값인지), `max_assumed: bool`(만점이 안 적혀 100점으로 가정). 화면은 `letter_basis == "user"`일 때만 학점을 단정하고, `"default"`면 "기본 비율이라면 A+" 식으로, `max_assumed`면 백분위만.
+
+### 13-3. AI 이유는 계산을 보여 주고 원문을 인용 (B7, F11)
+- `ai_reason`의 인용은 **가리지 않은 원문 문장**(이 PC 안에서만 보임)으로 바꿔 저장한다. `[이메일]` 같은 자리 표시가 화면에 나오면 안 된다.
+- 상대 날짜("다음 주 금요일", "이번 주", "next Friday") 근거로 승인할 때 이유에 계산을 남긴다: `‘다음 주 금요일’ → 공지일 11/12(목) 기준 11/20(금)`. 하네스는 상대 날짜 근거에 "분명히 적혀"·"명시" 같은 주장을 하면 그 결정을 거절한다.
+- `POST /api/ai/triage` 결과·`state.ai.last_triage` 추가: `pending_left`(아직 확인 대기), `user_reverted`(사용자가 되돌려서 AI가 건드리지 않은 수).
+
+### 13-4. 마라톤은 '합류한 뒤 달린 거리'로 보상 (D1·D4·D5·B9)
+- `celebrations` 추가: `joined_at`, `joined_km`(처음 계산한 시점의 km). `milestones[].before_join: bool`. 합류 전에 지난 km 이정표·주 완주·연속은 **메달로 주지 않는다**(기존 계정의 합류 전 메달은 `medals`에서 빼고 `before_join`으로만 표시). 출발(`start`)은 메달이 아니라 합류 인사(`kind: "start"`, 화면에서 "새 메달"이라 부르지 않음).
+- 성적 소식 카드(`news[] kind "grades"`) 추가: `fresh: bool` — 첫 실행이거나 점수가 3일보다 오래됐으면 false → 화면 제목 "앱에서 아직 안 본 성적 N개".
+- 첫 실행 요약 카드(`kind "first"`): `count_deadlines`, `count_materials`, `items`는 겹치지 않게 나눈다(`{"label": "일정에 넣은 마감"}`, `{"label": "확인할 후보"}`, `{"label": "받은 자료"}` — 앞 둘의 합 = `count_deadlines`).
+- `inbox_zero`: 마감 없는 과제(`no_deadline`)가 남아 있으면 보상 문구에 그 수를 넣고 "놓친 마감 없어요"라고 하지 않는다(`pending[]` 항목에 `no_deadline_left: n`).
+- 보상 이름은 배너·메달·토스트에서 같은 말을 쓴다(`title`이 기준).
+
+### 13-5. 캘린더 수 맞추기 (B8)
+- `state.google.desired = {"deadlines": n, "summaries": m}` — 구글에 있어야 할 일정 수(마감 n + 주간 요약 m). 화면은 "마감 n개 + 주간 요약 m개"로 보여 주고 추가·수정·삭제·유지는 그 합과 맞는다.
+
+### 13-6. 학기 근거 (리뷰 2장)
+- 화면은 `state.semester.source`(`canvas`/`items`/`default`)와 `note`를 학기 머리에 보인다. `default`면 "(추정)"이라고 분명히 쓰고, 그 학기 날짜로 계산한 km·메달도 추정임을 밝힌다.
+
+### 13-7. 구현 결과 (서버·화면, v0.4.1)
+- 그룹 키 `store.group_key(v)`(= `agent_cli._group_key`): `"link:<linked_to>"` 또는 `"title:<과목>:<공백 없앤 소문자 제목>"`. **제목 묶음은 제목이 과제 하나를 가리킬 때만**(번호 붙은 과제·중간·기말, `extract.title_tokens`) — "마감"·"공지" 같은 일반 제목은 묶지 않는다(하나 승인하면 상관없는 마감이 숨지 않게). 그룹이 없는 찾은 후보는 `conflict: null`. 예전에 둘 다 승인된 저장 상태는 `decided_at`이 늦은 쪽이 이기고 나머지는 `replaced`.
+- `Store.release_group(id)`: 승인할 때 같은 그룹의 다른 승인을 `pending`으로. `POST /api/item/<id>` 응답에 항상 `"replaced": [...]`.
+- 성적: `courses[]`에 `missing_note`(예: "나머지 70%는 평가 항목이 없어 계산 못 해요")도. `max_assumed`일 때 `max_score`는 null 그대로(100으로 바꾸지 않음).
+- AI 이유 모양: `"<이유> · ‘다음 주 금요일’ → 공지일 11/12(목) 기준 11/20(금) — 근거: \"<원문>\""`(`agent_cli.ai_reason_text`, `original_quote`, `date_basis`, `claims_explicit`). 상대 날짜 근거에 "분명·명시·적혀 있" 주장 → 한 번 고쳐 묻고, 그래도면 `skipped`.
+- 마라톤: 합류 시각 = `celebrate_init`(없으면 지금), `joined_km`은 지금 학기 주차로 다시 계산. 옛 저장의 합류 전 메달은 읽을 때 뺀다(저장은 그대로). `milestones[]`에 `title`도. 성적 카드 `fresh`는 3일 이내이면서 합류 뒤 점수일 때만.
+- 첫 요약 카드 행: "일정에 넣은 마감"(다가오는 scheduled), "확인할 후보"(review 전부), "받은 자료".
+- Item에 `orig_due`, `orig_title`(직접 고쳤을 때 원래 값, 아니면 null).
+- 화면: 겹치는 창은 한 번에 하나(소식 → 튜토리얼 제안 → 튜토리얼 → "이제 앱을 안 열어도 돼요" 카드), 화면별 팁은 튜토리얼을 거절했을 때만. 충돌 고르기 창(`#pick-dlg`), 대체된 후보는 승인한 줄 밑에 접힘. 날짜 축은 자기 날짜 칸 안(23:59 = 칸의 85%).

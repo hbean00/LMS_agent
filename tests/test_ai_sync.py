@@ -42,6 +42,15 @@ def test_auto_triage_runs_after_sync_when_enabled(tmp_path, canvas):
     # 같은 과제(LAB4) 후보 둘 중 하나만 승인
     lab4 = [v for v in disk.view() if v["origin"] == "found" and "LAB4" in v["title"] and v["decision"] == "approved"]
     assert len(lab4) <= 1
+    # 이유는 정직하게(계약 13-3): 자리 표시 없음, 원문 인용, 상대 날짜는 계산을 보여 주고 '분명히 적혀'라고 하지 않는다
+    assert all("[이메일]" not in v["ai_reason"] and "[링크]" not in v["ai_reason"] for v in by_ai)
+    proj = next(v for v in by_ai if v["title"] == "중간 프로젝트 보고서")
+    assert "‘다음 주 금요일’ → 공지일" in proj["ai_reason"] and " 기준 " in proj["ai_reason"]
+    assert "분명" not in proj["ai_reason"] and "dsp.prof@example.ac.kr" in proj["ai_reason"]   # 이 PC에서는 원문 그대로
+    assert disk.data["ai_triage"]["pending_left"] == sum(1 for v in disk.view() if v["status"] == "review")
+    assert disk.data["ai_triage"]["user_reverted"] == 0 and r["ai_triage"]["pending_left"] >= 0
+    # 캘린더에는 LAB4가 하나만
+    assert sum(1 for v in disk.calendar_items() if v.get("linked_to") == "canvas-101-1012") == 1
 
 
 def test_auto_triage_off_unless_both_settings(tmp_path, canvas):

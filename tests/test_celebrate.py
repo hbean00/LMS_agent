@@ -64,10 +64,14 @@ def test_demo_midterm_message_and_canvas_lab3(demo):
     sem = st["semester"]
     assert cel["week_now"] == sem["week_now"] and cel["weeks_total"] == sem["weeks_total"]
     assert cel["km"] == round(42.195 * sem["week_now"] / sem["weeks_total"], 1) and cel["total_km"] == 42.195
-    # 첫 동기화 → 출발 보상, 지난 이정표·완주 주는 조용히 메달함에
+    # 첫 동기화 → 합류 인사(start)만. 합류 전에 지난 이정표·완주 주는 메달이 아니다(계약 13-4)
     assert [p["kind"] for p in cel["pending"] if p["kind"] not in ("graded", "score")] == ["start"]
-    assert {m["kind"] for m in cel["medals"]} >= {"km"}
-    assert all(m["id"] not in {p["id"] for p in cel["pending"]} for m in cel["medals"])
+    assert cel["medals"] == []
+    assert cel["joined_km"] == cel["km"] and cel["joined_at"]
+    assert [m["before_join"] for m in cel["milestones"]] == [m["reached"] for m in cel["milestones"]]
+    # 성적 반응의 근거: 학점 비율은 기본값, 만점 미기재 점수는 100점 가정
+    assert mid["letter_basis"] == "default" and mid["max_assumed"] is True
+    assert lab3["letter_basis"] is None and lab3["max_assumed"] is False
 
 
 def test_seen_persists_and_no_duplicate_after_resync(demo, tmp_path):
@@ -81,7 +85,7 @@ def test_seen_persists_and_no_duplicate_after_resync(demo, tmp_path):
 
     code, st3 = call(app, "POST", "/api/celebrations/seen", {"ids": first + ["모르는-id"]})
     assert code == 200 and st3["celebrations"]["pending"] == []
-    assert any(m["kind"] == "start" for m in st3["celebrations"]["medals"])
+    assert not any(m["kind"] == "start" for m in st3["celebrations"]["medals"])   # 출발은 합류 인사 — 메달 아님
     assert Store(tmp_path / "state.json").data["celebrated"]  # 파일에 남았다
 
     core.sync(Canvas(base, DEMO_TOKEN), store, full=True)     # 전체 다시 읽어도 다시 뜨지 않는다
@@ -190,14 +194,19 @@ def see_all(store, day, items, h=12):
 def test_start_and_km_milestone(bare):
     day = MON + timedelta(7 * 6)          # 7주차 → 18.5km
     out = run(bare, day, [])
-    assert [p["kind"] for p in rewards(out)] == ["start"] and "합류" in rewards(out)[0]["title"]
-    assert {m["km"] for m in out["medals"]} == {5.0, 10.0}    # 이미 지난 이정표는 조용히
+    assert [p["kind"] for p in rewards(out)] == ["start"] and "18.5km 지점에서 합류" in rewards(out)[0]["title"]
+    assert out["medals"] == [] and out["joined_km"] == 18.5          # 합류 전에 지난 이정표는 메달이 아니다
+    assert [(m["km"], m["before_join"]) for m in out["milestones"] if m["reached"]] == [(5.0, True), (10.0, True)]
     assert out["next"]["km"] == 21.1
     see_all(bare, day, [])
     out = run(bare, day + timedelta(days=7), [])               # 8주차 → 21.1km 하프
     km = rewards(out)
     assert [(p["kind"], p["km"]) for p in km] == [("km", 21.1)] and km[0]["title"] == "반환점 돌았어요"
-    assert out["km"] == 21.1
+    assert out["km"] == 21.1 and out["joined_km"] == 18.5
+    see_all(bare, day + timedelta(days=7), [])
+    out = run(bare, day + timedelta(days=7), [])
+    assert [(m["km"], m["title"]) for m in out["medals"]] == [(21.1, "반환점 돌았어요")]   # 배너·메달·토스트 같은 이름
+    assert not next(m for m in out["milestones"] if m["km"] == 21.1)["before_join"]
 
 
 def test_first_week_start_title(bare):
@@ -217,7 +226,8 @@ def test_finish_line(bare):
 def test_week_clear_after_submitting(bare):
     day = MON + timedelta(7 * 4)          # 5주차 월요일
     items = [due_in(4, submitted=False), due_in(4, submitted=True, n=1), due_in(5)]
-    see_all(bare, day, items)             # 출발 보상 확인
+    see_all(bare, day - timedelta(days=7), items)   # 4주차에 합류(출발 인사 확인)
+    see_all(bare, day, items)
     assert rewards(run(bare, day, items)) == []                # 하나라도 안 냈으면 완주 아님
     items[0]["submitted"] = True
     out = run(bare, day, items)
@@ -229,14 +239,42 @@ def test_week_clear_after_submitting(bare):
     assert [p["week"] for p in rewards(run(bare, day, items))] == [4]
 
 
-def test_first_run_puts_past_weeks_in_medal_case_quietly(bare):
+def test_first_run_past_weeks_are_before_join_not_medals(bare):
+    """합류(처음 계산) 전에 끝난 주의 완주·연속은 메달로 주지 않고, 나중에도 뜨지 않는다(계약 13-4)."""
     day = MON + timedelta(7 * 4)
     items = [due_in(2, True), due_in(3, True), due_in(4, True)]
     out = run(bare, day, items)
     assert [p["kind"] for p in rewards(out)] == ["start"]
-    assert {m["week"] for m in out["medals"] if m["kind"] == "week_clear"} == {2, 3, 4}
-    assert any(m["kind"] == "streak" and m["n"] == 3 for m in out["medals"])
-    assert out["streak"] == 3
+    assert out["medals"] == [] and out["streak"] == 0
+    see_all(bare, day, items)
+    later = run(bare, day + timedelta(days=2), items)
+    assert rewards(later) == [] and later["medals"] == []
+
+
+def test_existing_account_pre_join_medals_hidden_on_read(bare):
+    """실제 계정 모양: 11주차(29km)에 처음 계산했고, 예전 버전이 그때 지난 이정표·주 완주·연속을 조용히 메달함에 넣어 두었다.
+    읽을 때 합류 전 메달과 출발 인사는 빼고 before_join으로만 보인다."""
+    day = MON + timedelta(7 * 10 + 4)     # 11주차 금요일
+    bare.data["celebrate_init"] = iso(at(day, 9))
+    term = celebrate.term_of(sem_at(day))
+    old = [{"id": f"km:{term}:5", "kind": "km", "km": 5.0, "title": "5km 통과", "at": "2026-09-14", "week": 2},
+           {"id": f"km:{term}:10", "kind": "km", "km": 10.0, "title": "10km 통과", "at": "2026-09-28", "week": 4},
+           {"id": f"km:{term}:21.1", "kind": "km", "km": 21.1, "title": "반환점 돌았어요", "at": "2026-10-26", "week": 8},
+           {"id": f"week_clear:{term}:2026-10-05", "kind": "week_clear", "title": "5주차 완주", "at": "2026-10-11",
+            "week": 5, "count": 2},
+           {"id": f"streak:{term}:3", "kind": "streak", "title": "3주 연속 완주", "at": "2026-10-18", "week": 6, "n": 3},
+           {"id": f"start:{term}", "kind": "start", "title": "29km 지점에서 합류했어요", "at": iso(at(day, 9)), "week": 11}]
+    bare.data["medals"] = [dict(m, term=term, seen_at=iso(at(day, 9)), silent=m["kind"] != "start") for m in old]
+    bare.data["celebrated"] = {m["id"]: "1" for m in old}
+    out = run(bare, day, [])
+    assert out["joined_km"] == 29.0 and out["joined_at"] == iso(at(day, 9))
+    assert out["medals"] == [] and rewards(out) == []
+    assert {m["km"] for m in out["milestones"] if m["before_join"]} == {5.0, 10.0, 21.1}
+    assert not next(m for m in out["milestones"] if m["km"] == 30.0)["before_join"]
+    assert len(bare.data["medals"]) == 6                     # 저장된 기록은 그대로(읽을 때만 뺀다)
+    # 12주차 → 31.6km: 30km 이정표는 합류 뒤라 메달이 된다
+    nxt = run(bare, day + timedelta(days=4), [])
+    assert [(p["kind"], p["km"]) for p in rewards(nxt)] == [("km", 30.0)]
 
 
 def test_streak_skips_empty_weeks_and_breaks_on_missed(bare):
@@ -261,6 +299,7 @@ def test_streak_skips_empty_weeks_and_breaks_on_missed(bare):
 def test_collapsed_week_clears_all_go_to_medals_when_seen(bare):
     day = MON + timedelta(7 * 2)
     items = [due_in(1, False), due_in(2, False)]
+    see_all(bare, MON, items)                                  # 1주차에 합류
     see_all(bare, day, items)
     items[0]["submitted"] = items[1]["submitted"] = True       # 늦게 체크 → 1·2주차 완주
     out = run(bare, day, items)
@@ -273,18 +312,18 @@ def test_collapsed_week_clears_all_go_to_medals_when_seen(bare):
 
 
 def test_at_most_two_new_rewards_per_day(bare):
-    day = MON + timedelta(7 * 4)
+    day = MON + timedelta(7 * 4)          # 5주차(13.2km)
     items = [due_in(2), due_in(3), due_in(4)]
-    see_all(bare, day, items)                                  # 오늘 출발 보상 1개를 이미 봄
+    see_all(bare, MON + timedelta(7), items)                   # 2주차(5.3km)에 합류
     for it in items:
-        it["submitted"] = True                                 # 완주 3주 + 3주 연속 → 보상 2종류
+        it["submitted"] = True                                 # 완주 3주 + 3주 연속 + 10km → 보상 3종류
     out = run(bare, day, items)
-    assert [p["kind"] for p in rewards(out)] == ["streak"] and out["waiting"] == 1
-    celebrate.mark_seen(bare, sem_at(day), items, [rewards(out)[0]["id"]], at(day))
+    assert [p["kind"] for p in rewards(out)] == ["streak", "week_clear"] and out["waiting"] == 1
+    celebrate.mark_seen(bare, sem_at(day), items, [p["id"] for p in rewards(out)], at(day))
     assert rewards(run(bare, day, items, h=18)) == []          # 오늘은 끝
     tomorrow = day + timedelta(days=1)
     nxt = rewards(run(bare, tomorrow, items))
-    assert [(p["kind"], p["week"]) for p in nxt] == [("week_clear", 4)]
+    assert [(p["kind"], p["km"]) for p in nxt] == [("km", 10.0)]
 
 
 def test_inbox_zero_only_when_user_cleared_it(bare):
@@ -303,6 +342,53 @@ def test_inbox_zero_only_when_user_cleared_it(bare):
     out = run(bare, day, review, h=16)
     assert not [p for p in rewards(out) if p["kind"] == "inbox_zero"]
     assert any(m["kind"] == "inbox_zero" for m in out["medals"])
+
+
+def test_inbox_zero_counts_assignments_without_deadline(bare):
+    """마감 없는 과제가 남아 있으면 '놓친 마감 없음'이라 하지 않고 그 수를 보상 이름에 넣는다(계약 13-4)."""
+    day = MON + timedelta(7 * 3)
+    review = [dict(due_in(5, n=i), status="review", id=f"r{i}") for i in range(3)]
+    nodl = {"id": "canvas-1-9", "status": "no_deadline", "kind": "과제", "due": None, "submitted": False, "week": None}
+    see_all(bare, day, review + [nodl])
+    for it in review:
+        it["status"] = "scheduled"
+        bare.data["user"][it["id"]] = {"decision": "approved", "decided_at": iso(at(day, 13))}
+    out = run(bare, day, review + [nodl], h=14)
+    iz = [p for p in rewards(out) if p["kind"] == "inbox_zero"]
+    assert len(iz) == 1 and iz[0]["no_deadline_left"] == 1
+    assert "1개" in iz[0]["title"] and "놓친" not in iz[0]["title"]
+    celebrate.mark_seen(bare, sem_at(day), review + [nodl], [iz[0]["id"]], at(day, 15))
+    medal = next(m for m in run(bare, day, review + [nodl], h=16)["medals"] if m["kind"] == "inbox_zero")
+    assert medal["title"] == iz[0]["title"] and medal["no_deadline_left"] == 1      # 토스트와 메달이 같은 이름
+
+
+def test_grade_news_fresh_only_for_scores_new_since_join(bare):
+    """성적 소식 fresh: 합류 뒤 3일 안에 나온 점수가 있을 때만(계약 13-4). 오래된 점수만이면 '앱에서 아직 안 본 성적'."""
+    day = MON + timedelta(7 * 4)
+    now = at(day)
+    bare.data["celebrate_init"] = iso(now - timedelta(days=10))
+    bare.data["news_seen"] = {"init": "x", "items": {}, "materials": {}, "weights": {}}
+    _news_store(bare, [], day)
+
+    def graded(aid, when):
+        return {"id": aid, "course_id": 1, "name": f"Quiz {aid}", "points_possible": 10,
+                "submission": {"score": 8, "submitted_at": iso(when), "graded_at": iso(when)}}
+
+    bare.data["cache"]["assignments"] = [graded(1, now - timedelta(days=5))]
+    card = news_of(run(bare, day, []), "grades")[0]
+    assert card["fresh"] is False
+    bare.data["cache"]["assignments"].append(graded(2, now - timedelta(hours=5)))
+    card = news_of(run(bare, day, []), "grades")[0]
+    assert card["fresh"] is True and card["count"] == 2
+
+
+def test_letter_basis_user_when_distribution_set(demo):
+    app, _, store = demo
+    store.data.setdefault("grades", {})["102"] = {"components": [], "class_size": None,
+                                                  "dist": {"A+": 10, "A0": 20, "B+": 20, "B0": 20, "C+": 10, "C0": 10,
+                                                           "D+": 0, "D0": 0, "F": 10}}
+    mid = next(p for p in grades_of(app.state()) if p["kind"] == "score")
+    assert mid["letter_basis"] == "user" and mid["letter"]
 
 
 def test_inbox_zero_not_for_wipe_or_small_queue(bare):
@@ -350,9 +436,15 @@ def test_demo_first_sync_is_one_summary_card_then_grades(demo):
     kinds = [c["kind"] for c in st["celebrations"]["news"]]
     assert kinds == ["first", "grades"]                       # 항목마다가 아니라 요약 한 장 + 성적 공개
     first = st["celebrations"]["news"][0]
-    assert first["id"] == "news:first" and {r["label"] for r in first["items"]} >= {"다가오는 마감", "확인할 후보"}
+    assert first["id"] == "news:first" and {r["label"] for r in first["items"]} >= {"일정에 넣은 마감", "확인할 후보"}
+    rows = {r["label"]: r["n"] for r in first["items"]}
+    assert rows["확인할 후보"] == sum(1 for v in st["items"] if v["status"] == "review")
+    assert rows["일정에 넣은 마감"] + rows["확인할 후보"] == first["count_deadlines"]      # 겹치지 않게
+    assert first["count_materials"] == rows.get("받은 자료", 0)
+    assert first["count"] == first["count_deadlines"] + first["count_materials"]
     grades = st["celebrations"]["news"][1]
     assert grades["count"] == 2 and "score" not in grades["items"][0]   # 점수는 카드에서 미리 보여 주지 않는다
+    assert grades["fresh"] is False                                       # 첫 실행: '앱에서 아직 안 본 성적'
     code, st = call(app, "POST", "/api/celebrations/seen", {"ids": ["news:first"]})
     assert [c["kind"] for c in st["celebrations"]["news"]] == ["grades"]
     core.sync(Canvas(base, DEMO_TOKEN), store)                 # 같은 내용으로 다시 동기화 → 새 소식 없음

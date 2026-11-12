@@ -90,14 +90,19 @@ def sync(app, body):
 
 @router.route("POST", r"/api/item/(?P<item_id>[\w\-]+)")
 def update_item(app, body, item_id):
+    """사용자 결정. 같은 과제 묶음의 한 후보를 승인하면, 이미 승인돼 있던 다른 후보는 pending으로 돌린다
+    (한 과제 = 캘린더 일정 하나, 계약 13-1) → 응답 state의 "replaced": [돌린 id…]."""
     allowed = {k: body[k] for k in ("decision", "submitted", "title", "due") if k in body}
     try:
         app.store.update_user(item_id, allowed)
     except KeyError:
         raise ApiError(404, "항목을 찾을 수 없습니다. 동기화 후 다시 시도하세요") from None
+    replaced = app.store.release_group(item_id) if allowed.get("decision") == "approved" else []
     app.store.save()
     app.emit("changed")
-    return app.state()
+    out = app.state()
+    out["replaced"] = replaced
+    return out
 
 
 @router.route("POST", r"/api/manual")

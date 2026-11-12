@@ -328,6 +328,81 @@ def test_triage_skips_items_user_decided_meanwhile_and_respects_switch(tstore):
     assert not out["ok"] and "꺼져" in out["error"] and not fake.calls
 
 
+# ---------------------------------------------------------------- 이유: 원문 인용·상대 날짜 계산(계약 13-3)
+
+REL_EV = "중간 프로젝트 보고서는 이메일(dsp.prof@example.ac.kr)로 다음 주 금요일까지 보내 주세요."
+
+
+@pytest.fixture()
+def rstore(tstore):
+    tstore.data["items"].append(_item("f-r", "중간 프로젝트 보고서", "2026-11-20T23:59:00+09:00", REL_EV,
+                                      "2026-11-12T13:00:00+09:00", course=("102", "디지털신호처리")))
+    return tstore
+
+
+def test_ai_reason_quotes_original_unredacted_sentence(tstore):
+    fake = FakeCLI(lambda args, inp: {"decisions": [
+        D("f-a", "approved", "LAB4 보고서 마감: 11월 18일(수) 23:59 ([이메일])", "[이메일]로 내라는 공지의 마감")]})
+    out = agent_cli.auto_triage(tstore, runner=fake, command=CMD)
+    assert out["applied"] == 1 and "asic.ta@" not in fake.calls[0]["input"]           # 보낼 때는 가린다
+    reason = {v["id"]: v for v in tstore.view()}["f-a"]["ai_reason"]
+    assert "asic.ta@example.ac.kr" in reason and "[이메일]" not in reason and "[" not in reason
+    assert reason.startswith("이메일로 내라는 공지의 마감") and "근거" in reason
+
+
+def test_original_quote_helper_edges():
+    ev = [{"text": "제출: asic.ta@example.ac.kr 로 PDF 첨부, 문의 010-1234-5678"}]
+    assert agent_cli.original_quote("[이메일] 로 PDF 첨부", ev) == "asic.ta@example.ac.kr 로 PDF 첨부"
+    assert agent_cli.original_quote("문의 [전화]", ev) == "문의 010-1234-5678"
+    assert agent_cli.original_quote("PDF 첨부", ev) == "PDF 첨부"
+    assert agent_cli.original_quote("어디에도 없는 [이메일] 문장", ev) == "어디에도 없는 이메일 문장"   # 자리 표시 괄호는 안 남김
+
+
+def test_relative_date_reason_shows_computation(rstore):
+    fake = FakeCLI({"decisions": [D("f-r", "approved", "다음 주 금요일까지 보내 주세요.",
+                                    "상대 날짜라 공지일 기준으로 계산했어요")]})
+    out = agent_cli.auto_triage(rstore, runner=fake, command=CMD)
+    assert out["applied"] == 1
+    reason = {v["id"]: v for v in rstore.view()}["f-r"]["ai_reason"]
+    assert "‘다음 주 금요일’ → 공지일 11/12(목) 기준 11/20(금)" in reason
+    assert "근거: \"다음 주 금요일까지 보내 주세요.\"" in reason and "[이메일]" not in reason
+
+
+def test_relative_date_claimed_explicit_is_rejected(rstore):
+    claim = {"decisions": [D("f-r", "approved", "다음 주 금요일까지 보내 주세요.", "근거 글에 마감 날짜가 분명히 적혀 있어요")]}
+    fake = FakeCLI(claim)
+    out = agent_cli.auto_triage(rstore, runner=fake, command=CMD)
+    assert out["applied"] == 0 and out["attempts"] == 2 and "상대 날짜" in fake.calls[1]["input"]
+    why = next(s["why"] for s in out["skipped"] if s["id"] == "f-r")
+    assert "상대 날짜" in why and "다음 주 금요일" in why
+    assert {v["id"]: v for v in rstore.view()}["f-r"]["decision"] == "pending"
+    # 적힌 날짜(11월 18일)가 있는 근거라면 같은 말도 괜찮다
+    ok = FakeCLI({"decisions": [D("f-b", "approved", "LAB4 보고서 마감이 11월 20일 자정으로 연장되었습니다.",
+                                  "연장 날짜가 분명히 적혀 있어요")]})
+    assert agent_cli.auto_triage(rstore, runner=ok, command=CMD)["applied"] == 1
+
+
+def test_claims_explicit_ignores_negation():
+    assert agent_cli.claims_explicit("근거 글에 마감 날짜가 분명히 적혀 있어요")
+    assert agent_cli.claims_explicit("마감이 명시되어 있음") and agent_cli.claims_explicit("explicitly stated")
+    assert not agent_cli.claims_explicit("날짜가 분명하지 않아 공지일 기준으로 계산했어요")
+    assert not agent_cli.claims_explicit("날짜가 적혀 있지 않아 계산")
+    assert not agent_cli.claims_explicit("the date is not stated, computed from the post date")
+
+
+def test_triage_counts_pending_left_and_user_reverted(rstore):
+    rstore.update_user("f-h", {"decision": "approved"})
+    rstore.update_user("f-h", {"decision": "pending"})            # 사용자가 되돌림 → AI는 건드리지 않음
+    fake = FakeCLI(lambda args, inp: {"decisions": [D("f-b", "approved", "LAB4 보고서 마감이 11월 20일 자정으로 연장되었습니다.")]})
+    out = agent_cli.auto_triage(rstore, runner=fake, command=CMD)
+    assert "f-h" not in fake.calls[0]["input"]
+    assert out["applied"] == 1 and out["user_reverted"] == 1
+    review = [v for v in rstore.view() if v["status"] == "review"]
+    assert out["pending_left"] == len(review) == 2                # f-h(되돌림)와 f-r. f-a는 f-b로 대체됨
+    assert {v["id"]: v for v in rstore.view()}["f-a"]["status"] == "replaced"
+    assert rstore.data["ai_triage"]["pending_left"] == 2 and rstore.data["ai_triage"]["user_reverted"] == 1
+
+
 # ---------------------------------------------------------------- 평가 묶음
 
 def eval_oracle(args, inp):

@@ -9,7 +9,9 @@
 
 기록: store.data["celebrated"](본 것: 키 → 값), store.data["medals"](받은 보상), store.data["celebrate_init"](처음 계산한 시각),
 store.data["review_peak"](확인함이 가장 많이 쌓였던 수 — 확인함 비우기 판정용).
-처음 계산할 때는 14일보다 오래된 점수와 지난 주들의 보상을 조용히 '본 것'으로 둔다(오래 쓴 계정에서 알림이 쏟아지지 않게).
+처음 계산할 때는 14일보다 오래된 점수를 조용히 '본 것'으로 둔다(오래 쓴 계정에서 알림이 쏟아지지 않게).
+처음 계산한 시점이 '합류'(joined_at·joined_km, 계약 13-4): 합류 전에 지난 km 이정표·주 완주·연속은 메달이 아니다
+(milestones[].before_join으로만 보이고, 예전 버전이 메달함에 넣어 둔 것도 읽을 때 뺀다). 출발(start)은 메달이 아닌 합류 인사.
 성적은 이 PC에서만 다룬다: 이 모듈은 아무 데도 보내지 않는다.
 """
 from __future__ import annotations
@@ -110,6 +112,12 @@ def _course_dist(store, cid) -> dict:
     return (cfg or {}).get("dist") or g.DEFAULT_DISTRIBUTION
 
 
+def _dist_basis(store, cid) -> str:
+    """학점 비율의 근거: 사용자가 그 과목 비율을 정했으면 "user", 기본 비율(15/30/45/60/75…)이면 "default"(계약 13-2)."""
+    cfg = (store.data.get("grades") or {}).get(str(cid)) if cid is not None else None
+    return "user" if (cfg or {}).get("dist") else "default"
+
+
 def _course_estimate(store, cid, memo: dict):
     """그 과목 성적 설정으로 계산한 추정(없으면 None). 과목마다 한 번만 계산한다."""
     if cid is None:
@@ -129,19 +137,22 @@ def _course_estimate(store, cid, memo: dict):
 
 
 def _judge(store, cid, score, mean, sd, memo) -> dict:
-    """점수의 위치: 평균·표준편차가 있으면 이 점수로, 없으면 과목 추정으로, 둘 다 없으면 판정 없음."""
+    """점수의 위치: 평균·표준편차가 있으면 이 점수로, 없으면 과목 추정으로, 둘 다 없으면 판정 없음.
+    letter_basis: 학점을 사용자가 정한 비율로 매겼으면 "user", 기본 비율이면 "default"(화면은 '기본 비율이라면 …'), 학점이 없으면 None."""
     if score is not None and mean is not None and sd is not None and sd > 0:
         try:
             top = g.top_percent(score, mean, sd)
             letter = g.letter_for(top, _course_dist(store, cid))
-            return {"top": round(top, 1), "letter": letter, "band": band_of(letter), "basis": "score"}
+            return {"top": round(top, 1), "letter": letter, "band": band_of(letter), "basis": "score",
+                    "letter_basis": _dist_basis(store, cid)}
         except ValueError:
             pass
     est = _course_estimate(store, cid, memo)
     if est and est.get("grade"):
         return {"top": round(float(est["top"]), 1) if est.get("top") is not None else None,
-                "letter": est["grade"], "band": band_of(est["grade"]), "basis": "course"}
-    return {"top": None, "letter": None, "band": None, "basis": None}
+                "letter": est["grade"], "band": band_of(est["grade"]), "basis": "course",
+                "letter_basis": _dist_basis(store, cid)}
+    return {"top": None, "letter": None, "band": None, "basis": None, "letter_basis": None}
 
 
 def _stats(a: dict):
@@ -175,7 +186,8 @@ def _graded_events(store, memo) -> list[dict]:
                     "entry": {"id": f"{key}:{sig}", "kind": "graded", "course_id": cid or None,
                               "course_short": short_course_name(names.get(cid)) or None,
                               "title": a.get("name") or "과제", "score": score,
-                              "max_score": _num(a.get("points_possible")) or None, "mean": mean, "sd": sd,
+                              "max_score": _num(a.get("points_possible")) or None,
+                              "max_assumed": not _num(a.get("points_possible")), "mean": mean, "sd": sd,
                               **_judge(store, cid or None, score, mean, sd, memo),
                               "exam": exam_of(a.get("name")), "source_title": "Canvas 과제", "source_type": "canvas",
                               "url": a.get("html_url"), "at": iso(parse_iso(at))}})
@@ -219,7 +231,8 @@ def _score_events(store, memo) -> list[dict]:
                         "entry": {"id": key, "kind": "score", "course_id": cid,
                                   "course_short": c.get("course_short"),
                                   "title": c.get("label") or c.get("source_title") or "점수",
-                                  "score": score, "max_score": mx, "mean": mean, "sd": sd,
+                                  "score": score, "max_score": mx, "max_assumed": mx is None,   # 만점 미기재 → 100점 가정
+                                  "mean": mean, "sd": sd,
                                   **_judge(store, cid, score, mean, sd, memo),
                                   "exam": exam_of(c.get("label"), c.get("source_title")),
                                   "source_title": c.get("source_title"), "source_type": c.get("source_type"),
@@ -275,26 +288,70 @@ def _milestone_title(km: float) -> str:
             35.0: "35km, 결승선이 보여요", TOTAL_KM: "한 학기 완주!"}.get(km, f"{km:g}km 통과")
 
 
+def _week_at(sem: dict, day: date) -> int:
+    """그 날의 주차(개강 전 0, 종강 뒤 weeks_total + 1). semester_info의 week_now와 같은 계산."""
+    weeks = sem.get("weeks") or []
+    first = _day(weeks[0].get("start")) if weeks else None
+    if first is None:
+        return int(sem.get("week_now") or 0)
+    total = int(sem.get("weeks_total") or len(weeks))
+    if day < first:
+        return 0
+    return min(total + 1, (day - first).days // 7 + 1)
+
+
+def join_info(data: dict, sem: dict, now: datetime) -> dict | None:
+    """합류(처음 계산한 시점, celebrate_init): {"at", "day", "week", "km"}. 첫 동기화 전에는 None.
+    아직 처음 계산 전이면 지금이 합류 시점이다. km는 지금 학기 날짜로 그 날의 주차를 다시 셈한 값(계약 13-4)."""
+    if data.get("cache") is None:
+        return None
+    at = parse_iso(data.get("celebrate_init")) or now
+    wk = _week_at(sem, at.date())
+    return {"at": at, "day": at.date(), "week": wk,
+            "km": km_of({"week_now": wk, "weeks_total": sem.get("weeks_total")})}
+
+
+def _before_join(join: dict | None, kind: str, km=None, end=None) -> bool:
+    """합류 전에 이미 지난 보상인지: km 이정표는 합류 km 이하, 주 완주·연속은 합류 전에 끝난 주."""
+    if join is None:
+        return False
+    if kind == "km":
+        return km is not None and float(km) <= join["km"] + 1e-9
+    if kind in ("week_clear", "streak"):
+        d = _day(end)
+        return d is not None and d < join["day"]
+    return False
+
+
+def _inbox_title(no_deadline_left: int) -> str:
+    """확인함 비우기 보상 이름. 마감 없는 과제가 남아 있으면 '놓친 마감 없음'이라 하지 않고 그 수를 넣는다(계약 13-4)."""
+    if no_deadline_left:
+        return f"확인함 비우기 완료 · 마감 모르는 과제 {no_deadline_left}개 남음"
+    return "확인함 비우기 완료"
+
+
 def _reward_events(store, sem: dict, items: list[dict], now: datetime, term: str) -> tuple[list[dict], int]:
+    """보상 후보. 합류 전에 지난 km 이정표·주 완주·연속은 넣지 않는다(메달 아님, milestones[].before_join으로만 보임).
+    연속 완주도 합류한 뒤에 끝난 주만 센다. start는 메달이 아닌 합류 인사."""
     out = []
     if store.data.get("cache") is None:   # 첫 동기화 전에는 학기 날짜도 추정이라 보상을 주지 않는다
         return out, 0
     weeks = sem.get("weeks") or []
     total = int(sem.get("weeks_total") or len(weeks) or 0)
-    wn = int(sem.get("week_now") or 0)
-    km = km_of(sem)
+    join = join_info(store.data, sem, now)
     runs = store.data.get("runs") or []
     first = next((r.get("finished_at") for r in runs if r.get("finished_at")), None) or store.data.get("last_sync")
-    title = (f"출발! {total}주 마라톤, 끝까지 같이 달려요" if wn <= 1
-             else f"{km:g}km 지점에서 합류했어요. 결승선까지 같이 달려요")
-    out.append(_reward(f"start:{term}", "start", title, first or iso(now), max(wn, 0) or None, km=km))
+    title = (f"출발! {total}주 마라톤, 끝까지 같이 달려요" if join["week"] <= 1
+             else f"{join['km']:g}km 지점에서 합류했어요. 결승선까지 같이 달려요")
+    out.append(_reward(f"start:{term}", "start", title, first or iso(now), max(join["week"], 0) or None, km=join["km"]))
+    km = km_of(sem)
     for m, label in MILESTONES:
-        if total and km >= m - 1e-9:
+        if total and km >= m - 1e-9 and not _before_join(join, "km", km=m):
             reach = min(total, max(1, math.ceil(m * total / TOTAL_KM - 1e-9)))
             wk = weeks[reach - 1] if 0 < reach <= len(weeks) else {}
             out.append(_reward(f"km:{term}:{m:g}", "km", _milestone_title(m), wk.get("start"), reach,
                                km=m, label=label, finish=m == TOTAL_KM))
-    results = _week_results(sem, items, now.date())
+    results = [w for w in _week_results(sem, items, now.date()) if not _before_join(join, "week_clear", end=w["end"])]
     for w in results:
         if w["clear"]:
             out.append(_reward(f"week_clear:{term}:{w['start']}", "week_clear", f"{w['n']}주차 완주",
@@ -302,10 +359,23 @@ def _reward_events(store, sem: dict, items: list[dict], now: datetime, term: str
     streak, hits = _streaks(results)
     for n, w in hits:
         out.append(_reward(f"streak:{term}:{n}", "streak", f"{n}주 연속 완주", w["end"], w["n"], n=n))
+    left = sum(1 for it in items if it.get("status") == "no_deadline")
     for ev in (store.data.get("review_peak") or {}).get("earned") or []:
-        out.append(_reward(ev["key"], "inbox_zero", "확인함 비우기 완료", ev.get("at"), ev.get("week"),
-                           count=ev.get("count")))
+        out.append(_reward(ev["key"], "inbox_zero", _inbox_title(left), ev.get("at"), ev.get("week"),
+                           count=ev.get("count"), no_deadline_left=left))
     return out, streak
+
+
+def _medal_counts(m: dict, join: dict | None) -> bool:
+    """메달함에 보일 것인지: 출발 인사(start)와 합류 전 보상은 메달이 아니다(예전 계정에 남은 것도 읽을 때 뺀다)."""
+    kind = m.get("kind")
+    if kind == "start":
+        return False
+    if kind == "km":
+        return not _before_join(join, "km", km=m.get("km"))
+    if kind in ("week_clear", "streak"):
+        return not _before_join(join, kind, end=m.get("at"))
+    return True
 
 
 def _review_update(store, items: list[dict], now: datetime, sem: dict, term: str) -> dict | None:
@@ -345,7 +415,7 @@ def _seen(celebrated: dict, ev: dict) -> bool:
 def _medal(ev: dict, term: str, seen_at: str, silent: bool = False) -> dict:
     e = ev["entry"]
     m = {k: e.get(k) for k in ("id", "kind", "title", "at", "week")}
-    for k in ("km", "label", "n", "count", "finish"):
+    for k in ("km", "label", "n", "count", "finish", "no_deadline_left"):
         if e.get(k) is not None:
             m[k] = e[k]
     m.update(term=term, seen_at=seen_at)
@@ -397,11 +467,12 @@ def state(store, sem: dict, items: list[dict], now: datetime | None = None) -> t
     celebrated = dict(data.get("celebrated") or {})
     medals = list(data.get("medals") or [])
 
-    if not data.get("celebrate_init") and data.get("cache") is not None:
-        # 처음: 14일보다 오래된(또는 시각을 모르는) 점수와 출발 말고 이미 지난 보상은 조용히 본 것으로
+    first_calc = not data.get("celebrate_init") and data.get("cache") is not None
+    if first_calc:
+        # 처음(= 합류): 14일보다 오래된(또는 시각을 모르는) 점수는 조용히 본 것으로. 합류 전에 지난 이정표·주 완주·연속은
+        # 보상 후보에 아예 없다(메달이 아님). 혹시 남은 보상(출발 인사 말고)도 조용히 본 것으로만 — 메달함에 넣지 않는다.
         stamp, cut = iso(now), now - timedelta(days=RECENT_DAYS)
         quiet = {}
-        new_medals = []
         for ev in grades_ev:
             at = parse_iso(ev["entry"].get("at"))
             if at is None or at < cut:
@@ -411,16 +482,17 @@ def state(store, sem: dict, items: list[dict], now: datetime | None = None) -> t
             if ev["entry"]["kind"] == "start" or _seen(celebrated, ev):
                 continue
             quiet[ev["key"]] = ev["sig"]
-            new_medals.append(_medal(ev, term, stamp, silent=True))
-        updates.update(celebrate_init=stamp, celebrated_add=quiet, medals_add=new_medals)
+        updates.update(celebrate_init=stamp, celebrated_add=quiet)
         celebrated.update(quiet)
-        medals += new_medals
 
+    join = join_info(data, sem, now)
+    mine = [m for m in medals if m.get("term") == term and _medal_counts(m, join)]
+    mine.sort(key=lambda m: (str(m.get("at") or ""), m.get("id") or ""))
     pend_grades = sorted((ev for ev in grades_ev if not _seen(celebrated, ev)),
                          key=lambda ev: str(ev["entry"].get("at") or ""))
     waiting = _collapse([ev for ev in rewards_ev if not _seen(celebrated, ev)])
     today = now.date().isoformat()
-    shown_today = sum(1 for m in medals if not m.get("silent") and str(m.get("seen_at") or "")[:10] == today)
+    shown_today = sum(1 for m in mine if not m.get("silent") and str(m.get("seen_at") or "")[:10] == today)
     pend_rewards = waiting[:max(0, DAILY_REWARDS - shown_today)]
 
     news_cards, news_init = _news(view, items, now, [ev["entry"] for ev in pend_grades])
@@ -431,16 +503,16 @@ def state(store, sem: dict, items: list[dict], now: datetime | None = None) -> t
     total = int(sem.get("weeks_total") or 0)
     wn = int(sem.get("week_now") or 0)
     nxt = next(((m, label) for m, label in MILESTONES if km < m - 1e-9), None)
-    mine = [m for m in medals if m.get("term") == term]
-    mine.sort(key=lambda m: (str(m.get("at") or ""), m.get("id") or ""))
     out = {
         "news": news_cards,
         "pending": [ev["entry"] for ev in pend_grades] + [ev["entry"] for ev in pend_rewards],
         "medals": [{k: v for k, v in m.items() if k not in ("silent", "term")} for m in mine],
         "streak": streak, "streak_next": next((n for n in STREAKS if n > streak), None),
         "km": km, "total_km": TOTAL_KM, "week_now": wn, "weeks_total": total,
+        "joined_at": iso(join["at"]) if join else None, "joined_km": join["km"] if join else None,
         "finished": total > 0 and wn >= total, "after_finish": total > 0 and wn > total,
-        "milestones": [{"km": m, "label": label, "reached": km >= m - 1e-9} for m, label in MILESTONES],
+        "milestones": [{"km": m, "label": label, "title": _milestone_title(m), "reached": km >= m - 1e-9,
+                        "before_join": _before_join(join, "km", km=m)} for m, label in MILESTONES],
         "next": {"km": nxt[0], "label": nxt[1], "left": round(nxt[0] - km, 1), "title": _milestone_title(nxt[0])}
         if nxt else None,
         "waiting": max(0, len(waiting) - len(pend_rewards)),   # 오늘 몫을 넘어 내일 띄울 보상 수
@@ -500,6 +572,8 @@ def mark_seen(store, sem: dict, items: list[dict], ids: list[str], now: datetime
             if other is None or _seen(celebrated, other):
                 continue
             celebrated[k] = other["sig"]
+            if other["entry"]["kind"] == "start":
+                continue   # 출발은 합류 인사 — 메달이 아니다(계약 13-4)
             if other["entry"]["id"] not in have:
                 medals.append(_medal(other, term, stamp, silent=i > 0))   # 묶여 온 것은 오늘 몫에 세지 않음
                 have.add(other["entry"]["id"])
@@ -581,13 +655,21 @@ def _card(kind: str, covers: list, **fields) -> dict:
     return {"id": f"news:{kind}:" + _hash(kind, *sorted(str(c) for c in covers)), "kind": kind, **fields}
 
 
-def _grades_card(store, grade_pending: list[dict]) -> dict | None:
+GRADES_FRESH = timedelta(days=3)   # 이보다 오래된 점수만 남았으면 '새 성적'이 아니라 '앱에서 아직 안 본 성적'
+
+
+def _grades_card(store, grade_pending: list[dict], now: datetime | None = None, first_run: bool = False) -> dict | None:
+    """성적 소식 카드. fresh: 첫 실행이 아니고, 합류한 뒤 3일 안에 나온 점수가 하나라도 있을 때만 True(계약 13-4).
+    합류 전에 이미 나와 있던 점수는 '새 성적'이 아니라 '앱에서 아직 안 본 성적'이다."""
     snooze_n = store.data.get("news_snooze") or {}
     gs = [p for p in grade_pending if int(snooze_n.get(p["id"]) or 0) < SNOOZE_MAX]
     if not gs:
         return None
+    now = now or now_local()
+    since = max(now - GRADES_FRESH, parse_iso(store.data.get("celebrate_init")) or now)
+    fresh = (not first_run) and any((parse_iso(p.get("at")) or _EPOCH) >= since for p in gs)
     return _card("grades", [p["id"] for p in gs], count=len(gs), mood="surprise", grade_ids=[p["id"] for p in gs],
-                 snoozed=any(snooze_n.get(p["id"]) for p in gs),
+                 snoozed=any(snooze_n.get(p["id"]) for p in gs), fresh=fresh,
                  items=[{"course_short": p.get("course_short"), "title": p.get("title"), "exam": p.get("exam"),
                          "kind": p.get("kind")} for p in gs[:3]])
 
@@ -655,29 +737,32 @@ def _news(store, items: list[dict], now: datetime, grade_pending: list[dict]) ->
     if store.data.get("cache") is None:
         return [], None
     seen = store.data.get("news_seen") or {}
-    grades = _grades_card(store, grade_pending)
     if not seen.get("init"):
         if len(store.data.get("runs") or []) > 1:   # 전부터 쓰던 계정: 쌓인 것을 한꺼번에 '새 소식'이라 하지 않는다
+            grades = _grades_card(store, grade_pending, now)
             marks = _quiet_marks(store, items, now)   # 단, 최근 24시간 안에 들어온 것(업데이트 직후 동기화 등)은 소식으로
             return _regular_cards(store, items, now, grades, marks), marks
-        upcoming = [v for v in items if v.get("status") in _ACTIVE and parse_iso(v.get("due"))
-                    and parse_iso(v.get("due")) >= now - _PAST_GRACE]
+        grades = _grades_card(store, grade_pending, now, first_run=True)
+        # 첫 실행 요약: 겹치지 않게 — 일정에 넣은 (다가오는) 마감 + 확인할 후보 = count_deadlines, 그리고 받은 자료
+        scheduled = [v for v in items if v.get("status") == "scheduled" and parse_iso(v.get("due"))
+                     and parse_iso(v.get("due")) >= now - _PAST_GRACE]
         review = [v for v in items if v.get("status") == "review"]
         mats = len(store.data.get("downloads") or {})
-        rows = [{"label": "다가오는 마감", "n": len(upcoming), "go": "dash"},
+        n_deadlines = len(scheduled) + len(review)
+        rows = [{"label": "일정에 넣은 마감", "n": len(scheduled), "go": "dash"},
                 {"label": "확인할 후보", "n": len(review), "go": "inbox"},
                 {"label": "받은 자료", "n": mats, "go": "materials"}]
         rows = [r for r in rows if r["n"]]
         cards = []
         if rows:   # 처음 동기화: 항목마다가 아니라 한 장으로
-            cards.append({"id": "news:first", "kind": "first", "count": len(upcoming) + mats, "mood": "start",
-                          "items": rows})
+            cards.append({"id": "news:first", "kind": "first", "count": n_deadlines + mats, "mood": "start",
+                          "count_deadlines": n_deadlines, "count_materials": mats, "items": rows})
         if grades:
             cards.append(grades)
         if not rows:
             return cards, {**_all_marks(store, items, now), "at": iso(now)}
         return cards, None
-    return _regular_cards(store, items, now, grades, seen), None
+    return _regular_cards(store, items, now, _grades_card(store, grade_pending, now), seen), None
 
 
 def _quiet_marks(store, items: list[dict], now: datetime) -> dict:

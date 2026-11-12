@@ -48,6 +48,31 @@ def test_estimate_and_needed_for_remaining_exam(store):
     assert asic["canvas_score"] == 92.5
 
 
+def test_missing_weight_is_not_called_no_remaining(store):
+    """항목 비중 합이 30%뿐이면 '남은 평가 없음'이 아니라 '나머지 70%는 평가 항목이 없어 계산 못 해요'(계약 13-2)."""
+    gradebook.save_course(store, "102", {"components": [
+        {"name": "중간고사", "weight": 30, "score": 78, "mean": 65.3, "sd": 12.1}]})
+    sec = gradebook.section(store, courses(store))
+    dsp = next(x for x in sec["courses"] if x["course_id"] == "102")
+    assert (dsp["weight_total"], dsp["weight_missing"]) == (30, 70)
+    assert dsp["missing_note"] == "나머지 70%는 평가 항목이 없어 계산 못 해요"
+    pr = next(p for p in sec["priorities"] if p["course"] == "디지털신호처리")
+    assert pr["missing_weight"] == 70 and "남은 평가 없음" not in pr["reason"] and "나머지 70%" in pr["reason"]
+    # 남은 항목이 있어도 필요 점수 항목마다 모르는 비중을 함께 준다
+    gradebook.save_course(store, "102", {"components": [
+        {"name": "중간고사", "weight": 30, "score": 78, "mean": 65.3, "sd": 12.1}, {"name": "기말고사", "weight": 40}]})
+    sec = gradebook.section(store, courses(store))
+    dsp = next(x for x in sec["courses"] if x["course_id"] == "102")
+    assert dsp["needed"] and all(n["missing_weight"] == 30 for n in dsp["needed"])
+    pr = next(p for p in sec["priorities"] if p["course"] == "디지털신호처리")
+    assert pr["missing_weight"] == 30 and "나머지 30%" in pr["reason"]
+    # 합 100이면 모르는 비중 없음
+    gradebook.save_course(store, "102", {"components": [
+        {"name": "중간고사", "weight": 30, "score": 78, "mean": 65.3, "sd": 12.1}, {"name": "기말고사", "weight": 70}]})
+    dsp = next(x for x in gradebook.section(store, courses(store))["courses"] if x["course_id"] == "102")
+    assert (dsp["weight_total"], dsp["weight_missing"], dsp["missing_note"]) == (100, 0, None)
+
+
 @pytest.mark.parametrize("body,msg", [
     ({"components": [{"name": "", "weight": 10}]}, "이름"),
     ({"components": [{"name": "중간", "weight": 80}, {"name": "기말", "weight": 40}]}, "100%"),

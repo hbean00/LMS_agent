@@ -357,6 +357,17 @@ def _better(grade: str, dist: dict) -> str | None:
     return usable[i - 1] if i else None
 
 
+def weight_totals(comps: list) -> tuple[float, float]:
+    """(항목 비중 합, 100 − 합 — 0 이상). 계약 13-2: 합이 100이 안 되면 나머지는 '평가 항목이 없는' 비중이다."""
+    total = 0.0
+    for x in comps or []:
+        w = x.get("weight") if isinstance(x, dict) else None
+        if isinstance(w, (int, float)) and not isinstance(w, bool) and w > 0:
+            total += float(w)
+    total = round(total, 2)
+    return total, round(max(0.0, 100.0 - total), 2)
+
+
 def section(store, courses: list[dict]) -> dict:
     """state["grades"]: 과목별 설정·추정·필요 점수, 우선순위, 점수 후보."""
     saved = store.data.get("grades") or {}
@@ -366,6 +377,7 @@ def section(store, courses: list[dict]) -> dict:
         dist = cfg.get("dist") or g.DEFAULT_DISTRIBUTION
         est, err, needed = None, None, []
         comps = cfg["components"]
+        w_total, w_missing = weight_totals(comps)
         if comps:
             try:
                 est = g.estimate(comps, dist, class_size=cfg.get("class_size"))
@@ -377,11 +389,13 @@ def section(store, courses: list[dict]) -> dict:
             for m in missing:
                 for t in targets:
                     try:
-                        needed.append({"component": m["name"], **g.needed_on(comps, m["name"], t, dist)})
+                        needed.append({"component": m["name"], **g.needed_on(comps, m["name"], t, dist),
+                                       "missing_weight": w_missing})
                     except ValueError as e:
-                        needed.append({"component": m["name"], "target": t, "error": str(e)})
+                        needed.append({"component": m["name"], "target": t, "error": str(e), "missing_weight": w_missing})
             prio_in.append({"course": c["short_name"], "estimate": est,
-                            "remaining_weight": sum(x["weight"] for x in missing), "dist": dist})
+                            "remaining_weight": sum(x["weight"] for x in missing), "dist": dist,
+                            "missing_weight": w_missing})
         auto = bool(comps) and all(x.get("auto") for x in comps)
         changed = None
         if auto and cfg.get("auto_previous"):
@@ -391,6 +405,8 @@ def section(store, courses: list[dict]) -> dict:
                             "canvas_score": c.get("current_score"), "config": cfg,
                             "using_default_dist": cfg.get("dist") is None,
                             "estimate": est, "error": err, "needed": needed,
+                            "weight_total": w_total, "weight_missing": w_missing,
+                            "missing_note": g.missing_weight_note(w_missing) if comps else None,
                             "auto": auto, "auto_source": cfg.get("auto_source") if auto else None,
                             "auto_by": cfg.get("auto_by") if auto else None, "auto_changed": changed})
     try:

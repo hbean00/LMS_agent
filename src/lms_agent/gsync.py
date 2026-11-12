@@ -38,6 +38,12 @@ def desired_events(store) -> list[dict]:
     return out
 
 
+def desired_counts(store) -> dict:
+    """구글에 있어야 할 일정 수(계약 13-5): {"deadlines": 마감, "summaries": 주간 요약·확인 알림} — desired_events와 같은 대상."""
+    items, summaries = core.calendar_payload(store)
+    return {"deadlines": sum(1 for it in items if parse_iso(it.get("due"))), "summaries": len(summaries)}
+
+
 class GoogleLink:
     def __init__(self, cfg: dict, home: Path, client: tuple[str | None, str | None],
                  urls: dict | None = None, save=None):
@@ -67,7 +73,7 @@ class GoogleLink:
         return {"available": self.available, "connected": self.connected, "pushing": self.pushing,
                 "error": self.error, "last_push": g.get("at"),
                 "last_result": {k: g.get(k) for k in ("created", "updated", "deleted", "unchanged")} if g else None,
-                "calendar_link": None}
+                "desired": desired_counts(store), "calendar_link": None}
 
     # ------------------------------------------------------------ 연결
 

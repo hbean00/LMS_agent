@@ -3,12 +3,16 @@
 
 판단은 단순한 규칙이다(진짜 모델 아님): 같은 과제 후보가 여럿이면 가장 최근 근거를 승인하고 나머지는 제외,
 마감 낱말이 있는 단독 후보는 승인, 그 밖에는 보류. 근거는 보낸 글에서 그대로 잘라 쓴다(하네스 검증을 통과해야 하므로).
+이유는 정직하게: 상대 날짜('다음 주 금요일')면 게시일 기준으로 계산했다고 말하고, '분명히 적혀 있다'고 하지 않는다(계약 13-3).
 """
 from __future__ import annotations
 
 import json
 import re
 import subprocess
+from datetime import date
+
+from .extract import find_dates
 
 DEMO_COMMAND = "claude"
 _DEADLINE_WORD = re.compile(r"마감|까지|제출|연장|due|by\s", re.I)
@@ -35,6 +39,18 @@ def _quote(text: str) -> str:
     return first[:80].strip() or text[:80]
 
 
+def _single_reason(ev: dict) -> str:
+    """단독 후보를 승인하는 이유. 날짜가 글에 적혀 있는지, 게시일 기준으로 계산한 상대 날짜인지 구분해 말한다."""
+    try:
+        ref = date.fromisoformat(ev["posted"][:10])
+    except ValueError:
+        ref = date.today()
+    hits = find_dates(ev["text"], ref)
+    if hits and all(h.relative for h in hits):
+        return "상대 날짜라 게시일 기준으로 계산한 마감이에요 — 맞는지 한 번 봐 주세요"
+    return "근거 글의 마감 날짜를 그대로 옮겼어요"
+
+
 def _decide(text: str) -> dict:
     blocks = _blocks(text)
     by_id = {b["id"]: b for b in blocks}
@@ -55,7 +71,7 @@ def _decide(text: str) -> dict:
                                   "reason": "나중에 올라온 글이 마감을 바꿔서 이 후보는 뺐어요"})
         elif _DEADLINE_WORD.search(ev):
             decisions.append({"id": b["id"], "decision": "approved", "evidence": _quote(ev),
-                              "reason": "근거 글에 마감 날짜가 분명히 적혀 있어요"})
+                              "reason": _single_reason(b["evidence"][0])})
         else:
             decisions.append({"id": b["id"], "decision": "keep", "evidence": _quote(ev),
                               "reason": "마감인지 확실하지 않아 직접 확인이 필요해요"})

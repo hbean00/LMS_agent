@@ -32,7 +32,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from .extract import find_dates, html_to_text
+from .extract import KO_WD, find_dates, html_to_text
+from .store import group_key
 from .timeutil import iso, local_tz, now_local, parse_iso
 from .weights import WeightsFound, display_names, is_fixed
 
@@ -381,10 +382,9 @@ def _deadline_validate(obj: dict, sent: str, inputs: dict, final: bool):
 
 # ---- triage_review (계약 12장)
 
-def _group_key(v: dict):
-    if v.get("linked_to"):
-        return ("link", v["linked_to"])
-    return ("title", v.get("course_id"), _flat(str(v.get("title") or "")).lower())
+def _group_key(v: dict) -> str | None:
+    """같은 과제 후보 묶음 — 화면(store.view의 group)과 같은 규칙 하나(store.group_key). 묶음이 없으면 None."""
+    return group_key(v)
 
 
 def _triage_build(inputs: dict) -> tuple[str, list]:
@@ -393,8 +393,9 @@ def _triage_build(inputs: dict) -> tuple[str, list]:
     items = list(inputs.get("items") or [])[:TRIAGE_MAX_ITEMS]
     groups: dict = {}
     for v in inputs.get("all_items") or items:
-        if v.get("origin", "found") == "found":
-            groups.setdefault(_group_key(v), []).append(v["id"])
+        k = _group_key(v)
+        if k is not None:
+            groups.setdefault(k, []).append(v["id"])
     prep, parts, notes = {}, [], []
     if len(inputs.get("items") or []) > TRIAGE_MAX_ITEMS:
         notes.append(f"후보가 많아 {TRIAGE_MAX_ITEMS}개만 보냄")
@@ -409,7 +410,7 @@ def _triage_build(inputs: dict) -> tuple[str, list]:
         title, n = redact(str(v.get("title") or ""), names)
         redacted_any += bool(n)
         gid = _group_key(v)
-        group = [x for x in groups.get(gid, []) if x != v["id"]]
+        group = [x for x in groups.get(gid, []) if x != v["id"]] if gid is not None else []
         lines = [f"### id: {v['id']}",
                  f"과목/course: {v.get('course_short') or ''} | 제목/title: {title} | 마감/due: {v.get('due') or '없음/none'}"]
         if v.get("conflict"):
@@ -432,6 +433,95 @@ def _triage_build(inputs: dict) -> tuple[str, list]:
     inputs["_prep"] = prep
     inputs["_groups"] = groups
     return "\n\n".join(parts), notes
+
+
+_CLAIMS_EXPLICIT = re.compile(r"(?i)분명|명시|적혀\s*있|explicit|stated")
+_NEG_AFTER = re.compile(r"^[^.,;]{0,6}?(?:지\s*않|않|없|아니)")
+_NEG_BEFORE = re.compile(r"(?i)(?:\bnot|n't|never)\s+(?:\w+\s+)?$")
+_SOURCE_DAY = {"announcement": "공지일", "inbox": "메시지 날짜", "board": "게시일"}
+
+
+def claims_explicit(reason: str) -> bool:
+    """이유가 '날짜가 분명히/명시적으로 적혀 있다'고 주장하는지('분명하지 않아'·'not stated' 같은 부정은 빼고)."""
+    for m in _CLAIMS_EXPLICIT.finditer(reason or ""):
+        if _NEG_AFTER.match(reason[m.end():m.end() + 10]) or _NEG_BEFORE.search(reason[max(0, m.start() - 16):m.start()]):
+            continue
+        return True
+    return False
+
+
+def date_basis(evidence: list[dict], due: datetime | None) -> dict | None:
+    """마감 날짜가 근거의 어떤 날짜 표현에서 왔는지. 근거에 적힌 날짜(±1일)가 있으면 {"relative": False},
+    상대 날짜('다음 주 금요일', 'next Friday')만 맞으면 {"relative": True, "phrase", "posted_at", "source_type"}, 없으면 None."""
+    if due is None:
+        return None
+    rel = None
+    for e in evidence or []:
+        text = str(e.get("text") or "")
+        posted = _as_dt(e.get("posted_at"))
+        for h in find_dates(text, (posted or due).date()):
+            if abs((h.day - due.date()).days) > 1:
+                continue
+            if not h.relative:
+                return {"relative": False}
+            if rel is None:
+                rel = {"relative": True, "phrase": _flat(text[h.start:h.end]), "posted_at": iso(posted),
+                       "source_type": e.get("source_type") or e.get("type")}
+    return rel
+
+
+def relative_note(basis: dict, due: datetime) -> str:
+    """‘다음 주 금요일’ → 공지일 11/12(목) 기준 11/20(금)"""
+    target = f"{due.month}/{due.day}({KO_WD[due.weekday()]})"
+    posted = _as_dt(basis.get("posted_at"))
+    if posted is None:
+        return f"‘{basis['phrase']}’ → {target}로 계산"
+    label = _SOURCE_DAY.get(basis.get("source_type") or "", "게시일")
+    return f"‘{basis['phrase']}’ → {label} {posted.month}/{posted.day}({KO_WD[posted.weekday()]}) 기준 {target}"
+
+
+_PLACEHOLDER = re.compile(r"\[(이메일|링크|토큰|전화|학번|이름)\]")
+
+
+def _label_rx(label: str, edge: bool) -> str:
+    if label == "이름":
+        return r"\S+" if edge else r".+?"
+    rx = dict(_REDACT)[label]
+    p = rx.pattern[4:] if rx.pattern.startswith("(?i)") else rx.pattern
+    return ("(?i:" if rx.pattern.startswith("(?i)") or rx.flags & re.I else "(?:") + p + ")"
+
+
+def unplace(s: str) -> str:
+    """'[이메일]' 같은 자리 표시에서 괄호를 뗀다(화면에 자리 표시가 나오지 않게)."""
+    return _PLACEHOLDER.sub(lambda m: m.group(1), s or "")
+
+
+def original_quote(quote: str, evidence: list[dict], names: list | None = None) -> str:
+    """AI가 가린 글에서 인용한 문장 → 이 PC에 있는 원문(가리지 않은) 문장. 계약 13-3.
+    가린 근거 안에서 인용을 찾고, 자리 표시가 아닌 조각들을 순서대로 원문에 맞춘다. 조각 맞추기가 안 되면
+    그 근거 원문 문장 전체, 어느 근거에도 없으면(드묾) 자리 표시 괄호만 뗀 인용."""
+    q = _flat(quote)
+    for e in (evidence or [])[:4]:
+        orig = _flat(str(e.get("text") or ""))
+        red = _flat(redact(str(e.get("text") or ""), names)[0][:600])
+        if not q or q not in red:
+            continue
+        if not _PLACEHOLDER.search(q):
+            if q in orig:
+                return q
+        parts = _PLACEHOLDER.split(q)
+        rx = ""
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                rx += re.escape(part).replace(r"\ ", r"\s*")
+            else:
+                rx += _label_rx(part, edge=(i == 1 and not parts[0]) or (i == len(parts) - 2 and not parts[-1]))
+        try:
+            m = re.search(rx, orig)
+        except re.error:
+            m = None
+        return m.group(0) if m and m.group(0).strip() else orig
+    return unplace(q)
 
 
 def _due_supported(due: datetime, ev: list[dict]) -> bool:
@@ -472,7 +562,7 @@ def _triage_validate(obj: dict, sent: str, inputs: dict, final: bool):
         if decision in ("approved", "rejected"):
             changes["decision"] = decision
         if d.get("title") and decision != "rejected":
-            t = _flat(str(d["title"]))[:120]
+            t = unplace(_flat(str(d["title"])))[:120]   # 가린 자리 표시가 제목으로 들어가지 않게
             if t:
                 changes["title"] = t
         if d.get("due") and decision != "rejected":
@@ -483,12 +573,21 @@ def _triage_validate(obj: dict, sent: str, inputs: dict, final: bool):
                 soft.append({"id": iid, "why": "마감 변경 무시: 근거에 적힌 날짜와 ±1일 넘게 다름 / due not within ±1 day of the evidence"})
             elif (_as_dt(p["due"]) or None) != due:
                 changes["due"] = due.strftime("%Y-%m-%dT%H:%M")
+        basis = None
+        if changes.get("decision") == "approved":
+            due_dt = parse_due(changes["due"])[0] if changes.get("due") else _as_dt(p["due"])
+            basis = date_basis(p["evidence"], due_dt)
+            if basis and basis["relative"] and claims_explicit(reason):
+                errors.append({"id": iid, "why": f"근거는 상대 날짜('{basis['phrase']}')인데 이유가 날짜가 분명히 적혀 있다고 함 — "
+                                                 "계산한 날짜라고 밝혀야 함 / the evidence only has a relative date; "
+                                                 "do not claim the date is explicitly stated"})
+                continue
         out.append({"id": iid, "decision": decision, "changes": changes, "reason": reason, "evidence": evidence[:300],
-                     "group": p["group"]})
+                     "group": p["group"], "date_basis": basis if basis and basis["relative"] else None})
     # 충돌 묶음: 이미 승인된 것 + 이번 승인 ≤ 1
     by_group: dict = {}
     for o in out:
-        if o["changes"].get("decision") == "approved":
+        if o["changes"].get("decision") == "approved" and o["group"] is not None:
             by_group.setdefault(o["group"], []).append(o)
     bad_ids = set()
     for g, lst in by_group.items():
@@ -572,6 +671,9 @@ register(AiTask(
         "Task: below are deadline candidates waiting in a student's review inbox. For each, decide approved "
         "(put on the calendar), rejected (not a real deadline / wrong) or keep (unsure).\n"
         "- 근거 원문에 마감이 분명히 적혀 있을 때만 approved. 애매하면 keep / approve only when the evidence clearly states it.\n"
+        "- '다음 주 금요일'·'next Friday' 같은 상대 날짜는 게시 시각 기준으로 계산한 것이므로, reason에 계산했다고 밝히고 "
+        "'분명히 적혀 있다'·'명시'라고 쓰지 마세요 / for relative dates say you computed it from the post date; "
+        "never claim the date is explicitly stated.\n"
         "- 같은 과제의 후보가 여럿이면 최대 하나만 approved — 보통 가장 최근 글(연장 공지 등) / approve at most one per task, "
         "usually the most recent notice (e.g. an extension).\n"
         "- due를 고칠 때는 근거 원문에 적힌 날짜 그대로(ISO 8601) / only change due to a date written in the evidence.\n"
@@ -733,48 +835,79 @@ def auto_triage(store, runner=None, session: AiSession | None = None, names: lis
     """확인함 후보를 AI로 정리해 검증된 결정만 store.update_user(..., by="ai", reason=…)로 반영한다.
     settings.ai_cli가 꺼져 있으면 아무것도 하지 않는다. 결과는 store.data["ai_triage"]에도 남는다(state.ai.last_triage).
     리더: 동기화 뒤 settings.ai_auto_triage가 켜져 있으면 `agent_cli.auto_triage(store, session=같은 세션)` 후 저장.
-    반환: {"at", "ok", "applied": n, "skipped": [{"id","why"}], "error", "attempts"}"""
+    반환: {"at", "ok", "applied": n, "skipped": [{"id","why"}], "error", "attempts",
+           "pending_left": 아직 확인 대기 수, "user_reverted": 사용자가 되돌려 AI가 건드리지 않은 수}(계약 13-3)"""
     session = session or AiSession(store, runner=runner, command=command)
     out = {"at": iso(now_local()), "ok": False, "applied": 0, "skipped": [], "error": None, "attempts": 0}
+
+    def finish() -> dict:
+        out.update(queue_counts(store))
+        out["skipped"] = [{**s, "why": unplace(str(s.get("why") or ""))} for s in out["skipped"]][:50]
+        store.data["ai_triage"] = out
+        return out
+
     todo, view = review_items(store)
     if not todo:
         out.update(ok=True, error=None)
         out["note"] = "확인할 후보가 없습니다"
-        store.data["ai_triage"] = out
-        return out
+        return finish()
     why = session.blocked()
     if why:
         out["error"] = why
-        store.data["ai_triage"] = out
-        return out
+        return finish()
     from .core import short_course_name  # 순환 import 피하기
     items = [{**v, "course_short": v.get("course_short") or short_course_name(v.get("course_name"))} for v in todo]
     res = session.run("triage_review", {"items": items, "all_items": view, "names": names})
     out["attempts"] = res.attempts
     if not res.ok:
         out["error"] = res.error
-        store.data["ai_triage"] = out
-        return out
+        return finish()
     data = res.data or {"decisions": [], "skipped": []}
     skipped = list(data.get("skipped") or [])
     # AI가 생각하는 동안 사용자가 결정했을 수 있다 → 지금 다시 확인
-    now_todo = {v["id"] for v in review_items(store)[0]}
+    now_todo = {v["id"]: v for v in review_items(store)[0]}
     applied = 0
     for d in data.get("decisions") or []:
-        if d["id"] not in now_todo:
+        v = now_todo.get(d["id"])
+        if v is None:
             skipped.append({"id": d["id"], "why": "그 사이 사용자가 결정함 — 건드리지 않음"})
             continue
         if not d["changes"]:
             skipped.append({"id": d["id"], "why": f"보류(keep): {d['reason']}"})
             continue
         try:
-            store.update_user(d["id"], d["changes"], by="ai", reason=f"{d['reason']} — 근거: \"{d['evidence'][:150]}\"")
+            store.update_user(d["id"], d["changes"], by="ai", reason=ai_reason_text(d, v, names))
             applied += 1
         except (KeyError, ValueError) as e:
             skipped.append({"id": d["id"], "why": f"반영 실패: {e}"})
-    out.update(ok=True, applied=applied, skipped=skipped[:50])
-    store.data["ai_triage"] = out
-    return out
+    out.update(ok=True, applied=applied, skipped=skipped)
+    return finish()
+
+
+AI_REASON_MAX = 300   # store.update_user가 자르는 길이
+
+
+def ai_reason_text(d: dict, item: dict, names: list | None = None) -> str:
+    """화면에 남길 AI 이유: 이유(자리 표시 없이) + 상대 날짜면 계산 + 가리지 않은 원문 인용(계약 13-3)."""
+    reason = unplace(d.get("reason") or "")
+    basis = d.get("date_basis")
+    if basis:
+        due = parse_due(d["changes"]["due"])[0] if d["changes"].get("due") else _as_dt(item.get("due"))
+        if due is not None:
+            reason += " · " + relative_note(basis, due)
+    quote = original_quote(d.get("evidence") or "", item.get("evidence") or [], names)
+    room = max(40, min(150, AI_REASON_MAX - len(reason) - len(' — 근거: ""')))
+    if len(quote) > room:
+        quote = quote[:room - 1] + "…"
+    return f"{reason} — 근거: \"{quote}\""
+
+
+def queue_counts(store) -> dict:
+    """확인함에 남은 것: pending_left(아직 확인 대기), user_reverted(사용자가 결정을 되돌려 pending — AI가 건드리지 않음)."""
+    review = [v for v in store.view() if v["status"] == "review"]
+    return {"pending_left": len(review),
+            "user_reverted": sum(1 for v in review if v["decision"] == "pending" and v.get("decided_by") == "user"
+                                 and v.get("decided_at"))}
 
 
 # ---------------------------------------------------------------- 예전 진입점(한 번 묻기)

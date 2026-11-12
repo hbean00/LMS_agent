@@ -77,6 +77,10 @@ def test_connect_push_and_evidence(env):
     want = desired_events(app.store)
     assert sum(1 for e in want if e["lms_id"].startswith("week-")) >= 1  # 주간 요약도 함께 간다
     assert st["google"]["connected"] and st["google"]["last_result"]["created"] == len(want)
+    # 구글에 있어야 할 수 = 마감 n + 주간 요약 m (화면이 '마감 n개 + 주간 요약 m개'로 보여 주고 결과 합과 맞춘다, 계약 13-5)
+    summaries = sum(1 for e in want if e["lms_id"].startswith(("week-", "review-")))
+    assert st["google"]["desired"] == {"deadlines": len(want) - summaries, "summaries": summaries}
+    assert sum(st["google"]["desired"].values()) == sum(st["google"]["last_result"].values())
     lab3 = next(i for i in st["items"] if i["title"] == "LAB3 보고서")
     assert lab3["gcal_event_id"] and lab3["gcal_synced_at"] and lab3["gcal_link"]
 
