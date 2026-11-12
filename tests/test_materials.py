@@ -97,8 +97,13 @@ def test_destination_is_safe_and_inside(tmp_path, title):
 
 
 def test_long_download_folder_still_fits(tmp_path):
-    root = tmp_path.joinpath(*(["깊은 폴더 이름"] * 12))
-    assert len(str(root)) > 150
+    # 저장 폴더 전체 길이를 160~170자로 맞춘다(임시 폴더 길이는 PC·CI마다 달라 고정 깊이로 만들면 못 맞추는 길이가 된다)
+    if len(str(tmp_path)) > 150:
+        pytest.skip("임시 폴더 경로가 너무 길어 이 시험을 할 수 없음")
+    root = tmp_path
+    while len(str(root)) < 160:
+        root = root / "깊은 폴더 이름"
+    assert 160 <= len(str(root)) <= 170
     bs = [board([post(1, "아주 긴 글 제목 " * 10, [att(1, "강의자료 " * 30 + ".pdf")])], title="강의자료실 " * 10)]
     (job,) = materials.plan(bs, {}, {"95079": "과목 이름 " * 10}, root)
     dest = Path(job["dest"])
