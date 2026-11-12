@@ -7,474 +7,655 @@
 <meta name="color-scheme" content="light">
 <title>LMS Agent</title>
 <style>
-/* 색은 흰 배경 · 버건디 · 검정 · 보조 회색 · 연한 틴트(+회색에서 나온 가는 선)만 쓴다 */
+/* 토큰: 버건디는 '지금·행동'에만. 나머지는 먹색·흑연색·괘선. 기록은 docs/PROGRESS.md 0번 */
 :root {
-  --accent: #900A31;
-  --text: #000000;
-  --gray: #595959;
-  --tint: #F9F0F3;
-  --bg: #FFFFFF;
-  --line: #E5E5E5;
-  --line-2: #BFBFBF;
-  --font: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --pad-x: 56px;
-  --maxw: 1312px;
+  --burgundy: #900A31;
+  --burgundy-deep: #74082A;
+  --ink: #2B2326;
+  --graphite: #6F6569;
+  --rule: #E5E0E2;
+  --rule-strong: #C9C1C4;
+  --desk: #F4F2F3;
+  --blush: #F6E8EC;
+  --paper: #FFFFFF;
+  --font: "Pretendard", "Pretendard Variable", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --side-w: 224px;
+  --gutter: 32px;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 400 16px/1.6 var(--font); word-break: keep-all; overflow-wrap: break-word;
+  margin: 0; min-width: 1024px; background: var(--paper); color: var(--ink);
+  font: 400 15px/1.55 var(--font); word-break: keep-all; overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
-b, strong, h1, h2, h3, th, dt, label.lbl { font-weight: 600; }
-a { color: var(--accent); font-weight: 600; text-decoration: none; border-radius: 4px; }
-a:hover { background: var(--tint); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; background: var(--tint); padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
-.ico { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-/* 네 모서리 프레임 */
-.corner { position: fixed; z-index: 40; width: 14px; height: 14px; background: var(--accent); }
-.c-tl { top: 20px; left: 20px; }
-.c-tr { top: 20px; right: 20px; }
-.c-bl { bottom: 20px; left: 20px; }
-.corner-chip {
-  position: fixed; z-index: 40; right: 20px; bottom: 14px; height: 26px; padding: 0 10px;
-  display: inline-flex; align-items: center; background: var(--bg); color: var(--accent);
-  border: 1.5px solid var(--accent); border-radius: 6px; font-size: 13px; font-weight: 600; letter-spacing: .01em;
-}
-.frame-bottom { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: 54px; background: var(--bg); }
-
-/* 머리 */
-header.top { position: sticky; top: 0; z-index: 35; background: var(--bg); padding-top: 34px; }
-.top-inner {
-  max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x);
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px;
-}
-.top-bar { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.nav { display: flex; flex-wrap: wrap; gap: 4px; }
-.nav a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; color: var(--text); font-weight: 400; border-radius: 6px; }
-.nav a:hover { background: var(--tint); }
-.nav a[aria-current="page"] { color: var(--accent); font-weight: 600; background: var(--tint); }
-.top-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.sync-meta { color: var(--gray); font-size: 14px; }
-.top-notes { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x); }
-.top-notes p { margin: 8px 0 0; }
+h1, h2, h3, p { margin: 0; }
+b, strong { font-weight: 600; }
+a { color: var(--burgundy); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--burgundy-deep); }
+:focus-visible { outline: 2px solid var(--burgundy); outline-offset: 2px; }
+code { font-family: Consolas, ui-monospace, monospace; font-size: .88em; padding: 1px 5px; border-radius: 3px; background: var(--desk); white-space: nowrap; }
+.ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tnum { font-variant-numeric: tabular-nums; }
 
 /* 버튼 */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 40px; padding: 0 18px; border-radius: 6px; border: 1.5px solid transparent;
-  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; cursor: pointer; white-space: nowrap;
+  height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid transparent;
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; text-decoration: none;
 }
-.btn-primary { background: var(--accent); color: var(--bg); }
-.btn-primary:hover { background: var(--accent); opacity: .88; }
-.btn-secondary { background: var(--bg); color: var(--accent); border-color: var(--accent); }
-.btn-secondary:hover { background: var(--tint); }
-.btn-ghost { background: transparent; color: var(--accent); padding: 0 10px; }
-.btn-ghost:hover { background: var(--tint); }
-.btn-sm { min-height: 34px; padding: 0 12px; font-size: 14px; }
-.btn[aria-disabled="true"], .btn:disabled { opacity: .5; cursor: default; }
-.linkish { background: none; border: 0; padding: 2px 4px; font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 4px; }
-.linkish:hover { background: var(--tint); }
-.spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+.btn-primary { background: var(--burgundy); color: #fff; }
+.btn-primary:hover { background: var(--burgundy-deep); color: #fff; }
+.btn-line { background: var(--paper); color: var(--ink); border-color: var(--rule-strong); }
+.btn-line:hover { border-color: var(--ink); color: var(--ink); }
+.btn-quiet { background: transparent; color: var(--burgundy); padding: 0 8px; }
+.btn-quiet:hover { background: var(--blush); color: var(--burgundy); }
+.btn-sm { height: 30px; padding: 0 10px; font-size: 13px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: default; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; font-size: inherit; color: var(--burgundy); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--graphite); cursor: pointer; }
+.icon-btn:hover { background: var(--desk); color: var(--burgundy); }
+.spin { width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 본문 틀 */
-main.page { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad-x) 96px; }
-.screen-head { margin: 36px 0 26px; }
-.screen-head h1 { margin: 0; font-size: 32px; line-height: 1.3; color: var(--accent); letter-spacing: -.01em; display: flex; align-items: center; gap: 12px; }
-.screen-head h1:focus { outline: none; }
-.sub { margin: 6px 0 0; color: var(--gray); font-size: 15px; }
-h2 { margin: 0 0 6px; font-size: 20px; line-height: 1.4; color: var(--accent); display: flex; align-items: center; gap: 10px; }
-h3 { margin: 0 0 8px; font-size: 16px; }
-.help { margin: 0 0 14px; color: var(--gray); font-size: 14px; }
-.empty { margin: 4px 0 0; color: var(--gray); }
-.block { margin-top: 40px; }
-.count { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 12px; background: var(--tint); color: var(--accent); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.nav-count { min-width: 22px; height: 20px; font-size: 12px; background: var(--accent); color: var(--bg); }
-.note-error { color: var(--accent); font-weight: 600; }
-.note-accent { color: var(--accent); font-size: 14px; font-weight: 600; }
-.boot { margin-top: 40px; }
-
-/* 결론 박스 */
-.conclude { background: var(--tint); padding: 22px 26px; }
-.conclude p { margin: 0; }
-.premise { font-size: 18px; font-weight: 600; color: var(--text); }
-.conclusion { margin-top: 6px !important; font-size: 22px; font-weight: 600; color: var(--accent); line-height: 1.45; }
-.after { margin: 14px 0 0; display: grid; gap: 6px; }
-.after p { margin: 0; }
-.warnline { color: var(--gray); font-size: 14px; }
-.warnline b { color: var(--accent); }
-
-/* 칩 */
-.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; word-break: normal; }
-.chip-accent { border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }
-.chip-dashed { border: 1.5px dashed var(--gray); color: var(--gray); }
-.chip-tint { background: var(--tint); border-color: var(--tint); color: var(--accent); font-weight: 600; }
-.chip-plain { color: var(--gray); }
-a.chip { font-weight: 400; color: var(--gray); }
-a.chip:hover { color: var(--accent); background: var(--tint); }
-.email { font-weight: 600; user-select: all; }
-.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.tiny { font-size: 12px; color: var(--gray); white-space: nowrap; }
-
-/* 일정 줄 */
-.ilist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.irow { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 2px 14px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-.ilist.by-date .irow { grid-template-columns: 82px minmax(0, 1fr) auto; }
-.irow.is-review { border: 1.5px dashed var(--gray); }
-.irow.is-today { border: 1.5px solid var(--accent); }
-.irow.is-today .irow-when { color: var(--accent); }
-.irow.is-alert { border: 1.5px solid var(--accent); }
-.irow.is-done .irow-title, .irow.is-done .irow-when { color: var(--gray); }
-.irow-when { font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.5; }
-.irow-date { display: block; font-size: 13px; color: var(--gray); font-weight: 600; }
-.irow-title { font-weight: 600; }
-.irow-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 14px; color: var(--gray); }
-.irow-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
-.irow-note { grid-column: 2 / -1; margin: 6px 0 0; font-size: 14px; color: var(--accent); }
-.irow-error { grid-column: 1 / -1; margin: 6px 0 0; }
-.is-busy { opacity: .55; }
-.check { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; cursor: pointer; font-size: 14px; white-space: nowrap; }
-.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.check input:disabled { cursor: default; }
-
-/* 이번 주 */
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 36px; margin-top: 40px; }
-.col h2 { margin-bottom: 2px; }
-
-/* 학기 지도 */
-.map-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); gap: 44px; align-items: start; margin-top: 36px; }
-.wk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.wk {
-  width: 100%; display: grid; grid-template-columns: 64px 96px minmax(60px, 1fr) 28px 92px; align-items: center; gap: 12px;
-  min-height: 44px; padding: 6px 12px; border: 1.5px solid transparent; border-radius: 6px;
-  background: var(--bg); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+/* 틀: 사이드바 + 본문 */
+.app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; }
+.side {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 22px; padding: 22px 12px 18px;
+  background: var(--desk); border-right: 1px solid var(--rule);
 }
-.wk:hover, .wk[aria-pressed="true"] { background: var(--tint); }
-.wk.is-now { border-color: var(--accent); }
-.wk.is-past { color: var(--gray); }
-.wk.is-past .bar > span { background: var(--line-2); }
-.wk-n { font-weight: 600; }
-.wk-range { color: var(--gray); font-size: 14px; font-variant-numeric: tabular-nums; }
-.bar { display: block; height: 14px; background: var(--tint); border-radius: 2px; overflow: hidden; }
-.wk:hover .bar, .wk[aria-pressed="true"] .bar { background: var(--bg); }
-.bar > span { display: block; height: 100%; background: var(--accent); }
-.wk-count { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-.wk.is-past .wk-count { font-weight: 400; }
-.wk-tags { display: flex; gap: 4px; }
-.map-detail { position: sticky; top: 132px; }
-.day-head { margin: 18px 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-.day-head:first-of-type { margin-top: 10px; }
+.brand { padding: 0 10px; }
+.brand-name { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.brand-sem { margin-top: 2px; font-size: 13px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.nav { display: grid; gap: 2px; }
+.nav a {
+  position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px;
+  border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 15px;
+}
+.nav a:hover { background: rgba(43, 35, 38, .06); color: var(--ink); }
+.nav a .ico { width: 18px; height: 18px; color: var(--graphite); }
+.nav a[aria-current="page"] { background: var(--paper); color: var(--burgundy); font-weight: 600; }
+.nav a[aria-current="page"] .ico { color: var(--burgundy); }
+.nav a[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--burgundy); }
+.nav-count {
+  margin-left: auto; min-width: 22px; height: 20px; padding: 0 7px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--burgundy); color: #fff; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.side-foot { margin-top: auto; padding: 0 10px; display: grid; gap: 6px; font-size: 13px; color: var(--graphite); }
+.side-line { display: flex; align-items: center; gap: 8px; }
+.side-line a { color: inherit; }
 
-/* 비교표 */
-table.cmp { width: 100%; border-collapse: collapse; }
-.cmp th { height: 44px; padding: 0 14px; background: var(--accent); color: var(--bg); font-size: 15px; font-weight: 600; text-align: left; vertical-align: middle; white-space: nowrap; }
-.cmp td { height: 66px; padding: 10px 14px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
-.cmp td:first-child { font-weight: 600; width: 22%; }
-.cmp td.em { background: var(--tint); font-weight: 600; }
-.cmp tr { cursor: pointer; }
-.cmp .cell-sub { display: block; font-size: 13px; font-weight: 400; color: var(--gray); }
-.cell-btn { all: unset; cursor: pointer; font-weight: 600; color: var(--text); border-radius: 4px; padding: 2px 4px; margin: -2px -4px; }
-.cell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cmp tr.is-sel .cell-btn { color: var(--accent); }
-.cmp tr.is-sel td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
-.cdetail { margin-top: 48px; }
-.cdetail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; margin-top: 18px; }
+.main { min-width: 0; }
+.topbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px 24px;
+  min-height: 68px; padding: 12px var(--gutter); background: var(--paper); border-bottom: 1px solid var(--rule);
+}
+.topbar h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; }
+.topbar h1:focus { outline: none; }
+.page-sub { margin-top: 1px; font-size: 13px; color: var(--graphite); }
+.top-right { display: flex; align-items: center; gap: 12px; color: var(--graphite); font-size: 13px; white-space: nowrap; }
+.content { padding: 24px var(--gutter) 96px; max-width: 1440px; }
+
+.banner { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 20px; padding: 10px 10px 10px 14px; border: 1px solid var(--rule-strong); border-left: 3px solid var(--burgundy); border-radius: 6px; font-size: 14px; }
+.banner p { flex: 1; padding-top: 5px; }
+.banner-error { color: var(--burgundy); font-weight: 600; }
+
+/* 공통 글자 */
+.sec-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 16px; font-weight: 700; line-height: 1.4; }
+.sec-n { font-size: 13px; font-weight: 500; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.sub-h { display: flex; align-items: baseline; gap: 10px; font-size: 14px; font-weight: 700; }
+.help { font-size: 13px; color: var(--graphite); }
+.empty { color: var(--graphite); font-size: 14px; }
+.inline-error { color: var(--burgundy); font-size: 14px; font-weight: 600; }
+.ok-msg { font-size: 14px; }
+.stack { display: grid; gap: 10px; }
+
+/* 상태 표시: 채움=일정, 빈 원=확인 필요, 반쯤 찬 원=충돌, 회색=제출함, 마름모=시험 */
+.mk { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.mk-sched { background: var(--burgundy); }
+.mk-review { background: var(--paper); border: 2px solid var(--burgundy); }
+.mk-conflict { background: linear-gradient(90deg, var(--burgundy) 0 50%, var(--paper) 50% 100%); border: 2px solid var(--burgundy); }
+.mk-done { background: var(--rule-strong); }
+.mk-off { background: var(--paper); border: 2px solid var(--rule-strong); }
+.mk-exam { border-radius: 2px; transform: rotate(45deg) scale(.85); }
+
+.tag {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 4px;
+  border: 1px solid var(--rule-strong); background: var(--paper); color: var(--ink);
+  font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap;
+}
+.tag-accent { border-color: var(--burgundy); color: var(--burgundy); font-weight: 600; }
+.tag-dash { border-style: dashed; color: var(--graphite); }
+.tag-new { border-color: var(--burgundy); background: var(--burgundy); color: #fff; font-weight: 600; }
+.tag-quiet { border-color: transparent; background: var(--desk); color: var(--graphite); }
+a.tag { text-decoration: none; color: var(--graphite); }
+a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
+.email { font-weight: 600; user-select: all; }
+
+/* ---------- 대시보드: 날짜 축 ---------- */
+.hero { padding-bottom: 26px; border-bottom: 1px solid var(--rule); }
+.hero-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 32px; }
+.hero-line { font-size: 22px; font-weight: 600; line-height: 1.42; letter-spacing: -.012em; max-width: 46em; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 13px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.seg { display: inline-flex; padding: 2px; border: 1px solid var(--rule-strong); border-radius: 7px; }
+.seg button { height: 30px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--graphite); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+.axis { position: relative; margin-top: 18px; }
+.lanes { position: relative; }
+.cols { position: absolute; inset: 0; display: grid; }
+.col { min-width: 0; border-left: 1px solid var(--rule); }
+.col.is-weekend { background: var(--desk); }
+.col.is-mon { border-left-color: var(--rule-strong); }
+.col-wk { display: block; padding: 3px 0 0 6px; font-size: 11px; color: var(--graphite); white-space: nowrap; overflow: hidden; }
+.nowline { position: absolute; top: 0; bottom: 0; z-index: 2; border-left: 2px solid var(--burgundy); }
+.nowline span { position: absolute; top: 2px; left: 5px; font-size: 11px; font-weight: 700; color: var(--burgundy); white-space: nowrap; }
+.stem { position: absolute; bottom: 0; z-index: 3; border-left: 1px solid var(--ink); }
+.stem.is-review { border-left: 1px dashed var(--burgundy); }
+.stem.is-done { border-left-color: var(--rule-strong); }
+.flag {
+  position: absolute; z-index: 4; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  height: 40px; padding: 0 8px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; overflow: hidden;
+}
+.flag:hover { border-color: var(--ink); }
+.flag.is-review { border: 1px dashed var(--burgundy); }
+.flag.is-done { background: var(--desk); border-color: var(--rule); color: var(--graphite); }
+.flag.is-urgent { background: var(--burgundy); border: 1px solid var(--burgundy); color: #fff; }
+.flag.is-urgent .flag-meta { color: rgba(255, 255, 255, .88); }
+.flag-title { max-width: 100%; font-size: 13.5px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flag-meta { max-width: 100%; font-size: 12px; line-height: 1.35; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.pin { position: absolute; bottom: -7px; z-index: 5; margin-left: -6px; }
+.pin.mk-exam { bottom: -6px; }
+.axis-empty { position: absolute; left: 0; right: 0; top: 44%; text-align: center; color: var(--graphite); font-size: 14px; z-index: 1; }
+.days { display: grid; border-top: 2px solid var(--ink); }
+.day { min-width: 0; padding: 8px 0 0 6px; }
+.day.is-weekend { background: var(--desk); }
+.day-num { display: block; font-size: 20px; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.day-wd { display: block; font-size: 12px; color: var(--graphite); white-space: nowrap; }
+.day.is-today .day-num { color: var(--burgundy); font-weight: 600; }
+.day.is-today .day-wd { color: var(--burgundy); }
+.brackets { position: relative; height: 40px; }
+.bracket { position: absolute; top: 6px; height: 9px; border: 1.5px solid var(--burgundy); border-top: 0; }
+.bracket button { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); height: 22px; padding: 0 6px; border: 0; background: var(--paper); color: var(--burgundy); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+.dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 44px; margin-top: 28px; align-items: start; }
+.dash-side > section { padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+.dash-side > section:last-child { border-bottom: 0; margin-bottom: 0; }
+.dash-side .sec-h { margin-bottom: 8px; }
+.side-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.side-list li { font-size: 14px; }
+.side-title { font-weight: 600; }
+.side-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; color: var(--graphite); }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* 날짜별 목록 */
+.agenda { display: grid; }
+.agenda-day { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.agenda-day:first-child { border-top: 0; padding-top: 4px; }
+.agenda-num { display: block; font-size: 24px; font-weight: 300; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.agenda-wd { display: block; font-size: 12px; color: var(--graphite); }
+.agenda-day.is-today .agenda-num, .agenda-day.is-today .agenda-wd { color: var(--burgundy); }
+.agenda-day.is-today .agenda-num { font-weight: 600; }
+.arows { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.arow { display: grid; grid-template-columns: 50px 14px minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; min-height: 46px; padding: 5px 8px; border-radius: 6px; }
+.arow:hover { background: var(--desk); }
+.arow.wide { grid-template-columns: 116px 14px minmax(0, 1fr) auto; }
+.arow-time { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.arow-title { font-weight: 600; }
+.arow-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 13px; color: var(--graphite); }
+.arow.is-done .arow-title, .arow.is-done .arow-time { color: var(--graphite); }
+.arow.is-done .arow-title { text-decoration: line-through; text-decoration-color: var(--rule-strong); }
+.arow-side { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.arow-error { grid-column: 3 / -1; }
+.is-busy { opacity: .55; }
+.check { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.check input { width: 17px; height: 17px; margin: 0; accent-color: var(--burgundy); cursor: pointer; }
+.check input:disabled { cursor: default; }
+.tiny { font-size: 12px; color: var(--graphite); white-space: nowrap; }
+
+/* ---------- 학기 ---------- */
+.chart-wrap { padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 12px; font-size: 13px; color: var(--graphite); }
+.chart-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.sw-s { background: var(--burgundy); }
+.sw-r { background: var(--paper); border: 1.5px solid var(--burgundy); }
+.sw-now { background: var(--blush); }
+.wchart { display: block; overflow: visible; }
+.wchart text { font-family: var(--font); fill: var(--graphite); font-size: 12px; }
+.wchart .grid { stroke: var(--rule); }
+.wchart .base { stroke: var(--ink); stroke-width: 1.5; }
+.wchart .bar-s { fill: var(--burgundy); }
+.wchart .bar-r { fill: var(--paper); stroke: var(--burgundy); stroke-width: 1.5; }
+.wchart .is-past .bar-s { fill: var(--rule-strong); }
+.wchart .is-past .bar-r { stroke: var(--rule-strong); }
+.wchart .band-now { fill: var(--blush); }
+.wchart .band-sel { fill: var(--desk); }
+.wchart .hit { fill: transparent; }
+.wchart .wk { cursor: pointer; outline: none; }
+.wchart .wk:hover .hit { fill: rgba(43, 35, 38, .04); }
+.wchart .wk-focus { fill: none; stroke: var(--burgundy); stroke-width: 2; opacity: 0; }
+.wchart .wk:focus-visible .wk-focus { opacity: 1; }
+.wchart .wk-n { fill: var(--ink); font-weight: 600; }
+.wchart .is-sel .wk-n { font-weight: 800; }
+.wchart .sel-line { stroke: var(--ink); stroke-width: 2; }
+.wchart .now-label { fill: var(--burgundy); font-size: 11px; font-weight: 700; }
+.wchart .cnt { fill: var(--ink); font-weight: 600; }
+.wchart .is-past .cnt { fill: var(--graphite); font-weight: 500; }
+.wchart .exam { fill: var(--burgundy); }
+.wchart .exam.is-r { fill: var(--paper); stroke: var(--burgundy); stroke-width: 1.5; }
+.sem-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 44px; margin-top: 26px; align-items: start; }
+.sem-notes { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; font-size: 14px; }
+.sem-notes li { padding-left: 12px; border-left: 2px solid var(--rule-strong); }
+
+/* ---------- 과목 ---------- */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { padding: 0 12px 10px; border-bottom: 1px solid var(--ink); text-align: left; font-size: 13px; font-weight: 600; color: var(--graphite); white-space: nowrap; }
+.tbl td { padding: 14px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.tbl tbody tr { cursor: pointer; }
+.tbl tbody tr:hover td { background: var(--desk); }
+.tbl tr.is-sel td { background: var(--desk); }
+.tbl tr.is-sel td:first-child { box-shadow: inset 3px 0 0 var(--burgundy); }
+.tbl .r { text-align: right; font-variant-numeric: tabular-nums; }
+.cell-btn { all: unset; cursor: pointer; font-weight: 600; color: var(--ink); border-radius: 3px; }
+.cell-btn:focus-visible { outline: 2px solid var(--burgundy); outline-offset: 2px; }
+.tbl tr.is-sel .cell-btn { color: var(--burgundy); }
+.cell-sub { display: block; font-size: 13px; font-weight: 400; color: var(--graphite); }
+.warn { color: var(--burgundy); font-weight: 600; }
+.scorebar { display: block; width: 100px; height: 4px; margin: 7px 0 0 auto; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.scorebar > span { display: block; height: 100%; background: var(--ink); }
+.cdetail { margin-top: 36px; }
+.cdetail-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 44px; margin-top: 16px; }
+.cdetail-grid h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
 .ev-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.ev-list li { padding-left: 12px; border-left: 3px solid var(--line); }
-.ev-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 13px; color: var(--gray); }
-.src { color: var(--accent); font-weight: 600; }
+.ev-list li { padding-left: 12px; border-left: 2px solid var(--rule-strong); font-size: 14px; }
+.ev-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; color: var(--graphite); }
+.mini-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mini { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; }
+.mini-title { font-weight: 600; }
+.mini-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; color: var(--graphite); }
+.mini-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* 확인함 */
-.inbox-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 44px; align-items: start; }
+/* ---------- 성적 ---------- */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 26px; }
+.tab { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.tab:hover { border-color: var(--ink); }
+.tab[aria-pressed="true"] { border-color: var(--burgundy); color: var(--burgundy); font-weight: 600; box-shadow: inset 0 -2px 0 var(--burgundy); }
+.tab-grade { font-size: 12px; font-weight: 700; color: var(--graphite); }
+.tab[aria-pressed="true"] .tab-grade { color: var(--burgundy); }
+.tab-dirty { font-size: 11px; color: var(--burgundy); }
+.g-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 44px; align-items: start; }
+.g-sec { padding-bottom: 26px; margin-bottom: 26px; border-bottom: 1px solid var(--rule); }
+.g-sec:last-child { border-bottom: 0; margin-bottom: 0; }
+.g-sec > .sec-h { margin-bottom: 6px; }
+.est { display: flex; flex-wrap: wrap; gap: 14px 40px; margin: 14px 0 0; }
+.est > div { display: grid; gap: 1px; }
+.est dt { font-size: 13px; color: var(--graphite); }
+.est dd { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.est dd.est-s { font-size: 13px; font-weight: 400; color: var(--graphite); }
+.bands-wrap { margin-top: 26px; max-width: 760px; }
+.bands { position: relative; height: 30px; margin-top: 30px; }
+.bands.no-you { margin-top: 8px; }
+.band { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: var(--desk); border-left: 2px solid var(--paper); font-size: 12px; font-weight: 600; color: var(--graphite); overflow: hidden; }
+.band:first-child { border-left: 0; }
+.band.is-mine { background: var(--blush); color: var(--burgundy); }
+.band-cut { position: absolute; top: calc(100% + 4px); transform: translateX(-50%); font-size: 11px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.range { position: absolute; top: -9px; height: 6px; border: 1.5px solid var(--burgundy); border-bottom: 0; }
+.you { position: absolute; top: -30px; bottom: -4px; border-left: 2px solid var(--burgundy); }
+.you span { position: absolute; top: 0; left: 6px; font-size: 12px; font-weight: 700; color: var(--burgundy); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.you.to-left span { left: auto; right: 6px; }
+.bands-axis { display: flex; justify-content: space-between; margin-top: 22px; font-size: 11px; color: var(--graphite); }
+.notes-list { margin: 16px 0 0; padding: 0 0 0 16px; display: grid; gap: 4px; font-size: 13px; color: var(--graphite); }
+.need { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 14px; }
+.need-c { font-weight: 700; font-size: 14px; }
+.need-t { display: grid; gap: 4px; margin-top: 4px; }
+.need-line { font-size: 14px; }
+.need-line b { font-variant-numeric: tabular-nums; }
+.why { margin-top: 2px; font-size: 13px; }
+.why > summary { cursor: pointer; color: var(--graphite); }
+.why ul { margin: 4px 0 0; padding-left: 16px; color: var(--graphite); }
+.gtable { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.gtable th { padding: 0 4px 6px; border-bottom: 1px solid var(--ink); text-align: left; font-size: 12px; font-weight: 600; color: var(--graphite); white-space: nowrap; }
+.gtable th.r { text-align: right; }
+.gtable td { padding: 6px 4px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.gtable td.c { text-align: center; vertical-align: middle; }
+.gtable .w-num { width: 74px; }
+.gtable .w-fix { width: 64px; }
+.gtable .w-del { width: 40px; }
+.gin { width: 100%; height: 34px; padding: 0 8px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gin.r { text-align: right; }
+.gin:disabled { background: var(--desk); color: var(--graphite); }
+.gtable input[type="checkbox"], .check-line input { width: 17px; height: 17px; margin: 0; accent-color: var(--burgundy); cursor: pointer; }
+.g-src { display: block; margin-top: 4px; font-size: 12px; color: var(--graphite); overflow-wrap: anywhere; }
+.g-empty td { padding: 16px 4px; color: var(--graphite); font-size: 14px; }
+.g-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.g-block { margin-top: 24px; }
+.check-line { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; cursor: pointer; }
+.dist { display: grid; grid-template-columns: repeat(9, minmax(46px, 1fr)); gap: 6px; margin-top: 10px; max-width: 760px; }
+.dist label { display: grid; gap: 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--graphite); }
+.dist .gin { text-align: center; padding: 0 4px; }
+.size-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.size-row .gin { width: 96px; }
+.g-save { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.prio { margin: 10px 0 0; padding: 0 0 0 20px; display: grid; gap: 10px; font-size: 14px; }
+.prio li::marker { font-weight: 700; color: var(--graphite); }
+.prio-c { font-weight: 600; margin-right: 6px; }
+.prio-r { display: block; font-size: 13px; color: var(--graphite); }
+.cand { padding: 12px 0; border-top: 1px solid var(--rule); }
+.cand:first-of-type { border-top: 0; }
+.cand blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--rule-strong); font-size: 14px; white-space: pre-wrap; }
+.vals { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.vals span b { font-weight: 600; }
+
+/* ---------- 확인함 ---------- */
+.inbox-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: start; }
 .inbox-side { display: grid; gap: 28px; }
-.review-list { display: grid; gap: 18px; }
-.card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; }
-.card.is-low { border: 1.5px dashed var(--gray); }
-.card.has-conflict { border: 1.5px solid var(--accent); }
-.card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 4px; }
-.course { margin-right: auto; color: var(--gray); font-size: 14px; font-weight: 600; }
+.inbox-side > section .sec-h { margin-bottom: 6px; }
+.rlist { display: grid; gap: 16px; }
+.rcard { padding: 18px 20px 20px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--paper); }
+.rcard.is-low { border-style: dashed; }
+.rcard.has-conflict { border-color: var(--burgundy); }
+.rc-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 4px; }
+.rc-course { margin-right: auto; font-size: 13px; font-weight: 600; color: var(--graphite); }
 .title-input {
-  display: block; width: calc(100% + 12px); margin: 0 -6px; padding: 4px 6px; min-height: 0;
-  font: inherit; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--text);
-  background: transparent; border: 1px solid transparent; border-bottom: 1px dashed var(--line-2); border-radius: 6px 6px 0 0;
+  display: block; width: calc(100% + 12px); margin: 0 -6px; padding: 3px 6px;
+  font: inherit; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink);
+  background: transparent; border: 1px solid transparent; border-bottom: 1px dashed var(--rule-strong); border-radius: 6px 6px 0 0;
   resize: none; overflow: hidden; word-break: keep-all; overflow-wrap: anywhere;
 }
-.title-input:hover { background: var(--tint); }
-.title-input:focus { background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; outline: none; }
-.due-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
-.due-input { min-height: 40px; padding: 6px 10px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; }
+.title-input:hover { background: var(--desk); }
+.title-input:focus { background: var(--paper); border: 1px solid var(--burgundy); border-radius: 6px; outline: none; }
+.due-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 0; font-size: 14px; }
+.due-input { height: 36px; padding: 0 8px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; }
 .weekday { font-weight: 600; }
-.dday { display: inline-flex; align-items: center; min-height: 26px; padding: 2px 9px; border-radius: 4px; border: 1px solid var(--line-2); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dday.soon { background: var(--tint); border-color: var(--tint); color: var(--accent); }
-.dday.past, .dday.none { color: var(--gray); }
-.conflict { margin: 0 0 12px; padding: 12px 14px; background: var(--tint); }
-.conflict strong { display: block; color: var(--accent); }
-.conflict p { margin: 2px 0 0; font-size: 15px; }
-.conflict .sib { margin-top: 6px; font-size: 15px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
-.low-hint { margin: 12px 0 0; padding: 8px 12px; border: 1.5px dashed var(--gray); border-radius: 6px; color: var(--gray); font-size: 14px; }
-.linked { margin: 10px 0 0; font-size: 15px; }
-.notes { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--gray); }
-.notes li::before { content: "참고 · "; font-weight: 600; }
-.ev-head { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--gray); }
-.evidence { margin: 8px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid var(--line-2); }
-.evidence blockquote { margin: 0; white-space: pre-wrap; font-size: 15px; max-height: 16em; overflow: auto; }
-.evidence figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 4px; font-size: 13px; color: var(--gray); }
-.evidence figcaption .src-title { color: var(--text); }
-.evidence a { display: inline-flex; align-items: center; gap: 3px; }
-.actions { display: flex; gap: 10px; margin-top: 18px; }
-.inline-error { margin: 10px 0 0; color: var(--accent); font-size: 15px; font-weight: 600; }
-.ok-msg { margin: 10px 0 0; font-size: 15px; }
-.mini-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.mini { padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; }
-.mini-title { font-weight: 600; }
-.mini-meta { font-size: 14px; color: var(--gray); }
-.mini-actions { margin-top: 8px; display: flex; gap: 6px; }
-
-/* 접기 */
-.group { margin-top: 16px; }
-.group > summary {
-  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
-  min-height: 44px; padding: 0 4px; border-bottom: 1px solid var(--line); font-weight: 600;
-}
+.dday { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--rule-strong); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dday.soon { border-color: var(--burgundy); background: var(--burgundy); color: #fff; }
+.dday.past, .dday.none { color: var(--graphite); }
+.badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.conflict { margin: 14px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid var(--burgundy); font-size: 14px; }
+.conflict strong { display: block; color: var(--burgundy); }
+.linked, .low-hint { margin-top: 10px; font-size: 14px; }
+.low-hint { color: var(--graphite); }
+.chain { list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--rule); }
+.chain > li { position: relative; display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; padding: 0 0 14px 22px; }
+.chain > li::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: -4px; border-left: 1px solid var(--rule-strong); }
+.chain > li:last-child { padding-bottom: 0; }
+.chain > li:last-child::before { display: none; }
+.chain .dot { position: absolute; left: 0; top: 4px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--burgundy); background: var(--paper); }
+.chain > li.is-done .dot { background: var(--burgundy); }
+.chain > li.is-wait .dot { border-color: var(--rule-strong); }
+.chain-k { font-size: 13px; font-weight: 600; color: var(--graphite); }
+.chain-v { min-width: 0; font-size: 14px; }
+.chain-v blockquote { margin: 0; white-space: pre-wrap; max-height: 14em; overflow: auto; }
+.chain-v blockquote + blockquote { margin-top: 6px; }
+.chain-v ul { margin: 0; padding-left: 16px; list-style: disc; }
+.src-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.src-line + .src-line { margin-top: 2px; }
+.src-type { font-weight: 600; }
+.src-meta { font-size: 12px; color: var(--graphite); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+.done-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; }
+.done-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.done-row:first-child { border-top: 0; }
+.mini-chain { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; font-size: 12.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.mini-chain > span { display: inline-flex; align-items: center; gap: 6px; }
+.mini-chain > span + span::before { content: ""; width: 16px; margin: 0 8px; border-top: 1px solid var(--rule-strong); }
+.mini-chain i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--burgundy); }
+.mini-chain i.wait { background: var(--paper); border: 1.5px solid var(--rule-strong); }
+.mini-chain a { color: var(--burgundy); }
+.group { margin-top: 18px; border-top: 1px solid var(--rule); }
+.group > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; font-weight: 600; }
 .group > summary::-webkit-details-marker { display: none; }
-.group > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); margin: 0 4px 0 2px; transition: transform .15s; }
+.group > summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border-right: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); transform: rotate(-45deg); transition: transform .15s; }
 .group[open] > summary::before { transform: rotate(45deg); }
-.group > summary:hover { background: var(--tint); }
-.group-body { padding-top: 12px; display: grid; gap: 12px; }
+.group-body { display: grid; gap: 10px; padding: 0 0 14px; }
 
-/* 판 · 폼 */
-.panel { border: 1px solid var(--line); border-radius: 8px; padding: 22px 24px; }
+/* 폼 */
 .form-stack { display: grid; gap: 14px; }
 .field { display: grid; gap: 4px; }
-label.lbl { font-size: 15px; }
-.input { width: 100%; min-height: 42px; padding: 8px 12px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; }
-textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
-.form-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 36px; align-items: start; }
-.settings-main { display: grid; gap: 28px; }
-.toggle { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
-.toggle input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--accent); cursor: pointer; }
-.toggle small { display: block; margin-top: 2px; color: var(--gray); font-size: 14px; }
-.conn { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 10px 0 16px; font-size: 15px; }
-.conn dd { margin: 0; overflow-wrap: anywhere; word-break: normal; }
-.report { margin: 0 0 16px; font-size: 14px; color: var(--gray); }
-.report p { margin: 0; }
-.report ul { margin: 4px 0 0; padding-left: 18px; color: var(--text); }
-.help-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
-.help-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 15px; }
-.help-note p { margin: 0 0 8px; }
-.help-note p:last-child { margin: 0; }
+.lbl { font-size: 13px; font-weight: 600; }
+.input { width: 100%; height: 38px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; font-size: 14px; }
+textarea.input { height: auto; min-height: 140px; padding: 8px 10px; resize: vertical; line-height: 1.55; }
+.form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* ---------- 설정 ---------- */
+.set-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 48px; align-items: start; }
+.pane { padding: 0 0 26px; margin-bottom: 26px; border-bottom: 1px solid var(--rule); }
+.pane > .sec-h { margin-bottom: 8px; }
+.conn { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 6px 0 12px; font-size: 14px; }
+.conn dt { color: var(--graphite); }
+.conn dd { margin: 0; overflow-wrap: anywhere; word-break: normal; font-variant-numeric: tabular-nums; }
+.report { display: grid; gap: 2px; margin-bottom: 14px; font-size: 13px; color: var(--graphite); }
+.report ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink); }
+.toggle { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--rule); cursor: pointer; }
+.toggle:first-of-type { border-top: 0; }
+.toggle input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--burgundy); cursor: pointer; }
+.toggle small { display: block; margin-top: 2px; font-size: 13px; color: var(--graphite); }
+.help-steps { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.runs { margin-top: 14px; }
+.run-row { display: grid; grid-template-columns: 128px minmax(140px, 1fr) 74px 64px 56px 64px 84px; gap: 12px; align-items: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.run-row .r { text-align: right; }
+.run-head { padding: 0 0 8px 20px; border-bottom: 1px solid var(--ink); font-size: 12px; font-weight: 600; color: var(--graphite); }
+.run { border-bottom: 1px solid var(--rule); }
+.run > summary { list-style: none; cursor: pointer; min-height: 44px; padding: 6px 0 6px 20px; position: relative; }
+.run > summary::-webkit-details-marker { display: none; }
+.run > summary::before { content: ""; position: absolute; left: 4px; top: 50%; width: 6px; height: 6px; margin-top: -4px; border-right: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); transform: rotate(-45deg); transition: transform .15s; }
+.run[open] > summary::before { transform: rotate(45deg); }
+.run > summary:hover { background: var(--desk); }
+.run-body { padding: 4px 0 14px 20px; }
+.run-targets { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.run-targets li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 
 /* 알림 */
 #toast {
-  position: fixed; z-index: 45; left: 50%; bottom: 70px; transform: translateX(-50%);
-  width: max-content; max-width: calc(100% - 160px); min-height: 48px; padding: 8px 8px 8px 18px;
-  display: flex; align-items: center; gap: 12px; background: var(--bg); color: var(--text);
-  border: 1.5px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .12); font-size: 15px;
+  position: fixed; z-index: 50; left: calc(50% + var(--side-w) / 2); bottom: 24px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: 600px; min-height: 44px; padding: 6px 6px 6px 16px;
+  background: var(--ink); color: #fff; border-radius: 8px; font-size: 14px;
 }
 #toast:empty { display: none; }
-.flash { animation: flash 1.8s ease-out; }
-@keyframes flash { 0%, 35% { box-shadow: 0 0 0 4px var(--tint), 0 0 0 6px var(--accent); } 100% { box-shadow: none; } }
+#toast .btn-quiet { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+#toast .btn-quiet:hover { background: rgba(255, 255, 255, .14); }
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 40% { box-shadow: 0 0 0 3px var(--burgundy); } 100% { box-shadow: 0 0 0 3px rgba(144, 10, 49, 0); } }
 
-@media (max-width: 1100px) {
-  :root { --pad-x: 48px; }
-  .inbox-grid, .settings-grid { grid-template-columns: minmax(0, 1fr); }
-  .map-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, .9fr); gap: 32px; }
-  .wk { grid-template-columns: 58px 84px minmax(40px, 1fr) 24px 84px; gap: 8px; }
-  .cdetail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1279px) {
+  :root { --side-w: 200px; --gutter: 28px; }
+  .g-grid { grid-template-columns: minmax(0, 1fr); }
+  .dash-grid { grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; }
+  .inbox-grid { grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; }
+  .sem-grid { grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; }
+  .set-grid { grid-template-columns: minmax(0, 1fr); }
+  .cdetail-grid { gap: 32px; }
+  .run-row { grid-template-columns: 116px minmax(120px, 1fr) 66px 56px 48px 56px 70px; gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation-duration: 2.4s; }
-  .flash { animation: none; }
-  .group > summary::before { transition: none; }
+  .flash { animation: none; outline: 3px solid var(--burgundy); }
+  .group > summary::before, .run > summary::before { transition: none; }
 }
 </style>
 </head>
 <body>
-<span class="corner c-tl" aria-hidden="true"></span>
-<span class="corner c-tr" aria-hidden="true"></span>
-<span class="corner c-bl" aria-hidden="true"></span>
-<span class="corner-chip" aria-hidden="true">LMS Agent</span>
-<div class="frame-bottom" aria-hidden="true"></div>
-<noscript><p style="padding:64px">이 화면은 JavaScript가 켜져 있어야 동작합니다.</p></noscript>
-
-<header class="top">
-  <div class="top-inner">
-    <div class="top-bar">
-      <nav id="nav" class="nav" aria-label="화면" hidden>
-        <a href="#week" data-view="week">이번 주</a>
-        <a href="#map" data-view="map">학기 지도</a>
-        <a href="#courses" data-view="courses">과목</a>
-        <a href="#inbox" data-view="inbox">확인함 <span id="nav-count" class="count nav-count" hidden>0</span></a>
-        <a href="#settings" data-view="settings">설정</a>
-      </nav>
-      <div class="top-right">
-        <span id="demo-badge" class="chip chip-tint" title="실제 Canvas가 아닌 데모 데이터입니다" hidden>데모</span>
-        <span id="sync-meta" class="sync-meta">불러오는 중…</span>
-        <button id="sync-btn" class="btn btn-secondary" type="button" hidden>동기화</button>
-        <a id="ics-link" class="btn btn-primary" href="/calendar.ics" download="lms-deadlines.ics" hidden>캘린더 파일 받기</a>
-      </div>
+<noscript><p style="padding:48px">이 화면은 JavaScript가 켜져 있어야 동작합니다.</p></noscript>
+<div class="app">
+  <aside class="side" aria-label="메뉴">
+    <div class="brand">
+      <div class="brand-name">LMS Agent</div>
+      <div id="brand-sem" class="brand-sem"></div>
     </div>
-  </div>
-  <div class="top-notes">
-    <p id="sync-error" class="note-error" role="alert" hidden></p>
-    <p id="ics-changed" class="note-accent" hidden>파일을 받은 뒤 일정이 바뀌었습니다. 다시 받아서 캘린더에 가져오세요.</p>
-  </div>
-</header>
-
-<main class="page">
-  <div id="boot" class="boot">
-    <p id="boot-msg" class="sub">불러오는 중…</p>
-    <button id="boot-retry" class="btn btn-secondary" type="button" hidden>다시 시도</button>
-  </div>
-
-  <!-- 이번 주 -->
-  <section id="scr-week" class="screen" aria-labelledby="title-week" hidden>
-    <div class="screen-head">
-      <h1 id="title-week" tabindex="-1">이번 주</h1>
-      <p id="week-sub" class="sub"></p>
+    <nav id="nav" class="nav" aria-label="화면">
+      <a href="#dash" data-view="dash"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18"/><path d="M7 17V7h6"/><path d="M15 17v-5h4"/></svg>대시보드</a>
+      <a href="#semester" data-view="semester"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-7"/><path d="M10 20V6"/><path d="M14 20v-9"/><path d="M18 20V9"/></svg>학기</a>
+      <a href="#courses" data-view="courses"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5z"/><path d="M5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/></svg>과목</a>
+      <a href="#grades" data-view="grades"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19h18"/><path d="M4 18c4 0 4.5-12 8-12s4 12 8 12"/></svg>성적</a>
+      <a href="#inbox" data-view="inbox"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13"/><path d="M4 13v6h16v-6"/><path d="M4 13h4.5a3.5 3.5 0 0 0 7 0H20"/></svg>확인함<span id="nav-count" class="nav-count" hidden>0</span></a>
+      <a href="#settings" data-view="settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9"/><path d="M17 7h3"/><path d="M15 5v4"/><path d="M4 17h3"/><path d="M11 17h9"/><path d="M9 15v4"/></svg>설정</a>
+    </nav>
+    <div class="side-foot">
+      <div id="side-google" class="side-line"></div>
+      <div id="side-demo" class="side-line" hidden>데모 데이터로 보는 중</div>
+      <div id="side-version" class="side-line"></div>
     </div>
-    <div id="week-body"></div>
-  </section>
+  </aside>
 
-  <!-- 학기 지도 -->
-  <section id="scr-map" class="screen" aria-labelledby="title-map" hidden>
-    <div class="screen-head">
-      <h1 id="title-map" tabindex="-1">학기 지도</h1>
-      <p id="map-sub" class="sub"></p>
-    </div>
-    <div id="map-body"></div>
-  </section>
-
-  <!-- 과목 -->
-  <section id="scr-courses" class="screen" aria-labelledby="title-courses" hidden>
-    <div class="screen-head">
-      <h1 id="title-courses" tabindex="-1">과목</h1>
-      <p id="courses-sub" class="sub"></p>
-    </div>
-    <div id="courses-body"></div>
-  </section>
-
-  <!-- 확인함 -->
-  <section id="scr-inbox" class="screen" aria-labelledby="title-inbox" hidden>
-    <div class="screen-head">
-      <h1 id="title-inbox" tabindex="-1">확인함 <span id="inbox-count" class="count">0</span></h1>
-      <p class="sub">공지·메시지·강의계획서에서 찾은 마감입니다. 근거를 읽고 일정에 넣을지 정하세요. 제목과 날짜는 눌러서 고칠 수 있습니다.</p>
-    </div>
-    <div class="inbox-grid">
+  <div class="main">
+    <header class="topbar">
       <div>
-        <div id="review-list" class="review-list"></div>
-        <div id="review-past"></div>
+        <h1 id="page-title" tabindex="-1">LMS Agent</h1>
+        <p id="page-sub" class="page-sub"></p>
       </div>
-      <aside class="inbox-side" aria-label="붙여넣기와 다른 항목">
-        <section class="panel" aria-labelledby="manual-title">
-          <h2 id="manual-title">직접 붙여넣기</h2>
-          <p class="help">Canvas 밖에서 받은 메일이나 PDF 글을 붙여 넣으면 마감을 찾아 이 목록에 올립니다.</p>
-          <form id="manual-form" class="form-stack" novalidate>
-            <div class="field">
-              <label class="lbl" for="m-course">과목</label>
-              <select id="m-course" class="input"></select>
-              <input id="m-course-free" class="input" type="text" placeholder="과목 이름" aria-label="과목 이름 직접 입력" hidden>
-            </div>
-            <div class="field">
-              <label class="lbl" for="m-date">받은 날짜</label>
-              <input id="m-date" class="input" type="date">
-            </div>
-            <div class="field">
-              <label class="lbl" for="m-text">내용</label>
-              <textarea id="m-text" class="input" rows="7" placeholder="예) 기말 보고서는 12월 5일(금) 18시까지 이메일로 제출하세요."></textarea>
-              <p class="help" style="margin:0">‘다음 주 금요일’처럼 적힌 날짜는 받은 날짜를 기준으로 계산합니다.</p>
-            </div>
-            <div id="manual-msg" aria-live="polite"></div>
-            <div class="form-actions"><button id="m-submit" class="btn btn-primary" type="submit">마감 찾기</button></div>
-          </form>
-        </section>
-        <div id="nodl-box"></div>
-        <div id="inbox-groups"></div>
-      </aside>
-    </div>
-  </section>
+      <div class="top-right">
+        <span id="sync-meta">불러오는 중…</span>
+        <button id="sync-btn" class="btn btn-line" type="button" hidden>동기화</button>
+      </div>
+    </header>
 
-  <!-- 설정 -->
-  <section id="scr-settings" class="screen" aria-labelledby="title-settings" hidden>
-    <div class="screen-head">
-      <h1 id="title-settings" tabindex="-1">설정</h1>
-    </div>
-    <div class="settings-grid">
-      <div class="settings-main">
-        <section id="setup" class="panel" aria-labelledby="setup-title" hidden>
-          <h2 id="setup-title">Canvas 연결</h2>
-          <p class="help">학교 Canvas 주소와 액세스 토큰을 넣으면 과제·공지·메시지를 읽어 학기 일정을 만듭니다.</p>
-          <form id="setup-form" class="form-stack" novalidate>
-            <div class="field">
-              <label class="lbl" for="canvas-url">Canvas 주소</label>
-              <input id="canvas-url" class="input" type="text" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="https://canvas.학교.ac.kr">
-              <p class="help" style="margin:0">브라우저로 Canvas에 들어갔을 때 주소창 맨 앞부분입니다.</p>
-            </div>
-            <div class="field">
-              <label class="lbl" for="canvas-token">액세스 토큰</label>
-              <input id="canvas-token" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
-              <p class="help" style="margin:0">받는 법: Canvas → <b>계정</b> → <b>설정</b> → <b>새 액세스 토큰</b> 발급 → 나온 값을 복사해 붙여 넣기</p>
-              <p class="help" style="margin:0">토큰은 이 PC에만 저장되고 Canvas에 접속할 때만 씁니다. 읽기만 하며 메시지를 읽음으로 바꾸지 않습니다.</p>
-            </div>
-            <p id="setup-error" class="inline-error" role="alert" hidden></p>
-            <div class="form-actions">
-              <button id="setup-submit" class="btn btn-primary" type="submit">연결하고 동기화</button>
-              <button id="setup-cancel" class="btn btn-ghost" type="button" hidden>취소</button>
-            </div>
-          </form>
-        </section>
-        <div id="settings-conf" class="settings-main">
-          <section class="panel" aria-labelledby="conn-title">
-            <h2 id="conn-title">Canvas 연결</h2>
-            <dl class="conn">
-              <dt>주소</dt><dd id="conn-url">-</dd>
-              <dt>버전</dt><dd id="app-version">-</dd>
-            </dl>
-            <div id="settings-report" aria-live="polite"></div>
-            <button id="reconfig" class="btn btn-secondary btn-sm" type="button">연결 다시 설정</button>
-          </section>
-          <section class="panel" aria-labelledby="file-title">
-            <h2 id="file-title">캘린더 파일</h2>
-            <p id="ics-count" class="help"></p>
-            <label class="toggle">
-              <input id="include-canvas" type="checkbox">
-              <span><b>Canvas 과제도 캘린더 파일에 포함</b>
-                <small>끄면 공지·메시지 등에서 찾은 마감만 들어갑니다. Canvas 앱 알림과 겹치는 게 싫다면 끄세요.</small></span>
-            </label>
-            <label class="toggle" id="weekly-row">
-              <input id="weekly-summary" type="checkbox">
-              <span><b>주간 요약 일정 넣기</b>
-                <small>일정이 있는 주마다 월요일 08:00에 ‘11주차: 마감 4 · 시험 1’ 같은 요약 일정을 하나 더 넣습니다. 휴대폰에서 한 주를 한눈에 보기 좋습니다.</small></span>
-            </label>
-            <p id="settings-error" class="inline-error" role="alert" hidden></p>
-            <div class="form-actions" style="margin-top:14px"><a id="ics-link-2" class="btn btn-primary" href="/calendar.ics" download="lms-deadlines.ics">캘린더 파일 받기</a></div>
-          </section>
-        </div>
+    <div class="content">
+      <div id="banner" class="banner" role="status" hidden></div>
+      <div id="sync-error" class="banner banner-error" role="alert" hidden></div>
+
+      <div id="boot">
+        <p id="boot-msg" class="empty">불러오는 중…</p>
+        <button id="boot-retry" class="btn btn-line" type="button" style="margin-top:12px" hidden>다시 시도</button>
       </div>
-      <section class="panel" aria-labelledby="help-title">
-        <h2 id="help-title">휴대폰 캘린더에 넣는 법</h2>
-        <ol class="help-steps">
-          <li><b>캘린더 파일 받기</b>를 눌러 <code>lms-deadlines.ics</code> 파일을 받습니다.</li>
-          <li><b>PC에서</b> <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer">calendar.google.com</a>을 엽니다. 휴대폰 앱에서는 파일을 가져올 수 없습니다.</li>
-          <li>오른쪽 위 톱니바퀴 → <b>설정</b> → 왼쪽 메뉴의 <b>가져오기/내보내기</b>.</li>
-          <li><b>컴퓨터에서 파일 선택</b>으로 받은 파일을 고르고, 넣을 캘린더를 선택한 뒤 <b>가져오기</b>.</li>
-          <li>잠시 뒤 휴대폰 Google 캘린더 앱에도 나타납니다.</li>
-        </ol>
-        <div class="help-note">
-          <p><b>바뀌면 다시 가져와야 합니다.</b> 가져온 일정은 저절로 바뀌지 않습니다. 마감을 새로 넣거나 고쳤다면 파일을 다시 받아 가져오세요.</p>
-          <p>다시 가져올 때 Google이 같은 일정을 알아보고 덮어쓰는지(UID 기준 중복 제거)는 아직 확인하지 못했습니다. 그래서 <b>‘LMS 마감’ 같은 별도 캘린더</b>에 가져오기를 권합니다(설정 → 캘린더 추가 → 새 캘린더 만들기). 다시 가져올 땐 그 캘린더를 지우고 새로 만든 뒤 가져오면 일정이 두 번 생기지 않습니다.</p>
+
+      <section id="scr-dash" class="screen" aria-labelledby="page-title" hidden><div id="dash-body"></div></section>
+      <section id="scr-semester" class="screen" aria-labelledby="page-title" hidden><div id="sem-body"></div></section>
+      <section id="scr-courses" class="screen" aria-labelledby="page-title" hidden><div id="courses-body"></div></section>
+      <section id="scr-grades" class="screen" aria-labelledby="page-title" hidden><div id="grades-body"></div></section>
+
+      <section id="scr-inbox" class="screen" aria-labelledby="page-title" hidden>
+        <div class="inbox-grid">
+          <div>
+            <div id="review-list" class="rlist"></div>
+            <div id="review-past"></div>
+            <div id="approved-box"></div>
+          </div>
+          <aside class="inbox-side" aria-label="붙여넣기와 다른 항목">
+            <section aria-labelledby="manual-title">
+              <h2 id="manual-title" class="sec-h">직접 붙여넣기</h2>
+              <p class="help" style="margin-bottom:12px">Canvas 밖에서 받은 메일이나 PDF의 글을 붙여 넣으면 마감을 찾아 왼쪽 목록에 올립니다.</p>
+              <form id="manual-form" class="form-stack" novalidate>
+                <div class="field">
+                  <label class="lbl" for="m-course">과목</label>
+                  <select id="m-course" class="input"></select>
+                  <input id="m-course-free" class="input" type="text" placeholder="과목 이름" aria-label="과목 이름 직접 입력" hidden>
+                </div>
+                <div class="field">
+                  <label class="lbl" for="m-date">받은 날짜</label>
+                  <input id="m-date" class="input" type="date">
+                </div>
+                <div class="field">
+                  <label class="lbl" for="m-text">내용</label>
+                  <textarea id="m-text" class="input" rows="6" placeholder="예) 기말 보고서는 12월 5일(금) 18시까지 이메일로 제출하세요."></textarea>
+                  <p class="help">‘다음 주 금요일’처럼 적힌 날짜는 받은 날짜를 기준으로 계산합니다.</p>
+                </div>
+                <div id="manual-msg" aria-live="polite"></div>
+                <div class="form-actions"><button id="m-submit" class="btn btn-primary" type="submit">마감 찾기</button></div>
+              </form>
+            </section>
+            <div id="nodl-box"></div>
+            <div id="inbox-groups"></div>
+          </aside>
         </div>
       </section>
+
+      <section id="scr-settings" class="screen" aria-labelledby="page-title" hidden>
+        <div class="set-grid">
+          <div>
+            <section class="pane" aria-labelledby="h-canvas">
+              <h2 id="h-canvas" class="sec-h">Canvas 연결</h2>
+              <div id="setup" hidden>
+                <p class="help" style="margin-bottom:14px">학교 Canvas 주소와 액세스 토큰을 넣으면 과제·공지·메시지를 읽어 학기 일정을 만듭니다.</p>
+                <form id="setup-form" class="form-stack" novalidate>
+                  <div class="field">
+                    <label class="lbl" for="canvas-url">Canvas 주소</label>
+                    <input id="canvas-url" class="input" type="text" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="https://canvas.학교.ac.kr">
+                    <p class="help">브라우저로 Canvas에 들어갔을 때 주소창 맨 앞부분입니다.</p>
+                  </div>
+                  <div class="field">
+                    <label class="lbl" for="canvas-token">액세스 토큰</label>
+                    <input id="canvas-token" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+                    <p class="help">받는 법: Canvas → <b>계정</b> → <b>설정</b> → <b>새 액세스 토큰</b> 발급 → 나온 값을 복사해 붙여 넣기</p>
+                    <p class="help">토큰은 이 PC에만 저장되고 Canvas에 접속할 때만 씁니다. 읽기만 하며 메시지를 읽음으로 바꾸지 않습니다.</p>
+                  </div>
+                  <p id="setup-error" class="inline-error" role="alert" hidden></p>
+                  <div class="form-actions">
+                    <button id="setup-submit" class="btn btn-primary" type="submit">연결하고 동기화</button>
+                    <button id="setup-cancel" class="btn btn-quiet" type="button" hidden>취소</button>
+                  </div>
+                </form>
+              </div>
+              <div id="canvas-conf">
+                <dl class="conn">
+                  <dt>주소</dt><dd id="conn-url">-</dd>
+                  <dt>앱 버전</dt><dd id="app-version">-</dd>
+                </dl>
+                <div id="settings-report" aria-live="polite"></div>
+                <button id="reconfig" class="btn btn-line btn-sm" type="button">연결 다시 설정</button>
+              </div>
+            </section>
+            <section id="pane-google" class="pane" aria-labelledby="h-google">
+              <h2 id="h-google" class="sec-h">구글 캘린더</h2>
+              <div id="google-box" aria-live="polite"></div>
+            </section>
+          </div>
+          <div>
+            <section id="pane-options" class="pane" aria-labelledby="h-options">
+              <h2 id="h-options" class="sec-h">캘린더에 넣을 것</h2>
+              <p class="help">구글 캘린더와 캘린더 파일에 똑같이 적용됩니다. 찾은 마감은 승인한 것만 들어갑니다.</p>
+              <label class="toggle">
+                <input id="include-canvas" type="checkbox">
+                <span><b>Canvas 과제도 넣기</b>
+                  <small>끄면 공지·메시지 등에서 찾은 마감만 들어갑니다. Canvas 앱 알림과 겹치는 게 싫다면 끄세요.</small></span>
+              </label>
+              <label class="toggle" id="weekly-row">
+                <input id="weekly-summary" type="checkbox">
+                <span><b>주간 요약 일정 넣기</b>
+                  <small>일정이 있는 주마다 월요일 08:00에 ‘11주차: 마감 4 · 시험 1’ 같은 요약 일정을 하나 더 넣습니다. 휴대폰에서 한 주를 한눈에 보기 좋습니다.</small></span>
+              </label>
+              <p id="settings-error" class="inline-error" role="alert" hidden></p>
+            </section>
+            <section id="pane-file" class="pane" aria-labelledby="h-file">
+              <h2 id="h-file" class="sec-h">캘린더 파일 (.ics)</h2>
+              <p class="help">구글을 연결하지 않고 쓸 때의 방법입니다. 파일을 받아 캘린더 앱에 가져오세요.</p>
+              <p id="ics-count" class="ok-msg" style="margin-top:8px"></p>
+              <p id="ics-stale" class="inline-error" style="margin-top:4px" hidden>파일을 받은 뒤 바뀐 일정이 있습니다. 다시 받아서 가져오세요.</p>
+              <div class="form-actions" style="margin-top:12px">
+                <a id="ics-link" class="btn btn-line" href="/calendar.ics" download="lms-deadlines.ics"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>캘린더 파일 받기</a>
+              </div>
+              <details class="group">
+                <summary>구글 캘린더에 파일로 넣는 법</summary>
+                <div class="group-body">
+                  <ol class="help-steps">
+                    <li><b>캘린더 파일 받기</b>로 <code>lms-deadlines.ics</code>를 받습니다.</li>
+                    <li><b>PC에서</b> <a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer">calendar.google.com</a>을 엽니다. 휴대폰 앱에서는 파일을 가져올 수 없습니다.</li>
+                    <li>톱니바퀴 → <b>설정</b> → <b>가져오기/내보내기</b>에서 받은 파일을 고르고, 넣을 캘린더를 선택한 뒤 <b>가져오기</b>.</li>
+                    <li>가져온 일정은 저절로 바뀌지 않습니다. 마감을 고쳤다면 다시 받아 가져오세요. 따로 만든 ‘LMS 마감’ 캘린더에 넣어 두면 지우고 다시 넣기 쉽습니다.</li>
+                  </ol>
+                </div>
+              </details>
+            </section>
+          </div>
+        </div>
+        <section id="pane-runs" class="pane" aria-labelledby="h-runs" style="border-bottom:0">
+          <h2 id="h-runs" class="sec-h">확인 기록</h2>
+          <p class="help">평소에는 바뀐 글만 다시 읽습니다. 마감을 잘못 찾은 것 같으면 전체를 다시 확인하세요. 몇 초 걸립니다.</p>
+          <div class="form-actions" style="margin-top:12px">
+            <button id="full-btn" class="btn btn-line" type="button">전체 다시 확인</button>
+          </div>
+          <div id="runs-box" class="runs"></div>
+        </section>
+      </section>
     </div>
-  </section>
-</main>
+  </div>
+</div>
 
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -483,33 +664,39 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
 (() => {
   const TOKEN = document.querySelector('meta[name="lms-agent-token"]').content;
   const $ = (id) => document.getElementById(id);
-  const VIEWS = ['week', 'map', 'courses', 'inbox', 'settings'];
-  // 화면마다 다시 그리는 칸. 안 보이는 화면의 칸은 비워서 같은 id·data-key가 두 번 생기지 않게 한다
+  const VIEWS = ['dash', 'semester', 'courses', 'grades', 'inbox', 'settings'];
+  const TITLES = { dash: '대시보드', semester: '학기', courses: '과목', grades: '성적', inbox: '확인함', settings: '설정' };
+  const ALIAS = { week: 'dash', map: 'semester' };
+  // 화면마다 다시 그리는 칸. 안 보이는 화면의 칸은 비워서 같은 data-key가 두 번 생기지 않게 한다
   const DYN = {
-    week: ['week-body'], map: ['map-body'], courses: ['courses-body'],
-    inbox: ['review-list', 'review-past', 'nodl-box', 'inbox-groups'], settings: ['settings-report']
+    dash: ['dash-body'], semester: ['sem-body'], courses: ['courses-body'], grades: ['grades-body'],
+    inbox: ['review-list', 'review-past', 'approved-box', 'nodl-box', 'inbox-groups'],
+    settings: ['google-box', 'settings-report', 'runs-box']
   };
-
-  let state = null;
-  let skew = 0;            // 서버 시각 - 브라우저 시각
-  let syncing = false;
-  let reconfiguring = false;
-  let rendering = false;
-  let focusAfter = null;   // 키보드로 승인/제외한 뒤 다음 카드로 포커스
-  let lastDay = '';
-  let courseSig = '';
-  let view = viewFromHash();
-  let selWeek = null;
-  let selCourse = null;
-  let pendingJump = null;
-  const openGroups = new Set();
-  const cardErrors = new Map();
-  const busyItems = new Set();
-
+  const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
   const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력' };
   const METHOD = { lms: 'LMS 제출', email: '이메일 제출', paper: '종이 제출', unknown: '제출 방법 확인 필요' };
   const CONF = { high: '높음', medium: '보통', low: '낮음' };
+
+  let state = null;
+  let skew = 0;              // 서버 시각 - 브라우저 시각
+  let syncing = null;        // 이 화면에서 누른 동기화: null | 'incremental' | 'full'
+  let reconfiguring = false;
+  let rendering = false;
+  let focusAfter = null;     // 키보드로 승인/제외한 뒤 다음 카드로
+  let focusKey = null;       // 다시 그린 뒤 이 data-key로 포커스
+  let lastDay = '';
+  let courseSig = '';
+  let view = viewFromHash();
+  let span = readSpan();
+  let selWeek = null, selCourse = null, selGrade = null, pendingJump = null;
+  let googleBusy = false, googleError = '';
+  const openGroups = new Set();
+  const cardErrors = new Map();
+  const busyItems = new Set();
+  const gradeDrafts = new Map();
+  const gradeMsg = new Map();
 
   // ---------------------------------------------------------------- DOM 도우미 (데이터는 전부 텍스트 노드로만 넣는다)
   function h(tag, props, ...kids) {
@@ -536,22 +723,35 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       else el.appendChild(kid instanceof Node ? kid : document.createTextNode(String(kid)));
     }
   }
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function S(tag, attrs, ...kids) {
+    const el = document.createElementNS(SVGNS, tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        if (v === null || v === undefined || v === false) continue;
+        if (k === 'on') for (const ev of Object.keys(v)) el.addEventListener(ev, v[ev]);
+        else el.setAttribute(k, String(v));
+      }
+    }
+    add(el, kids);
+    return el;
+  }
+  function pos(el, o) {
+    for (const k of Object.keys(o)) el.style[k] = typeof o[k] === 'number' ? o[k] + 'px' : o[k];
+    return el;
+  }
   const ICONS = {
     sync: ['M20 11a8 8 0 0 0-14.3-4.9L4 8', 'M4 3v5h5', 'M4 13a8 8 0 0 0 14.3 4.9L20 16', 'M20 21v-5h-5'],
     download: ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'],
-    ext: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5']
+    ext: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'],
+    x: ['M6 6l12 12', 'M18 6L6 18'],
+    trash: ['M5 7h14', 'M10 11v6', 'M14 11v6', 'M7 7l1 13h8l1-13', 'M9 7V4h6v3'],
+    plus: ['M12 5v14', 'M5 12h14']
   };
   function icon(name) {
-    const NS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('class', 'ico');
-    svg.setAttribute('aria-hidden', 'true');
-    for (const d of ICONS[name]) {
-      const p = document.createElementNS(NS, 'path');
-      p.setAttribute('d', d);
-      svg.appendChild(p);
-    }
+    const svg = S('svg', { viewBox: '0 0 24 24', class: 'ico', 'aria-hidden': 'true' });
+    for (const d of ICONS[name]) svg.appendChild(S('path', { d }));
     return svg;
   }
   function safeUrl(u) {
@@ -561,8 +761,21 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       return (x.protocol === 'https:' || x.protocol === 'http:') ? x.href : null;
     } catch (e) { return null; }
   }
+  const extLink = (url, text) => {
+    const u = safeUrl(url);
+    return u ? h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, text) : null;
+  };
   const byKey = (key) => document.querySelector('[data-key="' + CSS.escape(key) + '"]');
   function showMsg(el, text) { el.textContent = text || ''; el.hidden = !text; }
+  const tag = (text, kind, title) => h('span', { class: 'tag' + (kind ? ' tag-' + kind : ''), title: title || null }, text);
+  const num = (x) => Number(x) || 0;
+  function fmtNum(x, digits) {
+    const n = Number(x);
+    if (!isFinite(n)) return '-';
+    const p = Math.pow(10, digits === undefined ? 1 : digits);
+    return String(Math.round(n * p) / p);
+  }
+  const pct = (x) => fmtNum(x) + '%';
 
   // ---------------------------------------------------------------- 시간
   const nowMs = () => Date.now() + skew;
@@ -586,17 +799,16 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
   const fmtShort = (d) => yearPrefix(d, true) + (d.getMonth() + 1) + '/' + d.getDate() + ' (' + WD[d.getDay()] + ')';
   const fmtMD = (d) => (d.getMonth() + 1) + '/' + d.getDate();
   const fmtDateTime = (d) => fmtDate(d) + ' ' + fmtTime(d);
+  const fmtShortDT = (d) => fmtShort(d) + ' ' + fmtTime(d);
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-  const mondayOf = (d) => addDays(d, -((d.getDay() + 6) % 7));
   const dayDiff = (d) => Math.round((startOfDay(d) - startOfDay(new Date(nowMs()))) / 86400000);
   const ddayText = (diff) => diff === 0 ? 'D-DAY' : diff > 0 ? 'D-' + diff : 'D+' + (-diff);
-  const urgency = (diff) => diff < 0 ? 'past' : diff <= 2 ? 'soon' : '';
   function whenText(d) {
     const diff = dayDiff(d);
     if (diff === 0) return '오늘 ' + fmtTime(d);
     if (diff === 1) return '내일 ' + fmtTime(d);
-    return fmtDate(d) + ' ' + fmtTime(d) + (diff > 1 ? ' · D-' + diff : '');
+    return fmtShortDT(d);
   }
   function toInput(iso) { const d = parseDate(iso); return d ? dayKey(d) + 'T' + fmtTime(d) : ''; }
   function fromInput(v) {
@@ -616,6 +828,10 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     if (days < 7) return days + '일 전';
     return fmtDate(d);
   }
+  const relEl = (iso) => {
+    const d = parseDate(iso);
+    return h('time', { datetime: iso, 'data-rel': iso, title: d ? fmtDateTime(d) : null }, relTime(iso));
+  };
   function dueMs(it) { const d = parseDate(it.due); return d ? d.getTime() : null; }
   function byDue(a, b) {
     const x = dueMs(a), y = dueMs(b);
@@ -635,11 +851,19 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     return null;
   }
   const itemWeek = (it) => typeof it.week === 'number' ? it.week : weekOfDate(parseDate(it.due));
-  const courseLabel = (it) => it.course_short || it.course_name || '과목 미상';
-  const courseShort = (c) => c.short_name || c.name || '';
+  // 화면에는 짧은 과목 이름만 쓴다(긴 Canvas 과목 이름은 보여 주지 않음)
+  const courseLabel = (it) => it.course_short || '과목 미상';
+  const courseShort = (c) => (c && c.short_name) || '과목';
+  function shortForName(name) {
+    const c = state.courses.find((x) => x && x.name === name);
+    return c ? courseShort(c) : '';
+  }
   const isActive = (i) => i.status === 'scheduled' || i.status === 'review';
   const activeDated = () => state.items.filter((i) => isActive(i) && parseDate(i.due));
   function inRange(it, a, b) { const t = dueMs(it); return t !== null && t >= a.getTime() && t < b.getTime(); }
+  const findItem = (id) => state.items.find((i) => i.id === id) || null;
+  const isNew = (it) => !!(state.report && Array.isArray(state.report.new_items) && state.report.new_items.indexOf(it.id) >= 0);
+  const gstate = () => (state && state.google) || {};
 
   // ---------------------------------------------------------------- 서버
   function api(method, path, body) {
@@ -672,18 +896,19 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     skew = isNaN(n) ? 0 : n - Date.now();
     state = s;
     render();
-    pollWhileSyncing();
+    pollWhileBusy();
   }
-  // 서버가 켜질 때 스스로 동기화한다. 그동안 2초마다 상태를 다시 읽는다
+  const refresh = () => api('GET', '/api/state').then(applyState, () => {});
+  // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  function pollWhileSyncing() {
-    if (!state || !state.syncing || pollTimer || syncing) return;
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing));
+  function pollWhileBusy() {
+    if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
       pollTimer = null;
-      api('GET', '/api/state').then((s) => applyState(s), () => pollWhileSyncing());
+      api('GET', '/api/state').then(applyState, () => pollWhileBusy());
     }, 2000);
   }
-  const findItem = (id) => state.items.find((i) => i.id === id) || null;
 
   // ---------------------------------------------------------------- 알림
   let toastTimer = null;
@@ -691,17 +916,24 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
   function toast(msg, undo) {
     const t = $('toast');
     t.replaceChildren(h('span', null, msg));
-    if (undo) t.appendChild(h('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { hideToast(); undo(); } } }, '되돌리기'));
+    if (undo) t.appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => { hideToast(); undo(); } } }, '되돌리기'));
     toastMs = undo ? 10000 : 4000;
     armToast();
   }
   function armToast() { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, toastMs); }
   function hideToast() { clearTimeout(toastTimer); $('toast').replaceChildren(); }
-  // 마우스를 올리거나 포커스가 있는 동안은 닫지 않는다
   $('toast').addEventListener('mouseenter', () => clearTimeout(toastTimer));
   $('toast').addEventListener('focusin', () => clearTimeout(toastTimer));
   $('toast').addEventListener('mouseleave', () => { if ($('toast').firstChild) armToast(); });
   $('toast').addEventListener('focusout', () => { if ($('toast').firstChild) armToast(); });
+
+  function banner(text, isError) {
+    const b = $('banner');
+    b.replaceChildren(
+      h('p', { class: isError ? 'inline-error' : null }, text),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': '알림 닫기', on: { click: () => { b.hidden = true; b.replaceChildren(); } } }, icon('x')));
+    b.hidden = false;
+  }
 
   // ---------------------------------------------------------------- 항목 변경
   function markBusy(id, on) {
@@ -748,8 +980,13 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       if (dv !== toInput(it.due)) payload.due = dv;
     }
     const list = $('review-list');
-    if (ev && ev.detail === 0 && list.contains(card)) focusAfter = { index: Array.prototype.indexOf.call(list.children, card) };
+    if (ev && ev.detail === 0 && list.contains(card)) focusAfter = { index: Array.prototype.indexOf.call(list.querySelectorAll('.rcard'), card) };
     itemPost(it, payload, (decision === 'approved' ? '일정에 넣었습니다: ' : '제외했습니다: ') + title, { decision: 'pending' });
+  }
+  function flashEl(el) {
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
   }
   function jumpTo(id) {
     const el = document.getElementById('item-' + id);
@@ -757,19 +994,37 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     const det = el.closest('details');
     if (det && !det.open) det.open = true;
     el.scrollIntoView({ block: 'center' });
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
+    flashEl(el);
+    const target = el.querySelector('[data-decision="approved"], button');
+    if (target) target.focus({ preventScroll: true });
   }
   function goInbox(id) {
     if (view === 'inbox') { jumpTo(id); return; }
     pendingJump = id;
     location.hash = '#inbox';
   }
+  function toggleSubmitted(it, on) {
+    return itemPost(it, { submitted: on }, on ? '제출함으로 표시했습니다: ' + (it.title || '') : '제출 표시를 지웠습니다: ' + (it.title || ''));
+  }
 
   // ---------------------------------------------------------------- 조각
-  const chip = (text, kind, title) => h('span', { class: 'chip' + (kind ? ' chip-' + kind : ''), title: title || null }, text);
-  const countChip = (n) => h('span', { class: 'count' }, String(n));
+  function markClass(it) {
+    let c = 'mk';
+    if (it.submitted) c += ' mk-done';
+    else if (it.status === 'review') c += it.conflict ? ' mk-conflict' : ' mk-review';
+    else if (it.status === 'scheduled') c += ' mk-sched';
+    else c += ' mk-off';
+    if (it.kind === '시험') c += ' mk-exam';
+    return c;
+  }
+  function statusText(it) {
+    if (it.submitted) return '제출함';
+    if (it.status === 'review') return it.conflict ? '마감 충돌' : '확인 필요';
+    if (it.status === 'scheduled') return '일정에 있음';
+    return '';
+  }
+  const mark = (it, extra) => h('span', { class: markClass(it) + (extra ? ' ' + extra : ''), role: 'img', 'aria-label': (it.kind === '시험' ? '시험, ' : '') + statusText(it) });
+  const legendMark = (cls, text) => h('span', null, h('span', { class: 'mk ' + cls, 'aria-hidden': 'true' }), text);
   function group(key, summary, body) {
     const d = h('details', { class: 'group' });
     d.open = openGroups.has(key);
@@ -781,40 +1036,16 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     d.appendChild(h('div', { class: 'group-body' }, body));
     return d;
   }
-  function methodChip(it, short) {
+  function methodTag(it, withEmail) {
     const m = METHOD[it.method] ? it.method : 'unknown';
     if (m === 'unknown' && it.kind === '시험') return null;
-    if (short) return h('span', { class: 'chip' + (m === 'unknown' ? ' chip-dashed' : ''), title: it.email_to || null }, METHOD[m]);
-    return h('span', { class: 'chip' + (m === 'unknown' ? ' chip-dashed' : '') },
-      h('span', null, METHOD[m], it.email_to ? [' · ', h('span', { class: 'email' }, it.email_to)] : null));
+    const cls = m === 'unknown' ? 'dash' : null;
+    if (!withEmail || !it.email_to) return tag(METHOD[m], cls, it.email_to || null);
+    return h('span', { class: 'tag' + (cls ? ' tag-' + cls : '') }, METHOD[m], h('span', { class: 'email' }, it.email_to));
   }
-  const confChip = (c) => CONF[c] ? chip('신뢰도 ' + CONF[c], c === 'low' ? 'dashed' : 'plain') : null;
-  const examChip = (it) => it.kind === '시험' ? chip('시험', 'accent') : null;
-  function originChip(it) {
-    if (it.origin === 'canvas') {
-      const u = safeUrl(it.url);
-      return u
-        ? h('a', { class: 'chip', href: u, target: '_blank', rel: 'noopener noreferrer', title: 'Canvas에서 열기' }, 'Canvas', icon('ext'))
-        : chip('Canvas', 'plain');
-    }
-    return chip('찾은 마감', 'plain');
-  }
-  function evidenceBlock(ev) {
-    const url = safeUrl(ev.url);
-    const d = parseDate(ev.posted_at);
-    return h('figure', { class: 'evidence' },
-      h('blockquote', null, ev.text || ''),
-      h('figcaption', null,
-        h('span', { class: 'src' }, SOURCE[ev.source_type] || '출처'),
-        ev.source_title ? h('span', { class: 'src-title' }, ev.source_title) : null,
-        d ? h('span', null, fmtDateTime(d)) : null,
-        url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, '원문 보기', icon('ext')) : null));
-  }
-  function evidenceList(it) {
-    const ev = Array.isArray(it.evidence) ? it.evidence : [];
-    if (!ev.length) return h('p', { class: 'help' }, '저장된 근거가 없습니다.');
-    return h('div', null, h('p', { class: 'ev-head' }, '근거'), ev.map(evidenceBlock));
-  }
+  const confTag = (c) => CONF[c] ? tag('신뢰도 ' + CONF[c], c === 'low' ? 'dash' : 'quiet') : null;
+  const examTag = (it) => it.kind === '시험' ? tag('시험', 'accent') : null;
+  const errLine = (it, cls) => cardErrors.has(it.id) ? h('p', { class: 'inline-error' + (cls ? ' ' + cls : ''), role: 'alert' }, cardErrors.get(it.id)) : null;
   function siblings(it) {
     return state.items.filter((b) => {
       if (b.id === it.id || b.origin !== 'found' || !isActive(b)) return false;
@@ -823,260 +1054,450 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       return (b.title || '').replace(/\s+/g, '') === (it.title || '').replace(/\s+/g, '');
     });
   }
-  function conflictBox(it) {
-    const sib = siblings(it);
-    return h('div', { class: 'conflict', role: 'note' },
-      h('strong', null, '마감이 서로 다르게 적혀 있습니다'),
-      h('p', null, it.conflict),
-      sib.length ? h('div', { class: 'sib' }, h('span', null, '다른 후보:'), sib.map((b) => {
-        const d = parseDate(b.due);
-        return h('a', { href: '#item-' + b.id, on: { click: (e) => { e.preventDefault(); jumpTo(b.id); } } },
-          (d ? fmtDateTime(d) : '날짜 없음') + (b.status === 'scheduled' ? ' (일정에 넣음)' : ''));
-      })) : null);
-  }
-  const errLine = (it, cls) => cardErrors.has(it.id) ? h('p', { class: 'inline-error' + (cls ? ' ' + cls : ''), role: 'alert' }, cardErrors.get(it.id)) : null;
-  function conclude(premise, conclusion) {
-    return h('div', { class: 'conclude' }, h('p', { class: 'premise' }, premise), h('p', { class: 'conclusion' }, conclusion));
+  function conflictGroups() {
+    const seen = new Set();
+    const out = [];
+    for (const it of state.items.filter((i) => i.status === 'review' && i.conflict).sort(byDue)) {
+      if (seen.has(it.id)) continue;
+      const grp = [it].concat(siblings(it)).sort(byDue);
+      grp.forEach((x) => seen.add(x.id));
+      out.push(grp);
+    }
+    return out;
   }
   function fitTitle(el) {
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 2 + 'px';
   }
   const fitAllTitles = () => document.querySelectorAll('textarea.title-input').forEach(fitTitle);
-  let fitTimer = null;
-  window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitAllTitles, 100); });
 
-  // 이번 주·학기 지도·과목에서 쓰는 한 줄
-  function itemRow(it, mode) {
+  // 날짜별 목록의 한 줄 (대시보드·학기·과목이 같이 쓴다)
+  function agendaRow(it, wide) {
     const d = parseDate(it.due);
     const isReview = it.status === 'review';
-    const past = d && d.getTime() < nowMs();
-    const today = d && dayDiff(d) === 0;
     const canvasDone = it.submitted && it.submitted_source === 'canvas';
+    const past = d && d.getTime() < nowMs();
     const missed = it.status === 'scheduled' && past && !it.submitted && it.kind !== '시험';
-    let cls = 'irow';
-    if (isReview) cls += ' is-review';
-    if (today && !it.submitted) cls += ' is-today';
-    if (isReview && it.conflict) cls += ' is-alert';
-    if (it.submitted) cls += ' is-done';
-    if (busyItems.has(it.id)) cls += ' is-busy';
     let side = null;
-    if (it.status === 'scheduled') {
+    if (it.status === 'scheduled' && it.kind !== '시험') {
       side = [
+        canvasDone ? h('span', { class: 'tiny' }, 'Canvas에서 확인됨') : null,
         h('label', { class: 'check' },
-          h('input', { type: 'checkbox', 'data-key': 'sub-' + it.id, checked: !!it.submitted, disabled: canvasDone, 'aria-label': (it.title || '') + ' 제출함',
-            on: { change: (e) => itemPost(it, { submitted: e.target.checked }, e.target.checked ? '제출함으로 표시했습니다' : '제출 표시를 지웠습니다') } }),
-          h('span', null, '제출')),
-        canvasDone ? h('span', { class: 'tiny' }, 'Canvas에서 확인됨') : null
+          h('input', { type: 'checkbox', 'data-key': 'sub-' + it.id + (wide ? '-w' : ''), checked: !!it.submitted, disabled: canvasDone, 'aria-label': (it.title || '') + ' 제출함',
+            on: { change: (e) => toggleSubmitted(it, e.target.checked) } }),
+          h('span', null, '제출'))
       ];
     } else if (isReview) {
-      side = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-key': 'go-' + it.id, on: { click: () => goInbox(it.id) } }, it.conflict ? '고르기' : '확인하기');
+      side = h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'go-' + it.id, on: { click: () => goInbox(it.id) } }, it.conflict ? '고르기' : '확인하기');
     }
-    return h('li', { class: cls, 'data-item': it.id },
-      h('div', { class: 'irow-when' }, d ? (mode === 'time' ? fmtTime(d) : [h('span', { class: 'irow-date' }, fmtShort(d)), fmtTime(d)]) : '-'),
+    return h('li', { class: 'arow' + (wide ? ' wide' : '') + (it.submitted ? ' is-done' : '') + (busyItems.has(it.id) ? ' is-busy' : ''), 'data-item': it.id, 'data-row': it.id },
+      h('span', { class: 'arow-time' }, d ? (wide ? fmtShort(d) + ' ' : '') + fmtTime(d) : '-'),
+      mark(it),
       h('div', null,
-        h('div', { class: 'irow-title' }, it.submitted ? '✓ ' : null, it.title || ''),
-        h('div', { class: 'irow-meta' },
-          h('span', { title: it.course_name || null }, courseLabel(it)),
-          examChip(it), methodChip(it, true),
-          isReview ? chip(it.conflict ? '마감 바뀜' : '확인 전', it.conflict ? 'accent' : 'dashed') : null,
-          missed ? chip('미제출', 'accent') : null)),
-      h('div', { class: 'irow-side' }, side),
-      errLine(it, 'irow-error'));
+        h('div', { class: 'arow-title' }, it.title || ''),
+        h('div', { class: 'arow-meta' },
+          h('span', null, courseLabel(it)),
+          it.kind === '시험' ? h('span', null, '시험') : null,
+          methodTag(it, false),
+          isReview ? h('span', { class: it.conflict ? 'warn' : null }, it.conflict ? '마감이 둘로 적혀 있음' : '아직 확인 전') : null,
+          missed ? h('span', { class: 'warn' }, '제출 표시 없음') : null)),
+      h('div', { class: 'arow-side' }, side),
+      errLine(it, 'arow-error'));
   }
-  function rowList(items, mode, emptyText) {
+  function dayAgenda(items, emptyText) {
     if (!items.length) return h('p', { class: 'empty' }, emptyText);
-    return h('ul', { class: 'ilist' + (mode === 'time' ? '' : ' by-date') }, items.map((it) => itemRow(it, mode)));
+    const wrap = h('div', { class: 'agenda' });
+    let key = '';
+    let ul = null;
+    for (const it of items) {
+      const d = parseDate(it.due);
+      const k = dayKey(d);
+      if (k !== key) {
+        key = k;
+        const diff = dayDiff(d);
+        ul = h('ul', { class: 'arows' });
+        wrap.appendChild(h('div', { class: 'agenda-day' + (diff === 0 ? ' is-today' : '') },
+          h('div', null,
+            h('span', { class: 'agenda-num' }, String(d.getDate())),
+            h('span', { class: 'agenda-wd' }, (d.getMonth() + 1) + '월 ' + WD[d.getDay()] + '요일' + (diff === 0 ? ', 오늘' : diff === 1 ? ', 내일' : ''))),
+          ul));
+      }
+      ul.appendChild(agendaRow(it, false));
+    }
+    return wrap;
   }
 
-  // ---------------------------------------------------------------- 이번 주
-  function renderWeek() {
-    const body = $('week-body');
+  // ---------------------------------------------------------------- 대시보드
+  function readSpan() { try { return localStorage.getItem('lms-agent.span') === '7' ? 7 : 14; } catch (e) { return 14; } }
+  function saveSpan() { try { localStorage.setItem('lms-agent.span', String(span)); } catch (e) { /* 저장 못 해도 동작함 */ } }
+  function textW(s, size) {
+    let w = 0;
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      w += c >= 0x1100 ? 1.0 : /[A-Z0-9]/.test(ch) ? 0.64 : ch === ' ' ? 0.3 : 0.55;
+    }
+    return w * size;
+  }
+  function headline(urgent) {
+    if (!urgent) return '앞으로 ' + span + '일 동안 남은 마감이 없습니다';
+    const d = parseDate(urgent.due);
+    const diff = dayDiff(d);
+    const when = (diff === 0 ? '오늘' : diff === 1 ? '내일' : fmtDate(d)) + ' ' + fmtTime(d);
+    const left = diff <= 0 ? Math.max(0, Math.round((d.getTime() - nowMs()) / 3600000)) + '시간 남음' : diff + '일 남음';
+    return '가장 급한 마감은 ' + courseLabel(urgent) + ' ' + (urgent.title || '') + ', ' + when + ' (' + left + ')' +
+      (urgent.status === 'review' ? '. 아직 확인 전입니다' : '');
+  }
+  function renderDash() {
+    const body = $('dash-body');
     body.replaceChildren();
     const now = new Date(nowMs());
-    const t0 = startOfDay(now), t1 = addDays(now, 1);
-    const mon = mondayOf(now), mon1 = addDays(mon, 7), mon2 = addDays(mon, 14);
+    const t0 = startOfDay(now);
+    const t1 = addDays(t0, span);
     const act = activeDated();
-    const todayL = act.filter((i) => inRange(i, t0, t1)).sort(byDue);
-    const restL = act.filter((i) => inRange(i, t1, mon1)).sort(byDue);
-    const nextL = act.filter((i) => inRange(i, mon1, mon2)).sort(byDue);
-    const weekL = act.filter((i) => inRange(i, mon, mon1));
-    const s = sem();
-    const wn = s ? s.week_now : null;
-    const total = s ? s.weeks_total : null;
-    const est = !!(s && s.source === 'default');
-    const inSem = !!(s && wn >= 1 && wn <= total);
-    $('week-sub').textContent = (inSem ? wn + '주차 · ' : '') + fmtDate(mon) + ' – ' + fmtDate(addDays(mon, 6)) + (est ? ' · 학기 날짜는 추정입니다' : '');
+    const win = act.filter((i) => inRange(i, t0, t1)).sort(byDue);
+    const urgent = act.filter((i) => dueMs(i) >= nowMs() && !i.submitted).sort(byDue)[0] || null;
 
-    const exams = weekL.filter((i) => i.kind === '시험').length;
-    const dl = weekL.length - exams;
-    const unconfirmed = weekL.filter((i) => i.status === 'review').length;
-    let premise;
-    if (s && wn === 0) premise = '개강 전입니다 · ' + (parseDay(s.start) ? fmtDate(parseDay(s.start)) + ' 개강' : '');
-    else if (s && total && wn > total) premise = '종강했습니다 · 이번 주 마감 ' + dl + '개';
-    else {
-      premise = (inSem ? '이번 주(' + wn + '주차' + (est ? ', 추정' : '') + ')' : '이번 주') + ' 마감 ' + dl + '개' +
-        (exams ? ' · 시험 ' + exams + '개' : '') + (unconfirmed ? ' (확인 전 ' + unconfirmed + '개 포함)' : '');
+    const sched = win.filter((i) => i.status === 'scheduled').length;
+    const rev = win.filter((i) => i.status === 'review' && !i.conflict).length;
+    const conf = win.filter((i) => i.status === 'review' && i.conflict).length;
+    const exams = win.filter((i) => i.kind === '시험').length;
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': '보는 기간' }, [7, 14].map((n) =>
+      h('button', { type: 'button', 'aria-pressed': String(span === n), 'data-key': 'span-' + n, on: { click: () => { span = n; saveSpan(); render(); } } }, n + '일')));
+    const hero = h('section', { class: 'hero', 'aria-labelledby': 'hero-line' },
+      h('div', { class: 'hero-top' },
+        h('div', null,
+          h('h2', { class: 'hero-line', id: 'hero-line' }, headline(urgent)),
+          h('div', { class: 'legend' },
+            legendMark('mk-sched', '일정 ' + sched),
+            legendMark('mk-review', '확인 필요 ' + rev),
+            legendMark('mk-conflict', '마감 충돌 ' + conf),
+            exams ? legendMark('mk-sched mk-exam', '시험 ' + exams) : null,
+            h('span', null, '앞으로 ' + span + '일'))),
+        seg),
+      buildAxis(win, t0, span, urgent));
+    body.appendChild(hero);
+    body.appendChild(h('div', { class: 'dash-grid' },
+      h('section', { 'aria-labelledby': 'agenda-h' },
+        h('h2', { class: 'sec-h', id: 'agenda-h', style: 'margin-bottom:10px' }, '날짜별 마감', h('span', { class: 'sec-n' }, fmtShort(t0) + ' – ' + fmtShort(addDays(t1, -1)))),
+        dayAgenda(win, '이 기간에 마감이 없습니다.')),
+      dashSide()));
+  }
+
+  function buildAxis(items, t0, days, urgent) {
+    const W = Math.max(520, Math.floor($('dash-body').clientWidth || 900));
+    const t0ms = t0.getTime();
+    const spanMs = days * 86400000;
+    const xOf = (ms) => Math.max(0, Math.min(W - 1, (ms - t0ms) / spanMs * W));
+    const pts = items.map((it) => ({ it, x: xOf(dueMs(it)) }));
+    // 같은 시각에 몰린 표시는 조금씩 옆으로 비켜 놓는다
+    let last = -1e9;
+    for (const p of pts) {
+      p.mx = Math.min(W - 1, p.x - last < 9 ? last + 9 : p.x);
+      last = p.mx;
     }
-    const urgent = act.filter((i) => dueMs(i) >= nowMs() && !i.submitted).sort(byDue)[0];
-    const conclusion = urgent
-      ? '가장 급한 것: ' + (urgent.title || '') + ' — ' + whenText(parseDate(urgent.due)) + ' · ' + courseLabel(urgent) + (urgent.status === 'review' ? ' · 확인 전' : '')
-      : '남은 마감이 없습니다';
-    body.appendChild(conclude(premise, conclusion));
+    const laneEnds = [];
+    for (const p of pts) {
+      const d = parseDate(p.it.due);
+      const isU = urgent && p.it.id === urgent.id;
+      p.meta = (isU ? ddayText(dayDiff(d)) + '  ' : '') + WD[d.getDay()] + ' ' + fmtTime(d) + '  ' + courseLabel(p.it);
+      p.w = Math.round(Math.min(208, Math.max(96, Math.max(textW(p.it.title || '', 13.5), textW(p.meta, 12)) + 20)));
+      p.toLeft = p.mx + p.w > W;
+      p.left = p.toLeft ? Math.max(0, p.mx - p.w + 1) : p.mx - 1;
+      let lane = 0;
+      while (lane < laneEnds.length && laneEnds[lane] > p.left - 6) lane++;
+      laneEnds[lane] = p.left + p.w;
+      p.lane = lane;
+    }
+    const L = Math.max(1, laneEnds.length);
+    const TOP = 24, BASE = 16, LANE = 48;
+    const H = TOP + BASE + L * LANE;
+    const lanes = pos(h('div', { class: 'lanes' }), { height: H });
+    const cols = h('div', { class: 'cols', 'aria-hidden': 'true' });
+    cols.style.gridTemplateColumns = 'repeat(' + days + ', minmax(0, 1fr))';
+    const daysRow = h('div', { class: 'days', 'aria-hidden': 'true' });
+    daysRow.style.gridTemplateColumns = 'repeat(' + days + ', minmax(0, 1fr))';
+    for (let i = 0; i < days; i++) {
+      const d = addDays(t0, i);
+      const wkend = d.getDay() === 0 || d.getDay() === 6;
+      const mon = d.getDay() === 1;
+      const wn = (mon || i === 0) ? weekOfDate(d) : null;
+      cols.appendChild(h('div', { class: 'col' + (wkend ? ' is-weekend' : '') + (mon ? ' is-mon' : '') },
+        wn ? h('span', { class: 'col-wk' }, wn + '주차') : null));
+      daysRow.appendChild(h('div', { class: 'day' + (i === 0 ? ' is-today' : '') + (wkend ? ' is-weekend' : '') },
+        h('span', { class: 'day-num' }, String(d.getDate())),
+        h('span', { class: 'day-wd' }, (d.getDate() === 1 || i === 0 ? (d.getMonth() + 1) + '월 ' : '') + WD[d.getDay()] + (i === 0 ? ' 오늘' : ''))));
+    }
+    lanes.appendChild(cols);
+    // 위치는 % 로 둔다: 창 너비가 바뀌어 다시 그리기 전이어도 표시가 날짜 칸에서 어긋나지 않게
+    const P = (x) => (x / W * 100) + '%';
+    const nx = xOf(nowMs());
+    lanes.appendChild(pos(h('div', { class: 'nowline', 'aria-hidden': 'true' }, h('span', null, '지금 ' + fmtTime(new Date(nowMs())))), { left: 'calc(' + P(nx) + ' - 1px)' }));
+    if (!pts.length) lanes.appendChild(h('p', { class: 'axis-empty' }, '이 기간에 마감이 없습니다'));
+    for (const p of pts) {
+      const it = p.it;
+      const isU = urgent && it.id === urgent.id;
+      const review = it.status === 'review';
+      const b = BASE + p.lane * LANE;
+      lanes.appendChild(pos(h('span', { class: 'stem' + (review ? ' is-review' : '') + (it.submitted ? ' is-done' : ''), 'aria-hidden': 'true' }), { left: P(p.mx), height: b }));
+      const d = parseDate(it.due);
+      const flag = h('button', {
+        type: 'button', class: 'flag' + (review ? ' is-review' : '') + (it.submitted ? ' is-done' : '') + (isU ? ' is-urgent' : ''),
+        'data-key': 'flag-' + it.id,
+        'aria-label': courseLabel(it) + ' ' + (it.title || '') + ', ' + fmtDateTime(d) + ', ' + statusText(it) + (isU ? ', 가장 급함' : ''),
+        title: (it.title || '') + ' · ' + fmtDateTime(d),
+        on: { click: () => (review ? goInbox(it.id) : showRow(it.id)) }
+      }, h('span', { class: 'flag-title' }, it.title || ''), h('span', { class: 'flag-meta' }, p.meta));
+      lanes.appendChild(pos(flag, p.toLeft ? { right: 'calc(' + P(W - p.mx) + ' - 1px)', bottom: b, width: p.w } : { left: 'calc(' + P(p.mx) + ' - 1px)', bottom: b, width: p.w }));
+      lanes.appendChild(pos(h('span', { class: markClass(it) + ' pin', 'aria-hidden': 'true' }), { left: P(p.mx) }));
+    }
+    const axis = h('div', { class: 'axis' }, lanes, daysRow);
+    // 같은 과제에 마감이 둘 이상 적힌 후보는 축 아래에서 괄호로 묶는다
+    const groups = conflictGroups().map((g) => g.map((it) => pts.find((p) => p.it.id === it.id)).filter(Boolean)).filter((g) => g.length >= 2);
+    if (groups.length) {
+      const row = h('div', { class: 'brackets' });
+      for (const g of groups) {
+        const x1 = Math.min(...g.map((p) => p.mx)), x2 = Math.max(...g.map((p) => p.mx));
+        const first = g[0].it;
+        row.appendChild(pos(h('div', { class: 'bracket' },
+          h('button', { type: 'button', 'data-key': 'brk-' + first.id, on: { click: () => goInbox(first.id) } }, (first.title || '') + ' 마감 ' + g.length + '개 중 고르기')),
+        { left: P(x1), width: P(Math.max(12, x2 - x1)) }));
+      }
+      axis.appendChild(row);
+    }
+    return axis;
+  }
+  function showRow(id) {
+    const el = document.querySelector('[data-row="' + CSS.escape(id) + '"]');
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    flashEl(el);
+  }
 
+  function dashSide() {
+    const side = h('aside', { class: 'dash-side', 'aria-label': '지금 볼 것' });
+    const groups = conflictGroups();
     const reviewN = state.items.filter((i) => i.status === 'review').length;
-    const errs = state.report && Array.isArray(state.report.errors) ? state.report.errors.filter(Boolean) : [];
-    if (reviewN || errs.length) {
-      body.appendChild(h('div', { class: 'after' },
-        reviewN ? h('p', null, '확인 대기 ', h('b', null, reviewN + '개'), ' — 찾았지만 아직 일정에 넣지 않은 마감입니다. ', h('a', { href: '#inbox' }, '확인함으로')) : null,
-        errs.length ? h('p', { class: 'warnline' }, h('b', null, '일부를 읽지 못했습니다 '), errs.map(String).join(' · '), ' ', h('a', { href: '#settings' }, '자세히')) : null));
+    const plain = reviewN - groups.reduce((a, g) => a + g.filter((i) => i.status === 'review').length, 0);
+    if (groups.length || reviewN) {
+      side.appendChild(h('section', { 'aria-labelledby': 'ds-review' },
+        h('h2', { class: 'sec-h', id: 'ds-review' }, '확인할 것', h('span', { class: 'sec-n' }, reviewN + '개')),
+        groups.length ? h('ul', { class: 'side-list' }, groups.map((g) => h('li', null,
+          h('div', { class: 'side-title' }, g[0].title || ''),
+          h('div', { class: 'side-meta' }, h('span', null, courseLabel(g[0])), h('span', { class: 'warn' }, '마감이 ' + g.length + '개로 적혀 있음')),
+          h('div', { class: 'pick' }, g.map((it) => {
+            const d = parseDate(it.due);
+            return h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'pick-' + it.id, on: { click: () => goInbox(it.id) } }, d ? fmtShortDT(d) : '날짜 없음');
+          }))))) : null,
+        plain > 0 ? h('p', { class: 'help', style: groups.length ? 'margin-top:12px' : null },
+          (groups.length ? '그 밖에 ' : '') + '찾았지만 아직 일정에 넣지 않은 마감 ' + plain + '개. ', h('a', { href: '#inbox' }, '확인함에서 보기')) : null));
     }
 
-    const changed = state.items.filter((i) => i.status === 'review' && i.conflict).sort(byDue);
-    if (changed.length) {
-      body.appendChild(h('section', { class: 'block', 'aria-labelledby': 'changed-title' },
-        h('h2', { id: 'changed-title' }, '바뀐 것', countChip(changed.length)),
-        h('p', { class: 'help' }, '같은 과제에 다른 마감이 적힌 글이 있습니다. 어느 쪽이 맞는지 확인함에서 골라 주세요.'),
-        h('ul', { class: 'ilist by-date' }, changed.map((it) => {
+    const overdue = state.items.filter((i) => i.status === 'scheduled' && i.kind !== '시험' && !i.submitted && dueMs(i) !== null && dueMs(i) < nowMs()).sort((a, b) => byDue(b, a));
+    if (overdue.length) {
+      side.appendChild(h('section', { 'aria-labelledby': 'ds-over' },
+        h('h2', { class: 'sec-h', id: 'ds-over' }, '지난 마감, 제출 표시 없음', h('span', { class: 'sec-n' }, overdue.length + '개')),
+        h('ul', { class: 'side-list' }, overdue.slice(0, 5).map((it) => {
           const d = parseDate(it.due);
-          return h('li', { class: 'irow is-alert', 'data-item': it.id },
-            h('div', { class: 'irow-when' }, d ? [h('span', { class: 'irow-date' }, fmtShort(d)), fmtTime(d)] : '-'),
-            h('div', null,
-              h('div', { class: 'irow-title' }, it.title || ''),
-              h('div', { class: 'irow-meta' }, h('span', null, courseLabel(it)), methodChip(it))),
-            h('div', { class: 'irow-side' }, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', 'data-key': 'chg-' + it.id, on: { click: () => goInbox(it.id) } }, '고르기')),
-            h('p', { class: 'irow-note' }, it.conflict));
+          return h('li', { 'data-item': it.id },
+            h('label', { class: 'check', style: 'white-space:normal;align-items:flex-start' },
+              h('input', { type: 'checkbox', 'data-key': 'osub-' + it.id, 'aria-label': (it.title || '') + ' 제출함', on: { change: (e) => toggleSubmitted(it, e.target.checked) } }),
+              h('span', null, h('span', { class: 'side-title' }, it.title || ''), h('span', { class: 'side-meta' }, h('span', null, courseLabel(it)), h('span', null, fmtShortDT(d))))),
+            errLine(it));
         }))));
     }
 
-    const nextLabel = (inSem && wn + 1 <= total ? (wn + 1) + '주차 · ' : '') + fmtShort(mon1) + ' – ' + fmtShort(addDays(mon1, 6));
-    body.appendChild(h('div', { class: 'cols' },
-      h('section', { class: 'col', 'aria-labelledby': 'col-today' },
-        h('h2', { id: 'col-today' }, '오늘', countChip(todayL.length)),
-        h('p', { class: 'help' }, fmtDate(t0)),
-        rowList(todayL, 'time', '오늘 마감이 없습니다.')),
-      h('section', { class: 'col', 'aria-labelledby': 'col-week' },
-        h('h2', { id: 'col-week' }, '이번 주', countChip(restL.length)),
-        h('p', { class: 'help' }, '내일부터 ' + fmtShort(addDays(mon, 6)) + '까지'),
-        rowList(restL, 'date', '이번 주에 남은 마감이 없습니다.')),
-      h('section', { class: 'col', 'aria-labelledby': 'col-next' },
-        h('h2', { id: 'col-next' }, '다음 주', countChip(nextL.length)),
-        h('p', { class: 'help' }, nextLabel),
-        rowList(nextL, 'date', '다음 주 마감이 없습니다.'))));
+    const g = gstate();
+    const calItems = calendarItems();
+    const stale = state.items.some((i) => i.export_stale);
+    let calBody;
+    if (g.connected) {
+      const res = g.last_result;
+      calBody = [
+        h('p', { class: 'side-line', style: 'font-size:14px' }, h('span', { class: 'mk mk-sched', 'aria-hidden': 'true' }),
+          g.pushing ? '구글 캘린더에 반영하는 중…' : '구글 캘린더에 자동으로 반영합니다'),
+        g.last_push ? h('p', { class: 'help', style: 'margin-top:4px' }, '마지막 반영 ', relEl(g.last_push), res ? ', ' + resultText(res) : '') : null,
+        g.error ? h('p', { class: 'inline-error', style: 'margin-top:4px' }, g.error) : null
+      ];
+    } else {
+      calBody = [
+        h('p', { class: 'side-line', style: 'font-size:14px' }, h('span', { class: 'mk mk-off', 'aria-hidden': 'true' }), '구글 캘린더가 연결되지 않았습니다'),
+        h('p', { class: 'help', style: 'margin-top:4px' },
+          g.available ? [h('a', { href: '#settings' }, '설정에서 연결'), '하거나 캘린더 파일을 받으세요.'] : ['캘린더 파일로 넣을 수 있습니다. ', h('a', { href: '#settings' }, '설정 보기')]),
+        stale ? h('p', { class: 'inline-error', style: 'margin-top:4px' }, '파일을 받은 뒤 바뀐 일정이 있습니다.') : null
+      ];
+    }
+    side.appendChild(h('section', { 'aria-labelledby': 'ds-cal' },
+      h('h2', { class: 'sec-h', id: 'ds-cal' }, '캘린더', h('span', { class: 'sec-n' }, '넣을 일정 ' + calItems.length + '개')), calBody));
+
+    const errs = state.report && Array.isArray(state.report.errors) ? state.report.errors.filter(Boolean) : [];
+    if (errs.length) {
+      side.appendChild(h('section', { 'aria-labelledby': 'ds-err' },
+        h('h2', { class: 'sec-h', id: 'ds-err' }, '읽지 못한 것'),
+        h('p', { class: 'help' }, '이 부분의 마감은 빠졌을 수 있습니다.'),
+        h('ul', { class: 'side-list', style: 'margin-top:6px' }, errs.map((e) => h('li', { class: 'inline-error' }, String(e))))));
+    }
+    const nodl = state.items.filter((i) => i.status === 'no_deadline').length;
+    if (nodl) {
+      side.appendChild(h('section', null, h('p', { class: 'help' }, '마감을 못 찾은 Canvas 과제 ' + nodl + '개. ', h('a', { href: '#inbox' }, '확인함에서 보기'))));
+    }
+    return side;
+  }
+  function resultText(r) {
+    return '새로 ' + num(r.created) + ', 바뀜 ' + num(r.updated) + ', 지움 ' + num(r.deleted) + ', 그대로 ' + num(r.unchanged);
+  }
+  function calendarItems() {
+    const inc = !!state.settings.include_canvas;
+    return state.items.filter((i) => i.status === 'scheduled' && i.due && (i.origin !== 'canvas' || inc));
   }
 
-  // ---------------------------------------------------------------- 학기 지도
-  function renderMap() {
-    const body = $('map-body');
+  // ---------------------------------------------------------------- 학기
+  function renderSemester() {
+    const body = $('sem-body');
     body.replaceChildren();
     const s = sem();
     const weeks = weeksList();
     if (!s || !weeks.length) {
-      $('map-sub').textContent = '';
-      body.appendChild(h('p', { class: 'empty' }, '학기 정보가 아직 없습니다. 동기화하면 학기 지도가 만들어집니다.'));
+      body.appendChild(h('p', { class: 'empty' }, '학기 정보가 아직 없습니다. 동기화하면 주차별로 정리합니다.'));
       return;
     }
     const wn = Number(s.week_now) || 0;
     const total = s.weeks_total || weeks.length;
-    const st = parseDay(s.start), en = parseDay(s.end);
-    $('map-sub').textContent = (st ? fmtDate(st) + ' 개강 · ' : '') + (en ? fmtDate(en) + ' 종강 · ' : '') + total + '주' +
-      (s.source === 'default' ? ' · 학기 날짜는 추정입니다(Canvas에 학기 정보가 없어 통상 학기로 계산했습니다)' : '');
-
     const byWeek = {};
     let outside = 0;
     for (const it of state.items) {
       if (!isActive(it)) continue;
       const w = itemWeek(it);
-      if (w === null || w < 1 || w > total) { outside++; continue; }
+      if (w === null || w < 1 || w > total) { if (it.due) outside++; continue; }
       (byWeek[w] = byWeek[w] || []).push(it);
     }
-    const cnt = (n) => (byWeek[n] || []).length;
-    const max = Math.max(1, ...weeks.map((w) => cnt(w.n)));
-
-    // 결론: 남은 주 중 가장 몰리는 주, 그 전에 여유 있는 주
-    const ended = wn > total;
-    const future = ended ? weeks : weeks.filter((w) => w.n >= Math.max(1, wn));
-    const remaining = future.reduce((a, w) => a + cnt(w.n), 0);
-    const examsLeft = future.reduce((a, w) => a + (byWeek[w.n] || []).filter((i) => i.kind === '시험').length, 0);
-    let busiest = null;
-    for (const w of future) if (cnt(w.n) && (!busiest || cnt(w.n) > busiest.c)) busiest = { n: w.n, c: cnt(w.n) };
-    let premise;
-    if (ended) premise = '종강했습니다 · 학기 전체 마감 ' + remaining + '개';
-    else if (wn === 0) premise = '개강 전 · 학기 마감 ' + remaining + '개' + (examsLeft ? ' · 시험 ' + examsLeft + '개' : '');
-    else premise = '지금 ' + wn + '주차 · 남은 ' + future.length + '주 동안 마감 ' + remaining + '개' + (examsLeft ? ' · 시험 ' + examsLeft + '개' : '');
-    const conclusion = busiest ? busiest.n + '주차가 가장 몰립니다(' + busiest.c + '개)' : '남은 주에 마감이 없습니다';
-    body.appendChild(conclude(premise, conclusion));
-    if (busiest && !ended) {
-      let light = null;
-      for (const w of future) if (w.n < busiest.n && (!light || cnt(w.n) < light.c)) light = { n: w.n, c: cnt(w.n) };
-      if (light && light.c < busiest.c) {
-        body.appendChild(h('div', { class: 'after' }, h('p', { class: 'help', style: 'margin:0' },
-          '그 앞 ' + light.n + '주차는 ' + light.c + '개라 ' + busiest.n + '주차 것을 미리 해 두기 좋습니다.')));
-      }
+    const nowN = Math.min(Math.max(wn, 1), total);
+    if (!selWeek || selWeek < 1 || selWeek > total) {
+      // 처음에는 이번 주, 이번 주가 비어 있으면 마감이 있는 다음 주를 보여 준다
+      const next = weeks.find((w) => w.n >= nowN && (byWeek[w.n] || []).length);
+      selWeek = (byWeek[nowN] || []).length || !next ? nowN : next.n;
     }
 
-    const nowN = Math.min(Math.max(wn, 1), total);
-    if (!selWeek || selWeek < 1 || selWeek > total) selWeek = nowN;
-
-    const list = h('ul', { class: 'wk-list', 'aria-label': '주차별 마감 수' }, weeks.map((w) => {
-      const c = cnt(w.n);
-      const exam = (byWeek[w.n] || []).some((i) => i.kind === '시험');
-      const ws = parseDay(w.start), we = parseDay(w.end);
-      const range = ws && we ? fmtMD(ws) + '–' + fmtMD(we) : '';
-      const pct = Math.round((c / max) * 100);
-      return h('li', null, h('button', {
-        type: 'button', class: 'wk' + (w.n === wn ? ' is-now' : '') + (w.n < wn ? ' is-past' : ''),
-        'aria-pressed': String(w.n === selWeek), 'data-key': 'wk-' + w.n,
-        'aria-label': w.n + '주차, ' + range + ', 마감 ' + c + '개' + (exam ? ', 시험 있음' : '') + (w.n === wn ? ', 이번 주' : ''),
-        on: { click: () => { selWeek = w.n; render(); } }
-      },
-        h('span', { class: 'wk-n' }, w.n + '주차'),
-        h('span', { class: 'wk-range' }, range),
-        h('span', { class: 'bar', 'aria-hidden': 'true' }, c ? h('span', { style: 'width:' + pct + '%' }) : null),
-        h('span', { class: 'wk-count' }, String(c)),
-        h('span', { class: 'wk-tags' }, exam ? chip('시험', 'accent') : null, w.n === wn ? chip('지금', 'tint') : null)));
-    }));
+    body.appendChild(h('section', { class: 'chart-wrap', 'aria-labelledby': 'chart-h' },
+      h('h2', { class: 'sec-h', id: 'chart-h' }, '주차별 마감 수', s.source === 'default' ? tag('학기 날짜 추정', 'dash') : null),
+      h('div', { class: 'chart-legend' },
+        h('span', null, h('span', { class: 'sw sw-s' }), '일정'),
+        h('span', null, h('span', { class: 'sw sw-r' }), '확인 전'),
+        h('span', null, h('span', { class: 'mk mk-sched mk-exam' }), '시험이 있는 주'),
+        h('span', null, h('span', { class: 'sw sw-now' }), '이번 주'),
+        h('span', null, '막대를 누르면 그 주 목록이 아래에 나옵니다')),
+      weekChart(weeks, byWeek, wn)));
 
     const sw = weeks.find((w) => w.n === selWeek);
     const items = (byWeek[selWeek] || []).slice().sort(byDue);
-    const detail = h('section', { class: 'map-detail', 'aria-labelledby': 'map-detail-title' });
     const sws = sw ? parseDay(sw.start) : null, swe = sw ? parseDay(sw.end) : null;
-    detail.appendChild(h('h2', { id: 'map-detail-title' }, selWeek + '주차', selWeek === wn ? chip('지금', 'tint') : null));
-    detail.appendChild(h('p', { class: 'help' }, (sws && swe ? fmtDate(sws) + ' – ' + fmtDate(swe) + ' · ' : '') + '마감 ' + items.length + '개'));
-    if (!items.length) detail.appendChild(h('p', { class: 'empty' }, '이 주에는 마감이 없습니다.'));
-    let day = '';
-    let ul = null;
-    for (const it of items) {
-      const d = parseDate(it.due);
-      const k = dayKey(d);
-      if (k !== day) {
-        day = k;
-        const diff = dayDiff(d);
-        detail.appendChild(h('h3', { class: 'day-head' }, fmtDate(d), diff === 0 ? chip('오늘', 'accent') : diff > 0 && diff <= 2 ? chip(ddayText(diff), 'tint') : null));
-        ul = h('ul', { class: 'ilist' });
-        detail.appendChild(ul);
-      }
-      ul.appendChild(itemRow(it, 'time'));
+    const left = h('section', { 'aria-labelledby': 'wk-h' },
+      h('h2', { class: 'sec-h', id: 'wk-h', style: 'margin-bottom:10px' }, selWeek + '주차' + (selWeek === wn ? ' (이번 주)' : ''),
+        h('span', { class: 'sec-n' }, (sws && swe ? fmtShort(sws) + ' – ' + fmtShort(swe) + ', ' : '') + '마감 ' + items.length + '개')),
+      dayAgenda(items, '이 주에는 마감이 없습니다.'));
+
+    // 학기 흐름: 가장 몰리는 주와 그 앞의 여유 있는 주
+    const ended = wn > total;
+    const future = ended ? [] : weeks.filter((w) => w.n >= Math.max(1, wn));
+    const cnt = (n) => (byWeek[n] || []).length;
+    const remaining = future.reduce((a, w) => a + cnt(w.n), 0);
+    let busiest = null;
+    for (const w of future) if (cnt(w.n) && (!busiest || cnt(w.n) > busiest.c)) busiest = { n: w.n, c: cnt(w.n) };
+    let light = null;
+    if (busiest) for (const w of future) if (w.n < busiest.n && (!light || cnt(w.n) < light.c)) light = { n: w.n, c: cnt(w.n) };
+    const examWeeks = weeks.filter((w) => (byWeek[w.n] || []).some((i) => i.kind === '시험'));
+    const st = parseDay(s.start), en = parseDay(s.end);
+    const notes = [];
+    if (ended) notes.push('종강했습니다.');
+    else if (wn === 0) notes.push('개강 전입니다. 학기 전체 마감 ' + weeks.reduce((a, w) => a + cnt(w.n), 0) + '개.');
+    else notes.push('지금 ' + wn + '주차. 남은 ' + future.length + '주 동안 마감 ' + remaining + '개.');
+    if (busiest) notes.push('가장 몰리는 주는 ' + busiest.n + '주차(' + busiest.c + '개)입니다.' + (light && light.c < busiest.c ? ' 그 앞 ' + light.n + '주차는 ' + light.c + '개라 미리 해 두기 좋습니다.' : ''));
+    if (examWeeks.length) notes.push('시험이 있는 주: ' + examWeeks.map((w) => w.n + '주차 (' + (byWeek[w.n] || []).filter((i) => i.kind === '시험').map((i) => courseLabel(i) + ' ' + (i.title || '')).join(', ') + ')').join(' / '));
+    if (outside) notes.push('학기 밖 날짜의 항목 ' + outside + '개는 그래프에 넣지 않았습니다.');
+    if (s.source === 'default') notes.push('Canvas에 학기 날짜가 없어 통상 학기로 추정했습니다' + (st && en ? '(' + fmtDate(st) + ' – ' + fmtDate(en) + ')' : '') + '. 주차가 실제와 다를 수 있습니다.');
+    else if (s.source === 'items') notes.push('Canvas에 학기 날짜가 없어 항목 날짜로 학기 범위를 잡았습니다.');
+    const right = h('aside', { 'aria-labelledby': 'flow-h' }, h('h2', { class: 'sec-h', id: 'flow-h' }, '학기 흐름'), h('ul', { class: 'sem-notes' }, notes.map((t) => h('li', null, t))));
+    body.appendChild(h('div', { class: 'sem-grid' }, left, right));
+  }
+
+  function weekChart(weeks, byWeek, wn) {
+    const W = Math.max(560, Math.floor($('sem-body').clientWidth || 900));
+    const H = 256;
+    const m = { l: 34, r: 6, t: 34, b: 48 };
+    const n = weeks.length;
+    const step = (W - m.l - m.r) / n;
+    const bw = Math.max(8, Math.min(30, step * 0.52));
+    const counts = weeks.map((w) => (byWeek[w.n] || []).length);
+    const max = Math.max(3, ...counts);
+    const y = (v) => m.t + (H - m.t - m.b) * (1 - v / max);
+    const svg = S('svg', { class: 'wchart', width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'group', 'aria-label': '주차별 마감 수 그래프' });
+    const tick = max <= 6 ? 1 : Math.ceil(max / 5);
+    for (let v = 0; v <= max; v += tick) {
+      svg.appendChild(S('line', { class: v === 0 ? 'base' : 'grid', x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }));
+      svg.appendChild(S('text', { x: m.l - 10, y: y(v) + 4, 'text-anchor': 'end' }, String(v)));
     }
-    const left = h('div', null, list,
-      outside ? h('p', { class: 'help', style: 'margin:14px 0 0' }, '날짜가 없거나 학기 밖인 항목 ' + outside + '개는 지도에 넣지 않았습니다.') : null);
-    body.appendChild(h('div', { class: 'map-grid' }, left, detail));
+    const sparse = step < 44;
+    weeks.forEach((w, i) => {
+      const x0 = m.l + step * i;
+      const cx = x0 + step / 2;
+      const its = byWeek[w.n] || [];
+      const sc = its.filter((it) => it.status === 'scheduled').length;
+      const rv = its.length - sc;
+      const ws = parseDay(w.start), we = parseDay(w.end);
+      const isNow = w.n === wn, isSel = w.n === selWeek;
+      const exams = its.filter((it) => it.kind === '시험');
+      const label = w.n + '주차' + (ws && we ? ', ' + fmtMD(ws) + '–' + fmtMD(we) : '') + ', 마감 ' + its.length + '개' + (rv ? '(확인 전 ' + rv + ')' : '') + (exams.length ? ', 시험 있음' : '') + (isNow ? ', 이번 주' : '');
+      const select = () => { selWeek = w.n; focusKey = 'wk-' + w.n; render(); };
+      const g = S('g', {
+        class: 'wk' + (w.n < wn ? ' is-past' : '') + (isSel ? ' is-sel' : ''), tabindex: '0', role: 'button',
+        'aria-pressed': String(isSel), 'aria-label': label, 'data-key': 'wk-' + w.n,
+        on: {
+          click: select,
+          keydown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
+            else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+              e.preventDefault();
+              const nx = Math.min(weeks.length, Math.max(1, w.n + (e.key === 'ArrowRight' ? 1 : -1)));
+              if (nx !== w.n) { selWeek = nx; focusKey = 'wk-' + nx; render(); }
+            }
+          }
+        }
+      }, S('title', null, label));
+      if (isNow) g.appendChild(S('rect', { class: 'band-now', x: x0 + 1, y: m.t - 22, width: step - 2, height: H - m.t - m.b + 22 }));
+      else if (isSel) g.appendChild(S('rect', { class: 'band-sel', x: x0 + 1, y: m.t - 22, width: step - 2, height: H - m.t - m.b + 22 }));
+      g.appendChild(S('rect', { class: 'hit', x: x0, y: 0, width: step, height: H }));
+      g.appendChild(S('rect', { class: 'wk-focus', x: x0 + 2, y: 2, width: step - 4, height: H - 4, rx: 4 }));
+      if (sc) g.appendChild(S('rect', { class: 'bar-s', x: cx - bw / 2, y: y(sc), width: bw, height: y(0) - y(sc) }));
+      if (rv) g.appendChild(S('rect', { class: 'bar-r', x: cx - bw / 2 + .75, y: y(sc + rv) + .75, width: bw - 1.5, height: Math.max(0, y(sc) - y(sc + rv) - 1.5) }));
+      let top = y(its.length);
+      if (exams.length) {
+        const ey = top - 12;
+        const r = 5.5;
+        g.appendChild(S('path', { class: 'exam' + (exams.every((e) => e.status === 'review') ? ' is-r' : ''), d: 'M' + cx + ' ' + (ey - r) + 'L' + (cx + r) + ' ' + ey + 'L' + cx + ' ' + (ey + r) + 'L' + (cx - r) + ' ' + ey + 'Z' }));
+        top = ey - r;
+      }
+      if (its.length) g.appendChild(S('text', { class: 'cnt', x: cx, y: top - 5, 'text-anchor': 'middle' }, String(its.length)));
+      if (isNow) g.appendChild(S('text', { class: 'now-label', x: cx, y: m.t - 10, 'text-anchor': 'middle' }, '이번 주'));
+      g.appendChild(S('text', { class: 'wk-n', x: cx, y: H - m.b + 18, 'text-anchor': 'middle' }, String(w.n)));
+      if (ws && (!sparse || i % 2 === 0 || isNow || isSel)) g.appendChild(S('text', { x: cx, y: H - m.b + 34, 'text-anchor': 'middle', 'font-size': '11' }, fmtMD(ws)));
+      if (isSel) g.appendChild(S('line', { class: 'sel-line', x1: cx - 10, x2: cx + 10, y1: H - 6, y2: H - 6 }));
+      svg.appendChild(g);
+    });
+    svg.appendChild(S('text', { x: m.l, y: 12, 'font-size': '11' }, '개'));
+    return svg;
   }
 
   // ---------------------------------------------------------------- 과목
   function fmtScore(x) {
     if (x === null || x === undefined || x === '' || isNaN(Number(x))) return null;
-    return (Math.round(Number(x) * 10) / 10) + '%';
+    return fmtNum(x) + '%';
   }
   function courseRows() {
     const now = nowMs();
-    const rows = state.courses.filter((c) => c && c.id !== null && c.id !== undefined).map((c) => {
-      const its = state.items.filter((i) => String(i.course_id) === String(c.id));
-      return summarize(c, its, now);
-    });
+    const rows = state.courses.filter((c) => c && c.id !== null && c.id !== undefined).map((c) =>
+      summarize(c, state.items.filter((i) => String(i.course_id) === String(c.id)), now));
     const known = new Set(state.courses.map((c) => String(c && c.id)));
     const orphan = state.items.filter((i) => isActive(i) && (i.course_id === null || i.course_id === undefined || !known.has(String(i.course_id))));
-    if (orphan.length) rows.push(summarize({ id: '__other__', short_name: '기타', name: '과목을 알 수 없는 항목' }, orphan, now));
+    if (orphan.length) rows.push(summarize({ id: '__other__', short_name: '기타' }, orphan, now));
     return rows;
   }
   function summarize(c, its, now) {
@@ -1093,37 +1514,33 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     const body = $('courses-body');
     body.replaceChildren();
     const rows = courseRows();
-    const realN = rows.filter((r) => r.c.id !== '__other__').length;
-    $('courses-sub').textContent = realN ? realN + '과목 · 점수는 Canvas가 계산한 현재 점수입니다' : '';
     if (!rows.length) { body.appendChild(h('p', { class: 'empty' }, '과목 정보가 아직 없습니다. 동기화해 주세요.')); return; }
-
-    const pastAll = rows.reduce((a, r) => a + r.past.length, 0);
     const missed = [];
     for (const r of rows) for (const i of r.past) if (!i.submitted) missed.push(i);
-    missed.sort(byDue);
-    body.appendChild(conclude(
-      realN + '과목 · 지난 과제 ' + pastAll + '개 중 미제출 ' + missed.length + '개',
-      missed.length ? '놓친 것: ' + (missed[0].title || '') + ' · ' + courseLabel(missed[0]) + (missed.length > 1 ? ' 외 ' + (missed.length - 1) + '개' : '') : '놓친 과제가 없습니다'));
-
+    if (missed.length) {
+      body.appendChild(h('p', { class: 'warn', style: 'margin-bottom:16px' }, '제출 표시가 없는 지난 과제 ' + missed.length + '개: ' +
+        missed.slice(0, 3).map((i) => courseLabel(i) + ' ' + (i.title || '')).join(', ') + (missed.length > 3 ? ' 외' : '')));
+    }
     if (!selCourse || !rows.some((r) => String(r.c.id) === selCourse)) selCourse = String(rows[0].c.id);
     const select = (id) => { selCourse = id; render(); };
-
-    const table = h('table', { class: 'cmp', style: 'margin-top:36px' },
-      h('thead', null, h('tr', null, h('th', { scope: 'col' }, '과목'), h('th', { scope: 'col' }, '다음 마감'), h('th', { scope: 'col' }, '지난 과제'), h('th', { scope: 'col' }, '현재 점수'), h('th', { scope: 'col' }, '확인 대기'))),
+    body.appendChild(h('table', { class: 'tbl' },
+      h('thead', null, h('tr', null,
+        h('th', { scope: 'col' }, '과목'), h('th', { scope: 'col' }, '다음 마감'), h('th', { scope: 'col' }, '지난 과제'),
+        h('th', { scope: 'col' }, '확인 대기'), h('th', { scope: 'col', class: 'r' }, 'Canvas 점수'))),
       h('tbody', null, rows.map((r) => {
         const id = String(r.c.id);
         const next = r.upcoming[0];
         const nd = next ? parseDate(next.due) : null;
         const score = fmtScore(r.c.current_score);
         const graded = typeof r.c.graded === 'number' && typeof r.c.assignments === 'number' ? '채점 ' + r.c.graded + '/' + r.c.assignments : null;
-        return h('tr', { class: id === selCourse ? 'is-sel' : null, on: { click: (e) => { if (!e.target.closest('a,button')) select(id); } } },
-          h('td', null, h('button', { type: 'button', class: 'cell-btn', 'aria-pressed': String(id === selCourse), 'data-key': 'crs-' + id, title: r.c.name || null, on: { click: () => select(id) } }, courseShort(r.c))),
-          h('td', { class: 'em' }, next ? [next.title || '', h('span', { class: 'cell-sub' }, whenText(nd) + (next.status === 'review' ? ' · 확인 전' : ''))] : h('span', { class: 'cell-sub' }, '없음')),
-          h('td', null, r.past.length ? ['제출 ' + r.sub + ' · ', r.unsub ? h('b', { style: 'color:var(--accent)' }, '미제출 ' + r.unsub) : '미제출 0'] : h('span', { class: 'cell-sub' }, '없음')),
-          h('td', null, score ? h('b', null, score) : h('span', { class: 'cell-sub' }, r.c.id === '__other__' ? '-' : '점수 비공개'), graded ? h('span', { class: 'cell-sub' }, graded) : null),
-          h('td', null, r.review ? h('a', { href: '#inbox' }, r.review + '개') : h('span', { class: 'cell-sub' }, '없음')));
-      })));
-    body.appendChild(table);
+        return h('tr', { class: id === selCourse ? 'is-sel' : null, on: { click: (e) => { if (!e.target.closest('a,button,input,label')) select(id); } } },
+          h('td', null, h('button', { type: 'button', class: 'cell-btn', 'aria-pressed': String(id === selCourse), 'data-key': 'crs-' + id, on: { click: () => select(id) } }, courseShort(r.c))),
+          h('td', null, next ? [h('span', { style: 'font-weight:600' }, next.title || ''), h('span', { class: 'cell-sub' }, whenText(nd) + (next.status === 'review' ? ', 확인 전' : '') + (r.upcoming.length > 1 ? ', 그 뒤 ' + (r.upcoming.length - 1) + '개' : ''))] : h('span', { class: 'cell-sub' }, '없음')),
+          h('td', null, r.past.length ? ['제출 ' + r.sub, r.unsub ? h('span', { class: 'warn' }, ', 미제출 ' + r.unsub) : ', 미제출 0'] : h('span', { class: 'cell-sub' }, '없음')),
+          h('td', null, r.review ? h('a', { href: '#inbox' }, r.review + '개') : h('span', { class: 'cell-sub' }, '없음')),
+          h('td', { class: 'r' }, score ? [h('b', null, score), h('span', { class: 'scorebar', 'aria-hidden': 'true' }, pos(h('span'), { width: Math.max(0, Math.min(100, Number(r.c.current_score))) + '%' }))] : h('span', { class: 'cell-sub' }, r.c.id === '__other__' ? '-' : '점수 비공개'),
+            graded ? h('span', { class: 'cell-sub' }, graded) : null));
+      }))));
 
     const r = rows.find((x) => String(x.c.id) === selCourse);
     if (!r) return;
@@ -1138,35 +1555,369 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       }
     }
     evs.sort((a, b) => (Date.parse(b.posted_at) || 0) - (Date.parse(a.posted_at) || 0));
-    const detail = h('section', { class: 'cdetail', 'aria-labelledby': 'cdetail-title' },
-      h('h2', { id: 'cdetail-title' }, courseShort(r.c)),
-      r.c.name && r.c.name !== courseShort(r.c) ? h('p', { class: 'help' }, r.c.name) : null,
+    body.appendChild(h('section', { class: 'cdetail', 'aria-labelledby': 'cdetail-h' },
+      h('h2', { class: 'sec-h', id: 'cdetail-h' }, courseShort(r.c)),
       h('div', { class: 'cdetail-grid' },
-        h('section', null, h('h3', null, '다음 일정'), rowList(r.upcoming, 'date', '남은 일정이 없습니다.')),
-        h('section', null, h('h3', null, '지난 과제'), rowList(r.past, 'date', '지난 과제가 없습니다.'),
-          r.nodl.length ? h('div', { style: 'margin-top:14px' }, h('p', { class: 'help', style: 'margin:0 0 6px' }, '마감이 없는 과제'),
-            h('ul', { class: 'mini-list' }, r.nodl.map((i) => {
-              const u = safeUrl(i.url);
-              return h('li', { class: 'mini mini-title' }, i.title || '', u ? [' ', h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas', icon('ext'))] : null);
-            }))) : null),
-        h('section', null, h('h3', null, '최근 근거 글'),
+        h('div', null,
+          h('section', null, h('h3', null, '다음 일정'), r.upcoming.length ? h('ul', { class: 'arows' }, r.upcoming.map((i) => agendaRow(i, true))) : h('p', { class: 'empty' }, '남은 일정이 없습니다.')),
+          h('section', { style: 'margin-top:22px' }, h('h3', null, '지난 과제'), r.past.length ? h('ul', { class: 'arows' }, r.past.map((i) => agendaRow(i, true))) : h('p', { class: 'empty' }, '지난 과제가 없습니다.'))),
+        h('section', null,
+          r.nodl.length ? h('div', { style: 'margin-bottom:22px' }, h('h3', null, '마감을 못 찾은 과제'),
+            h('ul', { class: 'mini-list' }, r.nodl.map((i) => h('li', { class: 'mini' }, h('span', { class: 'mini-title' }, i.title || ''), i.url ? [' ', extLink(i.url, 'Canvas에서 보기')] : null)))) : null,
+          h('h3', null, '최근 근거 글'),
           evs.length ? h('ul', { class: 'ev-list' }, evs.slice(0, 6).map((ev) => {
-            const u = safeUrl(ev.url);
             const d = parseDate(ev.posted_at);
             return h('li', null,
-              u ? h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, ev.source_title || '(제목 없음)') : h('b', null, ev.source_title || '(제목 없음)'),
-              h('div', { class: 'ev-meta' }, h('span', { class: 'src' }, SOURCE[ev.source_type] || '출처'), d ? h('span', null, fmtDateTime(d)) : null));
-          })) : h('p', { class: 'empty' }, '근거 글이 없습니다.'))));
-    body.appendChild(detail);
+              extLink(ev.url, ev.source_title || '(제목 없음)') || h('b', null, ev.source_title || '(제목 없음)'),
+              h('div', { class: 'ev-meta' }, h('span', null, SOURCE[ev.source_type] || '출처'), d ? h('span', null, fmtShortDT(d)) : null));
+          })) : h('p', { class: 'empty' }, '근거 글이 없습니다.')))));
+  }
+
+  // ---------------------------------------------------------------- 성적
+  const gradeList = () => (state.grades && Array.isArray(state.grades.grades) ? state.grades.grades : DEFAULT_GRADES);
+  const defaultDist = () => (state.grades && state.grades.default_dist) || {};
+  function gradeCourse(id) {
+    const G = state.grades;
+    return G && Array.isArray(G.courses) ? G.courses.find((c) => String(c.course_id) === String(id)) || null : null;
+  }
+  const str = (v) => (v === null || v === undefined ? '' : String(v));
+  const NUMF = ['weight', 'score', 'max_score', 'mean', 'sd'];
+  function draftFrom(gc) {
+    const cfg = gc.config || {};
+    const base = cfg.dist || defaultDist();
+    const dist = {};
+    for (const g of gradeList()) dist[g] = str(base[g] === undefined ? 0 : base[g]);
+    return {
+      components: (cfg.components || []).map((c) => ({ name: c.name || '', weight: str(c.weight), score: str(c.score), max_score: str(c.max_score), mean: str(c.mean), sd: str(c.sd), fixed: !!c.fixed, source: c.source || '' })),
+      custom: !!cfg.dist, dist, class_size: str(cfg.class_size), dirty: false, sig: JSON.stringify(cfg)
+    };
+  }
+  function getDraft(gc) {
+    const id = String(gc.course_id);
+    let d = gradeDrafts.get(id);
+    if (!d || (!d.dirty && d.sig !== JSON.stringify(gc.config || {}))) { d = draftFrom(gc); gradeDrafts.set(id, d); }
+    return d;
+  }
+  function toNum(v, dflt) {
+    const s = str(v).trim();
+    if (!s) return dflt === undefined ? null : dflt;
+    const n = Number(s.replace(/,/g, ''));
+    return isFinite(n) ? n : s;   // 숫자가 아니면 그대로 보내 서버가 한국어로 알려 주게
+  }
+  function weightSum(d) { return d.components.reduce((a, c) => a + (Number(toNum(c.weight, 0)) || 0), 0); }
+  function draftDist(d) {
+    const out = {};
+    for (const g of gradeList()) out[g] = Number(toNum(d.dist[g], 0)) || 0;
+    return out;
+  }
+  const distSum = (d) => Object.values(draftDist(d)).reduce((a, b) => a + b, 0);
+  const wsumText = (d) => '비중 합 ' + fmtNum(weightSum(d)) + '%';
+  const dsumText = (d) => '합 ' + fmtNum(distSum(d)) + '%';
+  function liveGrades(id) {
+    const d = gradeDrafts.get(id);
+    if (!d) return;
+    const ws = $('g-wsum'); if (ws) { ws.textContent = wsumText(d); ws.classList.toggle('warn', weightSum(d) > 100.5); }
+    const ds = $('g-dsum'); if (ds) { ds.textContent = dsumText(d); ds.classList.toggle('warn', d.custom && Math.abs(distSum(d) - 100) > 0.01); }
+    const bar = $('g-dist-bar'); if (bar) bar.replaceChildren(bandBar(d.custom ? draftDist(d) : defaultDist(), null));
+    const disc = $('g-discard'); if (disc) disc.hidden = !d.dirty;
+    const note = $('g-dirty'); if (note) note.hidden = !d.dirty;
+    const tabDirty = document.querySelector('[data-key="gtab-' + CSS.escape(id) + '"] .tab-dirty');
+    if (tabDirty) tabDirty.hidden = !d.dirty;
+  }
+  function renderGrades() {
+    const body = $('grades-body');
+    body.replaceChildren();
+    const G = state.grades;
+    if (!G || !Array.isArray(G.courses) || !G.courses.length) {
+      body.appendChild(h('p', { class: 'empty' }, '과목 정보가 아직 없습니다. 동기화하면 과목별로 성적을 넣을 수 있습니다.'));
+      return;
+    }
+    if (!selGrade || !gradeCourse(selGrade)) selGrade = String(G.courses[0].course_id);
+    const gc = gradeCourse(selGrade);
+    const d = getDraft(gc);
+    body.appendChild(h('div', { class: 'tabs', role: 'group', 'aria-label': '과목 고르기' }, G.courses.map((c) => {
+      const id = String(c.course_id);
+      const dr = gradeDrafts.get(id);
+      return h('button', { type: 'button', class: 'tab', 'aria-pressed': String(id === selGrade), 'data-key': 'gtab-' + id, on: { click: () => { selGrade = id; render(); } } },
+        c.short_name || '과목',
+        c.estimate && c.estimate.grade ? h('span', { class: 'tab-grade' }, c.estimate.grade) : null,
+        h('span', { class: 'tab-dirty', hidden: !(dr && dr.dirty) }, '저장 전'));
+    })));
+    const main = h('div', null, estimateBlock(gc, d), neededBlock(gc), editorBlock(gc, d));
+    const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G));
+    body.appendChild(h('div', { class: 'g-grid' }, main, side));
+  }
+  function estimateBlock(gc, d) {
+    const est = gc.estimate;
+    const cs = fmtScore(gc.canvas_score);
+    const sec = h('section', { class: 'g-sec', 'aria-labelledby': 'g-est-h' },
+      h('h2', { class: 'sec-h', id: 'g-est-h' }, '반에서의 위치 추정'),
+      h('p', { class: 'help' }, 'Canvas 현재 점수 ' + (cs || '비공개') + '. 아래 값은 공개된 평균·표준편차로 어림한 추정치입니다.'),
+      h('p', { id: 'g-dirty', class: 'warn', style: 'font-size:13px;margin-top:4px', hidden: !d.dirty }, '고친 내용은 저장하면 다시 계산합니다.'));
+    if (gc.error) sec.appendChild(h('p', { class: 'inline-error', style: 'margin-top:8px' }, gc.error));
+    if (!est) {
+      sec.appendChild(h('p', { class: 'empty', style: 'margin-top:10px' }, '아래 평가 항목에 내 점수·평균·표준편차를 하나 이상 넣고 저장하면, 반에서 대략 상위 몇 %인지 어림합니다.'));
+      return sec;
+    }
+    const dist = (gc.config && gc.config.dist) || defaultDist();
+    const gr = Array.isArray(est.grade_range) ? est.grade_range : [];
+    const rg = Array.isArray(est.range) ? est.range : [];
+    const size = gc.config && gc.config.class_size;
+    sec.appendChild(h('dl', { class: 'est' },
+      h('div', null, h('dt', null, '위치'), h('dd', null, '상위 ' + pct(est.top)),
+        rg.length === 2 ? h('dd', { class: 'est-s' }, Math.abs(rg[1] - rg[0]) < 0.05 ? '반영된 항목이 하나라 범위 없음' : '범위 ' + pct(rg[0]) + ' – ' + pct(rg[1])) : null),
+      h('div', null, h('dt', null, '예상 학점'), h('dd', null, est.grade || '-'), gr.length === 2 ? h('dd', { class: 'est-s' }, gr[0] === gr[1] ? '범위 안에서도 같음' : gr[0] + ' ~ ' + gr[1] + ' 사이') : null),
+      est.rank ? h('div', null, h('dt', null, '석차 어림'), h('dd', null, est.rank + '등'), h('dd', { class: 'est-s' }, size ? size + '명 중' : '')) : null,
+      h('div', null, h('dt', null, '반영된 비중'), h('dd', null, fmtNum(est.completed_weight) + '%'), h('dd', { class: 'est-s' }, '점수가 있는 항목만'))));
+    sec.appendChild(bandBar(dist, est));
+    sec.appendChild(h('ul', { class: 'notes-list', 'aria-label': '추정의 단서' }, (est.notes || []).map((n) => h('li', null, String(n)))));
+    return sec;
+  }
+  function bandBar(dist, est) {
+    const bands = [];
+    let acc = 0;
+    for (const g of gradeList()) {
+      const v = Number(dist && dist[g]) || 0;
+      if (v <= 0) continue;
+      bands.push({ g, a: acc, b: Math.min(100, acc + v) });
+      acc += v;
+    }
+    const desc = bands.map((b) => b.g + ' ' + fmtNum(b.a) + '–' + fmtNum(b.b) + '%').join(', ');
+    const bar = h('div', { class: 'bands' + (est ? '' : ' no-you'), role: 'img', 'aria-label': (est ? '내 위치 상위 ' + pct(est.top) + '. ' : '') + '학점 구간: ' + desc });
+    for (const b of bands) {
+      bar.appendChild(pos(h('div', { class: 'band' + (est && est.grade === b.g ? ' is-mine' : ''), title: b.g + ' 상위 ' + fmtNum(b.a) + '–' + fmtNum(b.b) + '%' }, b.b - b.a >= 3 ? b.g : ''), { left: b.a + '%', width: (b.b - b.a) + '%' }));
+      if (b.a > 0) bar.appendChild(pos(h('span', { class: 'band-cut' }, fmtNum(b.a)), { left: b.a + '%' }));
+    }
+    if (est && isFinite(Number(est.top))) {
+      const rg = Array.isArray(est.range) ? est.range.map(Number) : [];
+      if (rg.length === 2 && isFinite(rg[0]) && isFinite(rg[1])) bar.appendChild(pos(h('span', { class: 'range' }), { left: Math.min(rg[0], rg[1]) + '%', width: Math.max(0.6, Math.abs(rg[1] - rg[0])) + '%' }));
+      const t = Math.max(0, Math.min(100, Number(est.top)));
+      bar.appendChild(pos(h('span', { class: 'you' + (t > 70 ? ' to-left' : '') }, h('span', null, '내 위치 상위 ' + pct(est.top))), { left: t + '%' }));
+    }
+    return h('div', { class: 'bands-wrap' }, bar, h('div', { class: 'bands-axis', 'aria-hidden': 'true' }, h('span', null, '상위 0% (가장 잘함)'), h('span', null, '100%')));
+  }
+  function neededBlock(gc) {
+    if (!gc.estimate) return null;
+    const list = Array.isArray(gc.needed) ? gc.needed : [];
+    const comps = (gc.config && gc.config.components) || [];
+    const maxOf = (name) => { const c = comps.find((x) => x.name === name); return c && c.max_score ? c.max_score : 100; };
+    const sec = h('section', { class: 'g-sec', 'aria-labelledby': 'g-need-h' }, h('h2', { class: 'sec-h', id: 'g-need-h' }, '남은 평가에서 필요한 점수'));
+    if (!list.length) { sec.appendChild(h('p', { class: 'empty' }, '점수를 아직 넣지 않은 평가가 없습니다.')); return sec; }
+    const byComp = [];
+    for (const n of list) {
+      let g = byComp.find((x) => x.name === n.component);
+      if (!g) { g = { name: n.component, rows: [] }; byComp.push(g); }
+      g.rows.push(n);
+    }
+    sec.appendChild(h('ul', { class: 'need' }, byComp.map((g) => h('li', null,
+      h('div', { class: 'need-c' }, g.name),
+      h('div', { class: 'need-t' }, g.rows.map((n) => {
+        let line;
+        if (n.error) line = [n.target + ' 이상: ', h('span', { class: 'inline-error' }, n.error)];
+        else if (n.already) line = [n.target + ' 이상: 0점이어도 계산상 넘습니다'];
+        else if (!n.possible) line = [n.target + ' 이상: 만점을 받아도 어렵습니다'];
+        else line = [n.target + ' 이상: 약 ', h('b', null, fmtNum(n.need_score) + '/' + fmtNum(maxOf(g.name)) + '점'), ' (그 시험에서 상위 ' + pct(n.need_top) + ')'];
+        return h('div', null, h('p', { class: 'need-line' }, line),
+          Array.isArray(n.notes) && n.notes.length ? h('details', { class: 'why' }, h('summary', null, '계산 근거'), h('ul', null, n.notes.map((t) => h('li', null, String(t))))) : null);
+      }))))));
+    return sec;
+  }
+  function editorBlock(gc, d) {
+    const id = String(gc.course_id);
+    const key = (i, f) => 'g-' + id + '-' + i + '-' + f;
+    const estRows = !d.dirty && gc.estimate && Array.isArray(gc.estimate.components) ? gc.estimate.components : [];
+    const rowStatus = (c) => {
+      const r = estRows.find((x) => x.name === c.name);
+      if (!r) return null;
+      if (r.status === 'known' && r.top !== null && r.top !== undefined) return '이 항목만 보면 상위 ' + pct(r.top);
+      if (r.status === 'fixed') return '순위 계산에서 뺌';
+      if (r.status === 'missing') return '점수·평균·표준편차가 다 있어야 반영';
+      return null;
+    };
+    const input = (c, i, field, label, extra) => h('input', Object.assign({
+      type: 'text', class: 'gin' + (field === 'name' ? '' : ' r'), value: c[field], autocomplete: 'off', spellcheck: 'false',
+      inputmode: field === 'name' ? null : 'decimal', 'aria-label': (c.name || (i + 1) + '번째 항목') + ' ' + label, 'data-key': key(i, field),
+      on: { input: (e) => { c[field] = e.target.value; d.dirty = true; liveGrades(id); } }
+    }, extra || {}));
+    const rows = d.components.map((c, i) => h('tr', null,
+      h('td', null, input(c, i, 'name', '이름', { maxlength: '40', placeholder: '예) 중간고사' }),
+        c.source ? h('span', { class: 'g-src' }, '출처: ' + c.source) : null,
+        rowStatus(c) ? h('span', { class: 'g-src' }, rowStatus(c)) : null),
+      h('td', null, input(c, i, 'weight', '비중(%)')),
+      h('td', null, input(c, i, 'score', '내 점수')),
+      h('td', null, input(c, i, 'max_score', '만점', { placeholder: '100' })),
+      h('td', null, input(c, i, 'mean', '평균')),
+      h('td', null, input(c, i, 'sd', '표준편차')),
+      h('td', { class: 'c' }, h('input', { type: 'checkbox', checked: c.fixed, 'data-key': key(i, 'fixed'), 'aria-label': (c.name || '항목') + ' 순위 계산에서 빼기',
+        on: { change: (e) => { c.fixed = e.target.checked; d.dirty = true; liveGrades(id); } } })),
+      h('td', { class: 'c' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': (c.name || '항목') + ' 지우기', 'data-key': key(i, 'del'),
+        on: { click: () => { d.components.splice(i, 1); d.dirty = true; focusKey = 'g-add-' + id; render(); } } }, icon('trash')))));
+    const msg = gradeMsg.get(id);
+    const over = weightSum(d) > 100.5;
+    const badDist = d.custom && Math.abs(distSum(d) - 100) > 0.01;
+    return h('section', { class: 'g-sec', 'aria-labelledby': 'g-ed-h' },
+      h('h2', { class: 'sec-h', id: 'g-ed-h' }, '평가 항목', h('span', { class: 'sec-n' + (over ? ' warn' : ''), id: 'g-wsum' }, wsumText(d))),
+      h('p', { class: 'help' }, '강의계획서의 평가 비중과 공개된 평균·표준편차를 넣으세요. 모르는 칸은 비워 두면 계산에서 뺍니다. 출석처럼 모두 비슷하게 받는 항목은 ‘순위 제외’를 켜세요.'),
+      h('table', { class: 'gtable' },
+        h('thead', null, h('tr', null,
+          h('th', { scope: 'col' }, '항목'), h('th', { scope: 'col', class: 'w-num r' }, '비중 %'), h('th', { scope: 'col', class: 'w-num r' }, '내 점수'),
+          h('th', { scope: 'col', class: 'w-num r' }, '만점'), h('th', { scope: 'col', class: 'w-num r' }, '평균'), h('th', { scope: 'col', class: 'w-num r' }, '표준편차'),
+          h('th', { scope: 'col', class: 'w-fix' }, '순위 제외'), h('th', { scope: 'col', class: 'w-del' }, h('span', { style: 'position:absolute;left:-9999px' }, '지우기')))),
+        h('tbody', null, rows.length ? rows : h('tr', { class: 'g-empty' }, h('td', { colspan: '8' }, '아직 항목이 없습니다. 항목 추가를 누르거나 오른쪽 점수 후보에서 넣으세요.')))),
+      h('div', { class: 'g-row-actions' },
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'g-add-' + id, on: { click: () => {
+          d.components.push({ name: '', weight: '', score: '', max_score: '', mean: '', sd: '', fixed: false, source: '' });
+          d.dirty = true; focusKey = key(d.components.length - 1, 'name'); render();
+        } } }, icon('plus'), '항목 추가')),
+      h('div', { class: 'g-block' },
+        h('h3', { class: 'sub-h' }, '학점 비율', h('span', { class: 'sec-n' + (badDist ? ' warn' : ''), id: 'g-dsum' }, dsumText(d))),
+        h('label', { class: 'check-line' },
+          h('input', { type: 'checkbox', checked: d.custom, 'data-key': 'g-custom-' + id, on: { change: (e) => {
+            d.custom = e.target.checked;
+            if (!d.custom) { const base = defaultDist(); for (const g of gradeList()) d.dist[g] = str(base[g] === undefined ? 0 : base[g]); }
+            d.dirty = true; focusKey = 'g-custom-' + id; render();
+          } } }),
+          h('span', null, '강의계획서의 학점 비율 직접 넣기')),
+        h('p', { class: 'help', style: 'margin-top:4px' }, d.custom ? '합이 100이 되게 넣으세요. D+·D0을 0으로 두면 결과에서 건너뜁니다.' : '지금은 기본 비율을 씁니다. D+·D0은 0%라 결과로 나오지 않습니다.'),
+        h('div', { class: 'dist' }, gradeList().map((g) => h('label', null, h('span', null, g),
+          h('input', { type: 'text', inputmode: 'decimal', class: 'gin', value: d.dist[g], disabled: !d.custom, 'data-key': 'g-d-' + id + '-' + g, 'aria-label': g + ' 비율(%)',
+            on: { input: (e) => { d.dist[g] = e.target.value; d.dirty = true; liveGrades(id); } } })))),
+        h('div', { id: 'g-dist-bar' }, bandBar(d.custom ? draftDist(d) : defaultDist(), null))),
+      h('div', { class: 'g-block' },
+        h('h3', { class: 'sub-h' }, '수강 인원'),
+        h('div', { class: 'size-row' },
+          h('input', { type: 'text', inputmode: 'numeric', class: 'gin r', value: d.class_size, 'aria-label': '수강 인원', 'data-key': 'g-size-' + id, placeholder: '예) 48',
+            on: { input: (e) => { d.class_size = e.target.value; d.dirty = true; liveGrades(id); } } }),
+          h('span', { class: 'help' }, '명. 석차를 어림할 때만 씁니다.'))),
+      h('div', { class: 'g-save' },
+        h('button', { type: 'button', class: 'btn btn-primary', 'data-key': 'g-save-' + id, on: { click: (e) => saveGrades(id, e.currentTarget) } }, '저장하고 다시 계산'),
+        h('button', { type: 'button', class: 'btn btn-quiet', id: 'g-discard', hidden: !d.dirty, on: { click: () => { gradeDrafts.delete(id); gradeMsg.delete(id); render(); } } }, '고치기 전으로'),
+        msg ? h('p', { class: msg.error ? 'inline-error' : 'ok-msg', role: msg.error ? 'alert' : 'status' }, msg.error || msg.ok) : null));
+  }
+  function saveGrades(id, btn) {
+    const gc = gradeCourse(id);
+    const d = gradeDrafts.get(id);
+    if (!gc || !d) return;
+    const comps = [];
+    for (const c of d.components) {
+      const blank = !c.name.trim() && NUMF.every((k) => !str(c[k]).trim());
+      if (blank) continue;
+      if (!c.name.trim()) { gradeMsg.set(id, { error: '이름이 빈 평가 항목이 있습니다. 이름을 넣거나 그 줄을 지우세요.' }); render(); return; }
+      comps.push({ name: c.name.trim(), weight: toNum(c.weight, 0), score: toNum(c.score), max_score: toNum(c.max_score), mean: toNum(c.mean), sd: toNum(c.sd), fixed: !!c.fixed, source: c.source || null });
+    }
+    let dist = null;
+    if (d.custom) { dist = {}; for (const g of gradeList()) dist[g] = toNum(d.dist[g], 0); }
+    const body = { components: comps, dist, class_size: toNum(d.class_size) };
+    btn.disabled = true;
+    btn.replaceChildren(h('span', { class: 'spin', 'aria-hidden': 'true' }), '저장하는 중…');
+    post('/api/grades/' + encodeURIComponent(id), body).then((s) => {
+      gradeDrafts.delete(id);
+      const after = s.grades && Array.isArray(s.grades.courses) ? s.grades.courses.find((c) => String(c.course_id) === id) : null;
+      gradeMsg.set(id, { ok: after && after.estimate ? '저장했습니다. 위의 추정을 다시 계산했습니다.' : '저장했습니다.' });
+      focusKey = 'g-save-' + id;
+      applyState(s);
+      toast('성적 설정을 저장했습니다: ' + (gc.short_name || ''));
+    }, (err) => {
+      gradeMsg.set(id, { error: err.message });
+      focusKey = 'g-save-' + id;
+      render();
+    });
+  }
+  function prioritiesBlock(G) {
+    const pr = Array.isArray(G.priorities) ? G.priorities : [];
+    return h('section', { class: 'g-sec', 'aria-labelledby': 'g-prio-h' },
+      h('h2', { class: 'sec-h', id: 'g-prio-h' }, '어느 과목부터 공부할까'),
+      pr.length
+        ? h('ol', { class: 'prio' }, pr.map((p) => h('li', null, h('span', { class: 'prio-c' }, p.course || ''), p.grade ? tag(p.grade, 'quiet') : null, h('span', { class: 'prio-r' }, p.reason || ''))))
+        : h('p', { class: 'empty' }, '점수를 넣어 위치를 추정한 과목이 생기면, 학점 경계에 가깝고 남은 비중이 큰 과목부터 순서를 보여 줍니다.'));
+  }
+  function candidatesBlock(G) {
+    const cands = (Array.isArray(G.candidates) ? G.candidates : []).slice();
+    cands.sort((a, b) => (String(b.course_id) === selGrade) - (String(a.course_id) === selGrade));
+    const valsOf = (c) => [['점수', c.score, c.max_score ? '/' + fmtNum(c.max_score) : ''], ['평균', c.mean], ['표준편차', c.sd], ['최고', c.high], ['최저', c.low]]
+      .filter((v) => v[1] !== null && v[1] !== undefined).map((v) => h('span', null, v[0] + ' ', h('b', null, fmtNum(v[1]) + (v[2] || ''))));
+    return h('section', { class: 'g-sec', 'aria-labelledby': 'g-cand-h' },
+      h('h2', { class: 'sec-h', id: 'g-cand-h' }, '점수 후보', h('span', { class: 'sec-n' }, cands.length + '개')),
+      h('p', { class: 'help' }, '공지·메시지에서 찾은 점수 문장입니다. 맞으면 항목에 넣은 뒤 확인하고 저장하세요. 저절로 넣지 않습니다.'),
+      cands.length ? cands.map((c, i) => {
+        const d = parseDate(c.posted_at);
+        return h('div', { class: 'cand' },
+          h('div', { class: 'side-meta' }, h('span', { style: 'font-weight:600;color:var(--ink)' }, c.course_short || '과목 미상'),
+            h('span', null, (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’'), d ? h('span', null, fmtShort(d)) : null,
+            c.url ? extLink(c.url, '원문') : null),
+          h('blockquote', null, c.sentence || ''),
+          h('div', { class: 'vals' }, c.label ? h('span', null, '항목 ', h('b', null, c.label)) : null, valsOf(c)),
+          Array.isArray(c.notes) && c.notes.length ? h('ul', { class: 'notes-list', style: 'margin-top:6px' }, c.notes.map((n) => h('li', null, String(n)))) : null,
+          h('div', { style: 'margin-top:8px' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'cand-' + i, on: { click: () => applyCandidate(c) } }, '항목에 넣기')));
+      }) : h('p', { class: 'empty', style: 'margin-top:8px' }, '아직 찾은 점수 문장이 없습니다.'));
+  }
+  function applyCandidate(c) {
+    const target = c.course_id && gradeCourse(c.course_id) ? String(c.course_id) : selGrade;
+    const gc = target ? gradeCourse(target) : null;
+    if (!gc) return;
+    selGrade = target;
+    const d = getDraft(gc);
+    const label = String(c.label || '').trim();
+    let idx = label ? d.components.findIndex((x) => x.name.trim() === label) : -1;
+    if (idx < 0) {
+      d.components.push({ name: label || '새 항목', weight: '', score: '', max_score: '', mean: '', sd: '', fixed: false, source: '' });
+      idx = d.components.length - 1;
+    }
+    const row = d.components[idx];
+    for (const k of ['score', 'max_score', 'mean', 'sd']) if (c[k] !== null && c[k] !== undefined) row[k] = String(c[k]);
+    row.source = (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’';
+    d.dirty = true;
+    gradeMsg.delete(target);
+    focusKey = 'g-' + target + '-' + idx + '-' + (row.weight ? 'score' : 'weight');
+    render();
+    toast('‘' + row.name + '’ 칸을 채웠습니다. ' + (row.weight ? '' : '비중을 넣고 ') + '확인한 뒤 저장하세요.');
   }
 
   // ---------------------------------------------------------------- 확인함
+  function srcLine(ev) {
+    const d = parseDate(ev.posted_at);
+    return h('div', { class: 'src-line' },
+      h('span', { class: 'src-type' }, SOURCE[ev.source_type] || '출처'),
+      ev.source_title ? h('span', null, '‘' + ev.source_title + '’') : null,
+      d ? h('span', { class: 'src-meta' }, fmtShortDT(d)) : null,
+      ev.url ? extLink(ev.url, '원문 보기') : null);
+  }
+  function calendarStep(it) {
+    const g = gstate();
+    const synced = parseDate(it.gcal_synced_at);
+    if (synced) {
+      return { k: '구글 캘린더', done: true, v: [fmtShortDT(synced) + ' 반영됨', it.gcal_link ? [' ', extLink(it.gcal_link, '구글 캘린더에서 열기')] : null] };
+    }
+    const ex = parseDate(it.exported_at);
+    if (ex) {
+      return { k: '캘린더 파일', done: !it.export_stale, wait: !!it.export_stale, v: [fmtShortDT(ex) + '에 받은 파일에 들어 있음', it.export_stale ? [' ', tag('다시 받기 필요', 'accent')] : null] };
+    }
+    if (it.status === 'scheduled') {
+      return { k: '캘린더', wait: true, v: g.connected ? (g.pushing ? '구글 캘린더에 반영하는 중…' : '다음 반영 때 구글 캘린더에 들어갑니다') : '아직 캘린더에 없습니다. 설정에서 구글을 연결하거나 파일을 받으세요.' };
+    }
+    return { k: '캘린더', wait: true, v: g.connected ? '승인하면 구글 캘린더에 자동으로 들어갑니다' : '승인하면 캘린더 파일에 들어갑니다' };
+  }
+  function evidenceChain(it) {
+    const ev = Array.isArray(it.evidence) ? it.evidence : [];
+    const quotes = ev.filter((e) => e.text);
+    const notes = Array.isArray(it.notes) ? it.notes : [];
+    const dec = parseDate(it.decided_at);
+    const seen = parseDate(it.first_seen);
+    const steps = [
+      { k: '출처 글', done: ev.length > 0, v: ev.length ? [ev.map(srcLine), seen ? h('div', { class: 'src-meta' }, fmtShortDT(seen) + ' 확인 때 처음 찾음') : null] : '저장된 출처가 없습니다' },
+      { k: '찾은 문장', done: quotes.length > 0, v: quotes.length ? quotes.map((e) => h('blockquote', null, e.text)) : '문장이 저장되지 않았습니다' },
+      { k: '추정', done: true, v: notes.length ? h('ul', null, notes.map((n) => h('li', null, String(n)))) : '글에 적힌 날짜·시간 그대로입니다' },
+      { k: '승인', done: it.decision === 'approved', wait: it.decision !== 'approved', v: it.decision === 'approved' ? (dec ? fmtShortDT(dec) + ' 일정에 넣음' : '일정에 넣음') : it.decision === 'rejected' ? (dec ? fmtShortDT(dec) + ' 제외함' : '제외함') : '아직 정하지 않았습니다' },
+      calendarStep(it)
+    ];
+    return h('ol', { class: 'chain', 'aria-label': '근거 사슬' }, steps.map((s) => h('li', { class: s.done ? 'is-done' : s.wait ? 'is-wait' : null },
+      h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { class: 'chain-k' }, s.k), h('div', { class: 'chain-v' }, s.v))));
+  }
   function reviewCard(it) {
     const busy = busyItems.has(it.id);
     const card = h('article', {
-      class: 'card review-card' + (it.confidence === 'low' ? ' is-low' : '') + (it.conflict ? ' has-conflict' : '') + (busy ? ' is-busy' : ''),
-      id: 'item-' + it.id, 'data-item': it.id, 'aria-busy': busy ? 'true' : null,
-      'aria-label': courseLabel(it) + ' ' + (it.title || '')
+      class: 'rcard' + (it.confidence === 'low' ? ' is-low' : '') + (it.conflict ? ' has-conflict' : '') + (busy ? ' is-busy' : ''),
+      id: 'item-' + it.id, 'data-item': it.id, 'aria-busy': busy ? 'true' : null, 'aria-label': courseLabel(it) + ' ' + (it.title || '')
     });
     // 긴 제목도 잘리지 않게 한 줄짜리 textarea를 내용 높이에 맞춘다(Enter는 저장)
     const titleIn = h('textarea', { class: 'title-input', rows: '1', value: it.title || '', maxlength: '200', autocomplete: 'off', spellcheck: 'false', 'aria-label': '제목', 'data-key': 'title-' + it.id });
@@ -1177,13 +1928,13 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     const dueIn = h('input', { type: 'datetime-local', class: 'due-input', value: toInput(it.due), 'aria-label': '마감 날짜와 시간', 'data-key': 'due-' + it.id });
     const dday = h('span', { class: 'dday' });
     const wday = h('span', { class: 'weekday' });
-    const wk = h('span', { class: 'help', style: 'margin:0' });
+    const wk = h('span', { class: 'help' });
     const syncDue = () => {
       const d = fromInput(dueIn.value);
       if (d) {
         const diff = dayDiff(d);
         dday.textContent = ddayText(diff);
-        dday.className = 'dday ' + urgency(diff);
+        dday.className = 'dday' + (diff < 0 ? ' past' : diff <= 2 ? ' soon' : '');
         wday.textContent = WD[d.getDay()] + '요일';
         const n = weekOfDate(d);
         wk.textContent = n ? n + '주차' : '';
@@ -1219,33 +1970,45 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     });
 
     const linked = it.linked_to ? findItem(it.linked_to) : null;
-    const linkedUrl = linked ? safeUrl(linked.url) : null;
-    const notes = Array.isArray(it.notes) ? it.notes : [];
-    const approve = h('button', { type: 'button', class: 'btn btn-primary', 'data-decision': 'approved', 'data-key': 'approve-' + it.id, 'aria-disabled': busy ? 'true' : null,
-      on: { click: (e) => decide(it, 'approved', card, e) } }, '일정에 넣기');
-    const reject = h('button', { type: 'button', class: 'btn btn-secondary', 'data-decision': 'rejected', 'data-key': 'reject-' + it.id, 'aria-disabled': busy ? 'true' : null,
-      on: { click: (e) => decide(it, 'rejected', card, e) } }, '아님');
-
+    const sib = it.conflict ? siblings(it) : [];
     add(card, [
-      h('div', { class: 'card-top' }, h('span', { class: 'course', title: it.course_name || null }, courseLabel(it)), examChip(it), confChip(it.confidence)),
+      h('div', { class: 'rc-top' },
+        h('span', { class: 'rc-course' }, courseLabel(it)),
+        isNew(it) ? tag('새로', 'new', '마지막 확인에서 처음 찾았습니다') : null,
+        examTag(it), confTag(it.confidence)),
       titleIn,
       h('div', { class: 'due-row' }, dday, dueIn, wday, wk),
-      it.conflict ? conflictBox(it) : null,
-      h('div', { class: 'badges' }, methodChip(it),
-        it.edited ? chip('직접 고침', 'plain') : null,
-        it.edited ? h('button', { type: 'button', class: 'linkish', on: { click: () => itemPost(it, { title: null, due: null }, '원래 값으로 되돌렸습니다') } }, '원래대로') : null),
-      linked ? h('p', { class: 'linked' }, 'Canvas 과제 ', h('b', null, '“' + (linked.title || '') + '”'),
+      h('div', { class: 'badges' }, methodTag(it, true),
+        it.edited ? tag('직접 고침', 'quiet') : null,
+        it.edited ? h('button', { type: 'button', class: 'linkish', style: 'font-size:13px', on: { click: () => itemPost(it, { title: null, due: null }, '원래 값으로 되돌렸습니다') } }, '원래대로') : null),
+      it.conflict ? h('div', { class: 'conflict', role: 'note' },
+        h('strong', null, '마감이 서로 다르게 적혀 있습니다'),
+        h('p', null, it.conflict),
+        sib.length ? h('p', { style: 'margin-top:4px' }, '다른 후보: ', sib.map((b, i) => {
+          const d = parseDate(b.due);
+          return [i ? ', ' : '', h('a', { href: '#item-' + b.id, on: { click: (e) => { e.preventDefault(); jumpTo(b.id); } } }, (d ? fmtShortDT(d) : '날짜 없음') + (b.status === 'scheduled' ? ' (일정에 넣음)' : ''))];
+        })) : null) : null,
+      linked ? h('p', { class: 'linked' }, 'Canvas 과제 ', h('b', null, '‘' + (linked.title || '') + '’'),
         linked.due ? '의 마감으로 보입니다.' : '의 마감으로 보입니다. Canvas에는 마감이 비어 있습니다.',
-        linkedUrl ? [' ', h('a', { href: linkedUrl, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas에서 보기')] : null) : null,
-      it.confidence === 'low' ? h('p', { class: 'low-hint' }, '확실하지 않은 후보입니다. 아래 근거를 직접 읽고 날짜가 맞는지 확인하세요.') : null,
-      notes.length ? h('ul', { class: 'notes' }, notes.map((n) => h('li', null, n))) : null,
-      evidenceList(it),
+        linked.url ? [' ', extLink(linked.url, 'Canvas에서 보기')] : null) : null,
+      it.confidence === 'low' ? h('p', { class: 'low-hint' }, '확실하지 않은 후보입니다. 아래 문장을 직접 읽고 날짜가 맞는지 확인하세요.') : null,
+      evidenceChain(it),
       errLine(it),
-      h('div', { class: 'actions' }, approve, reject)
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn btn-primary', 'data-decision': 'approved', 'data-key': 'approve-' + it.id, 'aria-disabled': busy ? 'true' : null, on: { click: (e) => decide(it, 'approved', card, e) } }, '일정에 넣기'),
+        h('button', { type: 'button', class: 'btn btn-line', 'data-decision': 'rejected', 'data-key': 'reject-' + it.id, 'aria-disabled': busy ? 'true' : null, on: { click: (e) => decide(it, 'rejected', card, e) } }, '마감 아님'))
     ]);
     return card;
   }
-
+  function miniChain(it) {
+    const seen = parseDate(it.first_seen);
+    const dec = parseDate(it.decided_at);
+    const cal = calendarStep(it);
+    return h('div', { class: 'mini-chain', 'aria-label': '근거 사슬' },
+      h('span', null, h('i', { 'aria-hidden': 'true' }), '찾음' + (seen ? ' ' + fmtShortDT(seen) : '')),
+      h('span', null, h('i', { 'aria-hidden': 'true' }), '승인' + (dec ? ' ' + fmtShortDT(dec) : '')),
+      h('span', null, h('i', { class: cal.done ? null : 'wait', 'aria-hidden': 'true' }), cal.k + ': ', cal.v));
+  }
   function renderInbox() {
     const now = nowMs();
     const up = [], past = [];
@@ -1256,36 +2019,51 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     }
     up.sort(byDue);
     past.sort((a, b) => byDue(b, a));
-    $('inbox-count').textContent = String(up.length + past.length);
     const list = $('review-list');
     list.replaceChildren();
-    if (!up.length) list.appendChild(h('p', { class: 'empty' }, state.report ? '지금 확인할 마감이 없습니다.' : '동기화하면 공지·메시지에서 찾은 마감이 여기에 나옵니다.'));
+    if (!up.length) list.appendChild(h('p', { class: 'empty' }, state.report ? '지금 확인할 마감이 없습니다. 새 글이 오면 여기에 올라옵니다.' : '동기화하면 공지·메시지에서 찾은 마감이 여기에 나옵니다.'));
     for (const it of up) list.appendChild(reviewCard(it));
     const pb = $('review-past');
     pb.replaceChildren();
     if (past.length) {
-      pb.appendChild(group('review-past', ['지난 후보', countChip(past.length)], [
-        h('p', { class: 'help', style: 'margin:0' }, '적힌 마감이 이미 지난 후보입니다. 날짜를 잘못 읽었을 수도 있으니 필요하면 고쳐서 넣으세요.'),
-        past.map(reviewCard)
+      pb.appendChild(group('review-past', ['지난 후보', h('span', { class: 'sec-n' }, past.length + '개')], [
+        h('p', { class: 'help' }, '적힌 마감이 이미 지난 후보입니다. 날짜를 잘못 읽었을 수도 있으니 필요하면 고쳐서 넣으세요.'),
+        h('div', { class: 'rlist' }, past.map(reviewCard))
       ]));
     }
 
-    // 마감을 못 찾은 과제(찾은 후보와 연결된 것은 그 카드에서 보여 주므로 뺀다)
+    // 일정에 넣은 찾은 마감: 등록됐다는 근거를 줄마다 보여 준다
+    const done = state.items.filter((i) => i.origin === 'found' && i.status === 'scheduled').sort(byDue);
+    const ab = $('approved-box');
+    ab.replaceChildren();
+    if (done.length) {
+      ab.appendChild(h('section', { style: 'margin-top:32px', 'aria-labelledby': 'done-h' },
+        h('h2', { class: 'sec-h', id: 'done-h' }, '일정에 넣은 마감', h('span', { class: 'sec-n' }, done.length + '개')),
+        h('p', { class: 'help' }, '찾은 곳부터 캘린더에 들어갔는지까지의 기록입니다.'),
+        h('ul', { class: 'done-list' }, done.map((it) => {
+          const d = parseDate(it.due);
+          return h('li', { class: 'done-row', id: 'item-' + it.id, 'data-item': it.id },
+            h('div', null, h('div', { class: 'side-title' }, it.title || ''),
+              h('div', { class: 'side-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null, methodTag(it, false))),
+            h('div', null, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'undo-' + it.id,
+              on: { click: () => itemPost(it, { decision: 'pending' }, '확인함으로 되돌렸습니다: ' + (it.title || '')) } }, '확인 전으로')),
+            miniChain(it),
+            errLine(it));
+        }))));
+    }
+
     const linked = new Set(state.items.filter((i) => i.linked_to && isActive(i)).map((i) => i.linked_to));
     const nd = state.items.filter((i) => i.status === 'no_deadline' && !linked.has(i.id));
     const nb = $('nodl-box');
     nb.replaceChildren();
     if (nd.length) {
-      nb.appendChild(h('section', { 'aria-labelledby': 'nodl-title' },
-        h('h2', { id: 'nodl-title' }, '마감을 못 찾은 과제', countChip(nd.length)),
-        h('p', { class: 'help' }, 'Canvas에 마감이 없고 공지·메시지에서도 근거를 못 찾았습니다. 직접 확인하세요.'),
-        h('ul', { class: 'mini-list' }, nd.map((it) => {
-          const u = safeUrl(it.url);
-          return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
-            h('div', { class: 'mini-meta' }, courseLabel(it)),
-            h('div', { class: 'mini-title' }, it.title || ''),
-            u ? h('div', { class: 'mini-actions' }, h('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, 'Canvas에서 보기', icon('ext'))) : null);
-        }))));
+      nb.appendChild(h('section', { 'aria-labelledby': 'nodl-h' },
+        h('h2', { class: 'sec-h', id: 'nodl-h' }, '마감을 못 찾은 과제', h('span', { class: 'sec-n' }, nd.length + '개')),
+        h('p', { class: 'help', style: 'margin-bottom:8px' }, 'Canvas에 마감이 없고 공지·메시지에서도 근거를 못 찾았습니다. 직접 확인하세요.'),
+        h('ul', { class: 'mini-list' }, nd.map((it) => h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
+          h('div', { class: 'mini-meta' }, courseLabel(it)),
+          h('div', { class: 'mini-title' }, it.title || ''),
+          it.url ? h('div', { class: 'mini-actions' }, extLink(it.url, 'Canvas에서 보기')) : null)))));
     }
 
     const dupes = state.items.filter((i) => i.status === 'duplicate').sort(byDue);
@@ -1294,42 +2072,40 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     box.replaceChildren();
     const inc = !!state.settings.include_canvas;
     if (dupes.length) {
-      box.appendChild(group('dupes', ['Canvas와 겹친 항목', countChip(dupes.length)], [
-        h('p', { class: 'help', style: 'margin:0' }, 'Canvas 과제와 같은 마감이라 따로 넣지 않았습니다.' +
-          (inc ? '' : ' 지금은 Canvas 과제를 파일에서 빼 두어서 이 마감은 캘린더에 들어가지 않습니다. 필요하면 ‘따로 넣기’를 누르세요.')),
+      box.appendChild(group('dupes', ['Canvas와 겹친 항목', h('span', { class: 'sec-n' }, dupes.length + '개')], [
+        h('p', { class: 'help' }, 'Canvas 과제와 같은 마감이라 따로 넣지 않았습니다.' + (inc ? '' : ' 지금은 Canvas 과제를 캘린더에서 빼 두어서 이 마감은 들어가지 않습니다. 필요하면 ‘따로 넣기’를 누르세요.')),
         h('ul', { class: 'mini-list' }, dupes.map((it) => {
           const c = it.duplicate_of ? findItem(it.duplicate_of) : null;
           const d = parseDate(it.due);
-          const cd = c ? parseDate(c.due) : null;
           return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
             h('div', { class: 'mini-meta' }, courseLabel(it)),
-            h('div', { class: 'mini-title' }, (it.title || '') + (d ? ' · ' + fmtShort(d) + ' ' + fmtTime(d) : '')),
-            h('div', { class: 'mini-meta' }, '겹친 Canvas 과제: ', c ? [h('b', { style: 'color:var(--text)' }, c.title || ''), cd ? ' · ' + fmtShort(cd) + ' ' + fmtTime(cd) : ''] : (it.duplicate_of || '알 수 없음')),
-            evidenceList(it),
+            h('div', { class: 'mini-title' }, it.title || '', d ? h('span', { class: 'tiny', style: 'margin-left:8px' }, fmtShortDT(d)) : null),
+            h('div', { class: 'mini-meta' }, '겹친 Canvas 과제: ' + (c ? (c.title || '') : '알 수 없음')),
+            (Array.isArray(it.evidence) ? it.evidence : []).slice(0, 1).map((ev) => h('div', { class: 'mini-meta', style: 'margin-top:4px' }, srcLine(ev))),
             errLine(it),
-            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', 'data-key': 'dupadd-' + it.id,
+            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'dupadd-' + it.id,
               on: { click: () => itemPost(it, { decision: 'approved' }, '따로 일정에 넣었습니다: ' + (it.title || ''), { decision: 'pending' }) } }, '따로 넣기')));
         }))
       ]));
     }
     if (rej.length) {
-      box.appendChild(group('rejected', ['제외한 항목', countChip(rej.length)], [
+      box.appendChild(group('rejected', ['제외한 항목', h('span', { class: 'sec-n' }, rej.length + '개')], [
         h('ul', { class: 'mini-list' }, rej.map((it) => {
           const d = parseDate(it.due);
+          const dec = parseDate(it.decided_at);
           // Canvas 과제의 기본값은 '넣기'라서 되살리면 일정으로, 찾은 후보는 확인함으로 돌아간다
           const back = it.origin === 'canvas' && it.due ? 'approved' : 'pending';
           return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
-            h('div', { class: 'mini-meta' }, courseLabel(it) + (d ? ' · ' + fmtShort(d) + ' ' + fmtTime(d) : '')),
+            h('div', { class: 'mini-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null),
             h('div', { class: 'mini-title' }, it.title || ''),
+            dec ? h('div', { class: 'mini-meta' }, fmtShortDT(dec) + ' 제외함') : null,
             errLine(it),
-            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-key': 'restore-' + it.id,
-              'aria-label': (it.title || '') + ' 되살리기',
+            h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'restore-' + it.id, 'aria-label': (it.title || '') + ' 되살리기',
               on: { click: () => itemPost(it, { decision: back }, (back === 'pending' ? '확인함으로 되살렸습니다: ' : '되살렸습니다: ') + (it.title || '')) } }, '되살리기')));
         }))
       ]));
     }
   }
-
   function renderCourseOptions() {
     const opts = [];
     for (const c of state.courses) {
@@ -1349,15 +2125,14 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
   }
 
   // ---------------------------------------------------------------- 설정
-  const num = (x) => Number(x) || 0;
   function renderSettings() {
     const conf = !!state.configured;
-    $('title-settings').textContent = conf ? '설정' : '시작하기';
     $('setup').hidden = conf && !reconfiguring;
     $('setup-cancel').hidden = !conf;
-    $('setup-submit').textContent = conf ? '저장하고 동기화' : '연결하고 동기화';
+    if (!$('setup-submit').disabled) $('setup-submit').textContent = conf ? '저장하고 동기화' : '연결하고 동기화';
     if (!$('setup').hidden && !$('canvas-url').value && state.canvas_url) $('canvas-url').value = state.canvas_url;
-    $('settings-conf').hidden = !conf;
+    $('canvas-conf').hidden = !conf || reconfiguring;
+    for (const id of ['pane-google', 'pane-options', 'pane-file', 'pane-runs']) $(id).hidden = !conf;
     if (!conf) return;
     $('conn-url').textContent = state.canvas_url || '-';
     $('app-version').textContent = state.app_version || '-';
@@ -1365,74 +2140,201 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     const hasWeekly = Object.prototype.hasOwnProperty.call(state.settings, 'weekly_summary');
     $('weekly-row').hidden = !hasWeekly;
     $('weekly-summary').checked = !!state.settings.weekly_summary;
-    $('ics-count').textContent = '지금 받으면 일정 ' + icsItems().length + '개가 들어갑니다' +
-      (state.settings.weekly_summary ? ' (주간 요약 별도)' : '') + '.';
+    const le = parseDate(state.last_export);
+    $('ics-count').textContent = '지금 받으면 일정 ' + calendarItems().length + '개가 들어갑니다' + (state.settings.weekly_summary ? '(주간 요약 별도)' : '') + '.' +
+      (le ? ' 마지막으로 받은 때: ' + fmtShortDT(le) + '.' : '');
+    $('ics-stale').hidden = !state.items.some((i) => i.export_stale);
+    const full = $('full-btn');
+    full.disabled = !!syncing || !!state.syncing;
+    full.replaceChildren();
+    add(full, syncing === 'full' ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '전체를 다시 읽는 중…'] : ['전체 다시 확인']);
 
     const box = $('settings-report');
     box.replaceChildren();
     const r = state.report;
-    if (!r) { box.appendChild(h('p', { class: 'report' }, '아직 동기화하지 않았습니다.')); return; }
-    const d = parseDate(state.last_sync);
-    const parts = ['과목 ' + num(r.courses), '과제 ' + num(r.assignments), '공지 ' + num(r.announcements), '메시지 ' + num(r.messages), '강의계획서 ' + num(r.syllabi)];
-    if (num(r.manual)) parts.push('직접 입력 ' + num(r.manual));
-    const errs = Array.isArray(r.errors) ? r.errors.filter(Boolean) : [];
-    box.appendChild(h('div', { class: 'report' },
-      h('p', null, '마지막 동기화 ' + (d ? fmtDateTime(d) : '-')),
-      h('p', null, '읽은 것: ' + parts.join(' · ')),
-      h('p', null, '찾은 마감 후보 ' + num(r.candidates) + '개 · 확인 필요 ' + num(r.needs_review) + '개 · 마감 없음 ' + num(r.no_deadline) + '개'),
-      errs.length ? [h('p', { style: 'margin-top:8px' }, h('b', { style: 'color:var(--accent)' }, '일부를 읽지 못했습니다. 그 부분의 마감은 빠졌을 수 있습니다.')),
-        h('ul', null, errs.map((e) => h('li', null, String(e))))] : null));
+    if (!r) box.appendChild(h('p', { class: 'report' }, '아직 동기화하지 않았습니다.'));
+    else {
+      const d = parseDate(state.last_sync);
+      const parts = ['과목 ' + num(r.courses), '과제 ' + num(r.assignments), '공지 ' + num(r.announcements), '메시지 ' + num(r.messages), '강의계획서 ' + num(r.syllabi)];
+      if (num(r.manual)) parts.push('직접 입력 ' + num(r.manual));
+      const errs = Array.isArray(r.errors) ? r.errors.filter(Boolean) : [];
+      box.appendChild(h('div', { class: 'report' },
+        h('p', null, '마지막 동기화 ' + (d ? fmtDateTime(d) : '-')),
+        h('p', null, '읽은 것: ' + parts.join(', ')),
+        h('p', null, '찾은 마감 후보 ' + num(r.candidates) + '개, 확인 필요 ' + num(r.needs_review) + '개, 마감 없음 ' + num(r.no_deadline) + '개'),
+        errs.length ? [h('p', { class: 'inline-error', style: 'margin-top:6px' }, '일부를 읽지 못했습니다. 그 부분의 마감은 빠졌을 수 있습니다.'),
+          h('ul', null, errs.map((e) => h('li', null, String(e))))] : null));
+    }
+    renderGoogle();
+    renderRuns();
+  }
+  function renderGoogle() {
+    const box = $('google-box');
+    box.replaceChildren();
+    const g = state.google;
+    if (!g) { box.appendChild(h('p', { class: 'help' }, '이 버전에는 구글 캘린더 연결이 없습니다. 캘린더 파일을 쓰세요.')); return; }
+    const err = googleError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:10px' }, googleError) : null;
+    if (!g.available) {
+      box.appendChild(h('div', { class: 'stack' },
+        h('p', { style: 'font-size:14px' }, '구글 캘린더에 자동으로 넣으려면 구글 OAuth 클라이언트가 필요합니다.'),
+        h('p', { class: 'help' }, 'LMS Agent를 실행하는 폴더의 ', h('code', null, '.env'), ' 파일에 ', h('code', null, 'LMS_AGENT_GOOGLE_CLIENT_ID'), '와 ',
+          h('code', null, 'LMS_AGENT_GOOGLE_CLIENT_SECRET'), '를 넣고 앱을 다시 켜세요. 그전까지는 ‘캘린더 파일 (.ics)’로 넣을 수 있습니다.')));
+      return;
+    }
+    if (!g.connected) {
+      box.appendChild(h('div', { class: 'stack' },
+        h('p', { style: 'font-size:14px' }, '연결하면 승인한 마감이 구글 캘린더의 ‘LMS 마감’ 캘린더에 자동으로 들어가고, 고치거나 제외하면 따라 바뀝니다.'),
+        h('p', { class: 'help' }, '이 앱은 자기가 만든 그 캘린더만 다룰 수 있습니다. 다른 일정은 읽지도 바꾸지도 않습니다.'),
+        h('div', { class: 'form-actions' }, h('button', { type: 'button', class: 'btn btn-primary', id: 'g-connect', disabled: googleBusy, on: { click: googleConnect } },
+          googleBusy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '구글로 가는 중…'] : '구글 캘린더 연결')),
+        g.error ? h('p', { class: 'inline-error' }, g.error) : null, err));
+      return;
+    }
+    const lp = parseDate(g.last_push);
+    const busy = googleBusy || g.pushing;
+    box.appendChild(h('dl', { class: 'conn' },
+      h('dt', null, '상태'), h('dd', null, g.pushing ? '반영하는 중…' : '연결됨, 바뀌면 자동으로 반영'),
+      h('dt', null, '마지막 반영'), h('dd', null, lp ? [fmtDateTime(lp) + ' (', relEl(g.last_push), ')'] : '아직 없음'),
+      g.last_result ? [h('dt', null, '결과'), h('dd', null, resultText(g.last_result))] : null,
+      g.error ? [h('dt', null, '문제'), h('dd', { class: 'inline-error' }, g.error)] : null));
+    box.appendChild(h('div', { class: 'form-actions' },
+      h('button', { type: 'button', class: 'btn btn-primary', id: 'g-push', disabled: busy, on: { click: googlePush } },
+        busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '반영하는 중…'] : '지금 반영'),
+      h('button', { type: 'button', class: 'btn btn-line', id: 'g-disconnect', disabled: googleBusy, on: { click: googleDisconnect } }, '연결 해제'),
+      g.calendar_link ? extLink(g.calendar_link, '구글 캘린더 열기') : null));
+    box.appendChild(h('p', { class: 'help', style: 'margin-top:10px' }, '연결을 해제해도 구글 캘린더에 이미 들어간 일정은 남습니다.'));
+    if (err) box.appendChild(err);
+  }
+  function googleConnect() {
+    googleBusy = true;
+    googleError = '';
+    renderGoogle();
+    post('/api/google/connect', {}).then((r) => {
+      const u = safeUrl(r && r.url);
+      if (!u) throw new Error('구글 연결 주소를 받지 못했습니다.');
+      location.href = u;
+    }).catch((e) => { googleBusy = false; googleError = e.message; render(); });
+  }
+  function googlePush() {
+    googleBusy = true;
+    googleError = '';
+    focusKey = null;
+    renderGoogle();
+    post('/api/google/push', {}).then((s) => {
+      googleBusy = false;
+      applyState(s);
+      const r = s.google && s.google.last_result;
+      toast('구글 캘린더에 반영했습니다' + (r ? ': ' + resultText(r) : ''));
+    }, (e) => { googleBusy = false; googleError = e.message; render(); });
+  }
+  function googleDisconnect() {
+    googleBusy = true;
+    googleError = '';
+    renderGoogle();
+    post('/api/google/disconnect', {}).then((s) => {
+      googleBusy = false;
+      applyState(s);
+      toast('구글 캘린더 연결을 해제했습니다. 들어간 일정은 남아 있습니다.');
+    }, (e) => { googleBusy = false; googleError = e.message; render(); });
+  }
+  function renderRuns() {
+    const box = $('runs-box');
+    box.replaceChildren();
+    const runs = Array.isArray(state.runs) ? state.runs : [];
+    if (!runs.length) { box.appendChild(h('p', { class: 'empty' }, '아직 확인 기록이 없습니다.')); return; }
+    box.appendChild(h('div', { class: 'run-row run-head', 'aria-hidden': 'true' },
+      h('span', null, '마친 시각'), h('span', null, '방식'), h('span', { class: 'r' }, '다시 읽음'), h('span', { class: 'r' }, '건너뜀'),
+      h('span', { class: 'r' }, '요청'), h('span', { class: 'r' }, '새 항목'), h('span', null, '문제')));
+    const TYPE = Object.assign({}, SOURCE, { inbox: '메시지' });
+    runs.forEach((r, i) => {
+      const d = parseDate(r.finished_at);
+      const nNew = Array.isArray(r.new_items) ? r.new_items.length : num(r.new_items);
+      const errs = Array.isArray(r.errors) ? r.errors.filter(Boolean) : [];
+      const targets = Array.isArray(r.targets) ? r.targets : [];
+      const key = 'run-' + (r.finished_at || i);
+      const det = h('details', { class: 'run' });
+      det.open = openGroups.has(key);
+      det.addEventListener('toggle', () => { if (det.open) openGroups.add(key); else openGroups.delete(key); });
+      det.appendChild(h('summary', { class: 'run-row', 'data-key': 'grp-' + key },
+        h('span', null, d ? fmtShortDT(d) : '-'),
+        h('span', null, r.mode === 'full' ? '전체' + (r.reason ? ' (' + r.reason + ')' : '') : '바뀐 곳만'),
+        h('span', { class: 'r' }, String(num(r.checked))),
+        h('span', { class: 'r' }, String(num(r.skipped))),
+        h('span', { class: 'r' }, String(num(r.requests))),
+        h('span', { class: 'r' }, String(nNew)),
+        h('span', { class: errs.length ? 'warn' : null }, errs.length ? errs.length + '건' : '없음')));
+      det.appendChild(h('div', { class: 'run-body' },
+        targets.length ? h('ul', { class: 'run-targets' }, targets.map((t) => h('li', null,
+          h('span', { style: 'font-weight:600' }, TYPE[t.type] || '글'),
+          h('span', null, '‘' + (t.title || '') + '’'),
+          t.course_name ? h('span', { class: 'help' }, shortForName(t.course_name)) : null,
+          h('span', { class: 'help' }, t.reason || ''),
+          h('span', { class: num(t.found) ? null : 'help' }, num(t.found) ? '마감 ' + num(t.found) + '개 찾음' : '찾은 마감 없음')))) : h('p', { class: 'help' }, '바뀐 글이 없어 다시 읽지 않았습니다.'),
+        num(r.conversations_fetched) ? h('p', { class: 'help', style: 'margin-top:6px' }, '본문을 받은 메시지 대화 ' + num(r.conversations_fetched) + '개') : null,
+        errs.length ? h('ul', { class: 'run-targets', style: 'margin-top:6px' }, errs.map((e) => h('li', { class: 'inline-error' }, String(e)))) : null));
+      box.appendChild(det);
+    });
   }
 
-  function icsItems() {
-    const inc = !!state.settings.include_canvas;
-    return state.items.filter((i) => i.status === 'scheduled' && i.due && (i.origin !== 'canvas' || inc));
+  // ---------------------------------------------------------------- 틀
+  function pageSub(v) {
+    const s = sem();
+    const now = new Date(nowMs());
+    if (v === 'dash') {
+      const inSem = s && s.week_now >= 1 && s.week_now <= s.weeks_total;
+      return (inSem ? s.week_now + '주차, ' : '') + fmtDate(now) + (s && s.source === 'default' ? ' (학기 날짜 추정)' : '');
+    }
+    if (v === 'semester') {
+      if (!s) return '';
+      const st = parseDay(s.start), en = parseDay(s.end);
+      return (st ? fmtDate(st) + ' 개강' : '') + (en ? ', ' + fmtDate(en) + ' 종강' : '') + ', ' + (s.weeks_total || weeksList().length) + '주' + (s.source === 'default' ? ' (추정)' : '');
+    }
+    if (v === 'courses') return state.courses.length + '과목. 점수는 Canvas가 계산한 현재 점수입니다';
+    if (v === 'grades') return '공개된 평균·표준편차로 반에서의 위치를 어림합니다. 실제 순위·학점과 다를 수 있습니다';
+    if (v === 'inbox') return '공지·메시지·강의계획서에서 찾은 마감입니다. 근거를 읽고 일정에 넣을지 정하세요';
+    if (v === 'settings') return state.configured ? 'Canvas 연결, 캘린더 반영, 확인 기록' : 'Canvas를 연결하면 학기 일정을 만듭니다';
+    return '';
   }
-  function icsSig() {
-    const s = icsItems().map((i) => i.id + '|' + i.title + '|' + i.due).sort().join('\n') + '\n' + (state.settings.weekly_summary ? 'W' : '');
-    let x = 2166136261;
-    for (let k = 0; k < s.length; k++) { x ^= s.charCodeAt(k); x = Math.imul(x, 16777619) >>> 0; }
-    return String(x) + ':' + s.length;
-  }
-  function readSig() { try { return localStorage.getItem('lms-agent.ics-sig'); } catch (e) { return null; } }
-  function saveSig() { try { localStorage.setItem('lms-agent.ics-sig', icsSig()); } catch (e) { /* 저장 못 해도 동작에는 지장 없음 */ } }
-
-  // ---------------------------------------------------------------- 머리
-  function renderHeader(v) {
+  function renderChrome(v) {
     const conf = !!state.configured;
-    $('nav').hidden = !conf;
     document.querySelectorAll('#nav a').forEach((a) => {
+      a.hidden = !conf && a.dataset.view !== 'settings';
       if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     const rc = state.items.filter((i) => i.status === 'review').length;
     $('nav-count').textContent = String(rc);
     $('nav-count').hidden = !rc;
-    document.title = rc ? '(' + rc + ') LMS Agent' : 'LMS Agent';
-    $('demo-badge').hidden = !state.demo;
+    $('nav-count').setAttribute('aria-label', '확인할 것 ' + rc + '개');
+    document.title = (rc ? '(' + rc + ') ' : '') + (conf ? TITLES[v] : '시작하기') + ' - LMS Agent';
+    $('page-title').textContent = conf ? TITLES[v] : '시작하기';
+    $('page-sub').textContent = pageSub(v);
+    const s = sem();
+    $('brand-sem').textContent = !conf ? '' : s && s.week_now >= 1 && s.week_now <= s.weeks_total ? s.week_now + '주차 / ' + s.weeks_total + '주' : s && s.week_now > s.weeks_total ? '종강' : s ? '개강 전' : '';
+    $('side-demo').hidden = !state.demo;
+    $('side-version').textContent = state.app_version ? '버전 ' + state.app_version : '';
+    const g = gstate();
+    const sg = $('side-google');
+    sg.replaceChildren();
+    if (conf && state.google) {
+      add(sg, [h('span', { class: 'mk ' + (g.connected ? 'mk-sched' : 'mk-off'), 'aria-hidden': 'true' }),
+        h('a', { href: '#settings' }, g.connected ? (g.pushing ? '구글에 반영하는 중…' : '구글 캘린더 연결됨') : '구글 캘린더 연결 안 됨')]);
+    }
 
     const meta = $('sync-meta');
     meta.replaceChildren();
     if (!conf) meta.textContent = 'Canvas 연결이 필요합니다';
+    else if (syncing === 'full') meta.textContent = '전체를 다시 읽는 중…';
     else if (syncing || state.syncing) meta.textContent = '바뀐 곳 확인 중…';
-    else if (state.last_sync) {
-      const d = parseDate(state.last_sync);
-      add(meta, ['마지막 동기화 ', h('time', { datetime: state.last_sync, 'data-rel': state.last_sync, title: d ? fmtDateTime(d) : null }, relTime(state.last_sync))]);
-    } else meta.textContent = '아직 동기화하지 않았습니다';
-
+    else if (state.last_sync) add(meta, ['마지막 확인 ', relEl(state.last_sync)]);
+    else meta.textContent = '아직 동기화하지 않았습니다';
     const btn = $('sync-btn');
     btn.hidden = !conf;
-    btn.disabled = !conf;
-    btn.setAttribute('aria-disabled', syncing ? 'true' : 'false');
+    btn.setAttribute('aria-disabled', syncing || state.syncing ? 'true' : 'false');
     if (syncing) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
     btn.replaceChildren();
     add(btn, syncing ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '동기화 중…'] : [icon('sync'), '동기화']);
-
-    if (!syncing && state.sync_error) showMsg($('sync-error'), '동기화 실패 · ' + state.sync_error);
-    const link = $('ics-link');
-    link.hidden = !conf;
-    if (!link.firstChild || link.firstChild.nodeType !== 1) link.replaceChildren(icon('download'), '캘린더 파일 받기');
-    const saved = readSig();
-    $('ics-changed').hidden = !(conf && saved && saved !== icsSig());
+    if (!syncing && state.sync_error) showMsg($('sync-error'), '동기화 실패: ' + state.sync_error);
+    else if (!syncing && !state.sync_error && $('sync-error').dataset.local !== '1') showMsg($('sync-error'), '');
   }
 
   // 다시 그려도 쓰던 칸·누르던 버튼이 그대로 남도록
@@ -1450,11 +2352,17 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     if (focusAfter) {
       const f = focusAfter;
       focusAfter = null;
-      const cards = $('review-list').querySelectorAll('.review-card');
+      const cards = $('review-list').querySelectorAll('.rcard');
       const card = cards[Math.min(f.index, cards.length - 1)];
-      const target = card ? card.querySelector('[data-decision="approved"]') : $('title-inbox');
+      const target = card ? card.querySelector('[data-decision="approved"]') : $('page-title');
       if (target) target.focus();
       return;
+    }
+    if (focusKey) {
+      const k = focusKey;
+      focusKey = null;
+      const el = byKey(k);
+      if (el) { el.focus({ preventScroll: false }); return; }
     }
     if (!snap) return;
     const el = byKey(snap.key);
@@ -1476,16 +2384,17 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     try {
       lastDay = dayKey(new Date(nowMs()));
       const v = state.configured ? view : 'settings';
-      renderHeader(v);
+      renderChrome(v);
       for (const name of VIEWS) {
         $('scr-' + name).hidden = name !== v;
         if (name !== v) for (const id of DYN[name]) $(id).replaceChildren();
       }
-      if (v === 'week') renderWeek();
-      else if (v === 'map') renderMap();
+      if (v === 'dash') renderDash();
+      else if (v === 'semester') renderSemester();
       else if (v === 'courses') renderCourses();
+      else if (v === 'grades') renderGrades();
       else if (v === 'inbox') { renderInbox(); renderCourseOptions(); }
-      renderSettings();
+      else if (v === 'settings') renderSettings();
     } finally {
       rendering = false;
     }
@@ -1494,10 +2403,13 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
   }
 
   function viewFromHash() {
-    const v = (location.hash || '').replace('#', '');
-    return VIEWS.indexOf(v) >= 0 ? v : 'week';
+    let v = (location.hash || '').replace('#', '');
+    if (ALIAS[v]) v = ALIAS[v];
+    return VIEWS.indexOf(v) >= 0 ? v : 'dash';
   }
   window.addEventListener('hashchange', () => {
+    const raw = (location.hash || '').replace('#', '');
+    if (/^item-/.test(raw)) return;
     view = viewFromHash();
     if (!state) return;
     render();
@@ -1507,33 +2419,42 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       jumpTo(id);
     } else {
       window.scrollTo(0, 0);
-      const t = $('title-' + view);
-      if (t) t.focus({ preventScroll: true });
+      $('page-title').focus({ preventScroll: true });
     }
+  });
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (state && (view === 'dash' || view === 'semester')) render(); else fitAllTitles();
+    }, 120);
   });
 
   // ---------------------------------------------------------------- 동작
-  function runSync() {
+  function runSync(full) {
     if (syncing || !state || !state.configured) return Promise.resolve();
-    syncing = true;
+    syncing = full ? 'full' : 'incremental';
+    $('sync-error').dataset.local = '';
     showMsg($('sync-error'), '');
     const before = new Set(state.items.map((i) => i.id));
     render();
-    return post('/api/sync', {}).then((s) => {
-      syncing = false;
+    return post('/api/sync', full ? { full: true } : {}).then((s) => {
+      syncing = null;
       applyState(s);
       const fresh = s.items.filter((i) => i.status === 'review' && !before.has(i.id)).length;
-      toast(fresh ? '동기화했습니다. 새로 찾은 후보 ' + fresh + '개' : '동기화했습니다');
+      const run = Array.isArray(s.runs) && s.runs[0];
+      toast((full ? '전체를 다시 확인했습니다' : '동기화했습니다') + (run ? '. 다시 읽은 글 ' + num(run.checked) + '개' : '') + (fresh ? ', 새로 찾은 후보 ' + fresh + '개' : ''));
     }, (err) => {
-      syncing = false;
-      showMsg($('sync-error'), '동기화 실패 · ' + err.message);
+      syncing = null;
+      $('sync-error').dataset.local = '1';
+      showMsg($('sync-error'), '동기화 실패: ' + err.message);
       render();
     });
   }
-  $('sync-btn').addEventListener('click', () => runSync());
-  const onIcsClick = () => { saveSig(); setTimeout(() => { if (state) renderHeader(state.configured ? view : 'settings'); }, 0); };
-  $('ics-link').addEventListener('click', onIcsClick);
-  $('ics-link-2').addEventListener('click', onIcsClick);
+  $('sync-btn').addEventListener('click', () => runSync(false));
+  $('full-btn').addEventListener('click', () => runSync(true));
+  // 파일을 받으면 서버가 '파일 포함' 기록을 남긴다. 잠시 뒤 다시 읽어 근거 사슬을 맞춘다
+  $('ics-link').addEventListener('click', () => { setTimeout(refresh, 1200); });
 
   $('setup-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1552,14 +2473,14 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
         $('canvas-token').value = '';
         reconfiguring = false;
         btn.disabled = false;
-        if (view === 'settings') location.hash = '#week';
-        view = 'week';
+        if (view === 'settings') location.hash = '#dash';
+        view = 'dash';
         applyState(s);
         toast('연결했습니다. 동기화를 시작합니다.');
-        runSync();
+        runSync(false);
       }, (er) => {
         btn.disabled = false;
-        if (state) renderSettings(); else btn.textContent = '연결하고 동기화';
+        btn.textContent = state && state.configured ? '저장하고 동기화' : '연결하고 동기화';
         showMsg(err, er.message);
       });
   });
@@ -1590,7 +2511,7 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
       });
     });
   }
-  settingToggle('include-canvas', 'include_canvas', 'Canvas 과제도 캘린더 파일에 넣습니다', 'Canvas 과제는 캘린더 파일에서 뺍니다');
+  settingToggle('include-canvas', 'include_canvas', 'Canvas 과제도 캘린더에 넣습니다', 'Canvas 과제는 캘린더에서 뺍니다');
   settingToggle('weekly-summary', 'weekly_summary', '주간 요약 일정을 넣습니다', '주간 요약 일정을 뺍니다');
 
   $('m-course').addEventListener('change', function () {
@@ -1640,18 +2561,28 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     });
   });
 
-  // 상대 시각·D-day를 시간이 흐르는 대로 맞춘다
+  // 상대 시각·D-day·지금 선을 시간이 흐르는 대로 맞춘다
   setInterval(() => {
     if (!state) return;
     if (dayKey(new Date(nowMs())) !== lastDay) { render(); return; }
     document.querySelectorAll('[data-rel]').forEach((el) => { el.textContent = relTime(el.getAttribute('data-rel')); });
   }, 30000);
 
+  // 구글 동의 화면에서 돌아오면 ?google=ok|error&msg= 가 붙어 온다. 알리고 주소를 정리한다
+  function readGoogleReturn() {
+    const q = new URLSearchParams(location.search);
+    const g = q.get('google');
+    if (!g) return;
+    if (g === 'ok') banner('구글 캘린더를 연결했습니다. 승인한 마감을 ‘LMS 마감’ 캘린더에 반영하고 있습니다.', false);
+    else banner('구글 연결 실패: ' + (q.get('msg') || '알 수 없는 문제') + '. 다시 연결해 보세요.', true);
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* 무시 */ }
+  }
+
   function boot() {
     const msg = $('boot-msg');
     const retry = $('boot-retry');
     msg.textContent = '불러오는 중…';
-    msg.className = 'sub';
+    msg.className = 'empty';
     retry.hidden = true;
     api('GET', '/api/state').then((s) => {
       $('boot').hidden = true;
@@ -1666,6 +2597,7 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.55; }
     });
   }
   $('boot-retry').addEventListener('click', boot);
+  readGoogleReturn();
   boot();
 })();
 </script>
