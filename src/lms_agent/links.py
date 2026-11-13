@@ -196,9 +196,22 @@ def _w(fam: str) -> str:
 
 
 def numbered(text, fam: str) -> list[int]:
-    """'Lab3 Assignment'·'Lab0_score-1.pdf'·'LAB 2' → 번호들(한 줄 안에서만)."""
-    rx = re.compile(rf"(?<![a-z])(?:{_w(fam)})[ \t_\-]*#?[ \t]*(\d{{1,2}})(?!\d)", re.I)
-    return [int(m.group(1)) for m in rx.finditer(str(text or ""))]
+    """'Lab3 Assignment'·'Lab0_score-1.pdf'·'LAB 2' → 번호들(한 줄 안에서만).
+    범위는 펼친다: 'Lab 4–6'·'Lab4-Lab6'·'Labs 0 through 6' → 4, 5, 6. 붙임표로 이은 이웃 번호('실습 2-3')는 2번 실습의
+    3번일 수도 있어 펼치지 않는다(물결·대시·to/through, 같은 낱말 반복, 2 이상 차이 나는 붙임표만 범위)."""
+    W = _w(fam)
+    rx = re.compile(rf"(?<![a-z])(?:{W})[ \t_\-]*#?[ \t]*(\d{{1,2}})(?!\d)"
+                    rf"(?:[ \t]*(?P<sep>~|～|–|—|-|to|through)[ \t]*(?P<w2>(?:{W})[ \t]*#?[ \t]*)?(?P<b>\d{{1,2}})(?![\d./:]))?",
+                    re.I)
+    out = []
+    for m in rx.finditer(str(text or "")):
+        a = int(m.group(1))
+        b = int(m.group("b")) if m.group("b") else None
+        if b is not None and a < b <= MAX_COUNT and (m.group("sep") != "-" or m.group("w2") or b - a >= 2):
+            out.extend(range(a, b + 1))
+        else:
+            out.append(a)
+    return out
 
 
 _BAD_BEFORE = re.compile(r"(?i)(?:lab|labs|hw|homework|assignment|과제|실습|quiz|퀴즈|report|project|week|주차|no\.|#|"
@@ -236,38 +249,114 @@ def stated(text: str, fam: str) -> tuple[int, str] | None:
                 n = int(g) if g.isdigit() else _NUM_WORDS.get(g)
                 if _BAD_BEFORE.search(s[max(0, m.start() - 14):m.start()]):
                     continue
+                if _PERIOD_AFTER.match(s[m.end():m.end() + 24]):
+                    continue   # '2 labs this week'·'과제 2회(매주)'는 이번 주·주마다 개수지 학기 전체가 아니다
             if n and 1 <= n <= MAX_COUNT:
                 return n, _line_of(s, m.start(), m.end())
-    return None
+    return _schedule(s, fam)
 
 
-_NEXT = {"lab": r"next[ \t]+labs?|upcoming[ \t]+labs?|다음[ \t]*(?:실습|랩)|이후[ \t]*실습",
-         "hw": r"next[ \t]+(?:assignments?|homeworks?)|다음[ \t]*과제",
-         "quiz": r"next[ \t]+quiz(?:zes)?|다음[ \t]*퀴즈",
-         "report": r"next[ \t]+reports?|다음[ \t]*보고서", "project": r"next[ \t]+projects?|다음[ \t]*프로젝트"}
+# 개수 뒤에 이 말이 오면 학기 전체 개수가 아니다
+_PERIOD_AFTER = re.compile(r"(?i)^[ \t]*(?:\(?\s*)?(?:this|next|per|each|every|a)[ \t]+(?:week|day|class|session|lecture)|"
+                           r"^[ \t]*(?:today|tomorrow|weekly)|^[ \t]*\(?\s*(?:이번\s*주|오늘|내일|매주|주당|한\s*주|매\s*시간)")
+# 강의 일정 표의 한 줄: 'Week 3 | Lab 1', '3주차 실습 1', '3 | Lab 1'
+_WEEK_ROW = re.compile(r"(?i)^\s*(?:(?:week|wk)\.?\s*(\d{1,2})|(\d{1,2})\s*주차?|(\d{1,2})\s*(?:\||\t|\s{2,}|\.\s))")
+
+
+def _schedule(text: str, fam: str) -> tuple[int, str] | None:
+    """강의 일정 표에서 그 계열 번호가 빈틈없이 이어지면(0 또는 1부터, 3줄 이상, 주차가 늘어남) 그 개수.
+    'Week 3 | Lab 1 … Week 9 | Lab 4' → 4. 번호가 비거나(1, 4) 줄이 적으면 세지 않는다."""
+    rows = []
+    for line in str(text or "").splitlines():
+        m = _WEEK_ROW.match(line)
+        if not m:
+            continue
+        nums = numbered(line[m.end():], fam)
+        if len(nums) == 1:
+            rows.append((int(next(g for g in m.groups() if g)), nums[0], re.sub(r"\s+", " ", line).strip()))
+    if len(rows) < 3 or any(b[0] <= a[0] for a, b in zip(rows, rows[1:])):
+        return None
+    nums = sorted({r[1] for r in rows})
+    if nums[0] not in (0, 1) or nums != list(range(nums[0], nums[-1] + 1)) or len(nums) != len(rows):
+        return None
+    n = len(nums)
+    return (n, f"{rows[0][2]} … {rows[-1][2]}"[:240]) if 1 <= n <= MAX_COUNT else None
+
+
+# 남은 것의 목록을 여는 말. 영어는 복수('Next labs:')만 — 단수 'Next lab:'은 다음 실습 하나의 안내다.
+_NEXT = {"lab": r"(?:next|upcoming|remaining)[ \t]+labs|다음[ \t]*(?:실습|랩)(?:들)?|이후[ \t]*실습|남은[ \t]*(?:실습|랩)",
+         "hw": r"(?:next|upcoming|remaining)[ \t]+(?:assignments|homeworks|homework[ \t]+assignments)|다음[ \t]*과제|남은[ \t]*과제",
+         "quiz": r"(?:next|upcoming|remaining)[ \t]+quiz(?:zes|es)|다음[ \t]*퀴즈|남은[ \t]*퀴즈",
+         "report": r"(?:next|upcoming|remaining)[ \t]+reports|다음[ \t]*보고서|남은[ \t]*보고서",
+         "project": r"(?:next|upcoming|remaining)[ \t]+projects|다음[ \t]*프로젝트|남은[ \t]*프로젝트"}
 _ARROWS = re.compile(r"\s*(?:→|->|=>|⇒|➜|➔|›|>)\s*")
+# 목록 항목이 '이름'이 아니라 할 일·문장이면('bring your laptop', '노트북 지참하세요') 남은 실습 목록이 아니다
+_NOT_TITLE = re.compile(r"(?i)^(?:bring|please|use|read|submit|prepare|install|check|make|download|review|finish|"
+                        r"complete|remember|be|do|don't|will|you|we|they|it|is|are)\b|"
+                        r"(?:다|요|세요|니다|하기|할\s*것|지참|준비|확인|바랍니다)[.!]?$|[;!?]")
+_COUNT_ONLY = re.compile(r"^(\d{1,2}|[a-z]+|[가-힣]+)[ \t]*(?:개|번|회)?\.?$", re.I)
+
+
+def _remaining_patterns(fam: str) -> list:
+    """'3 more homework assignments'·'Two more quizzes'·'2 labs left'·'남은 과제 2개'·'실습은 2번 더 남았습니다'."""
+    W, P = _w(fam), PLURAL_WORDS[fam]
+    nw = "|".join(_NUM_WORDS)
+    N = rf"(\d{{1,2}}|{nw})"
+    return [
+        re.compile(rf"(?<![\w.]){N}[ \t]+(?:more|additional|remaining)[ \t]+(?:{P}|{W})(?![a-z])", re.I),
+        re.compile(rf"(?<![\w.]){N}[ \t]+(?:{P})[ \t]+(?:left|remaining|to[ \t]+go)(?![a-z])", re.I),
+        re.compile(rf"남은[ \t]*(?:{W})[ \t]*[:：]?[ \t]*{N}[ \t]*(?:개|번|회)", re.I),
+        re.compile(rf"(?:{W})(?:은|는|이|가)?[ \t]*{N}[ \t]*(?:개|번|회)[ \t]*(?:더|남)", re.I),
+        re.compile(rf"(?<![\d.]){N}[ \t]*(?:개|번|회)(?:의)?[ \t]*(?:{W})(?:이|가)?[ \t]*(?:더|남)", re.I),
+    ]
+
+
+def _num(g: str) -> int | None:
+    g = g.lower()
+    return int(g) if g.isdigit() else _NUM_WORDS.get(g)
 
 
 def hint(text: str, fam: str, zero_based: bool, extra_numbers: list[int] | None = None) -> tuple[int, str, int] | None:
-    """단서: 같은 글에서 가장 큰 번호 K 뒤의 'Next labs: A → B → C' → n = K + 1 + 목록 수(0번부터일 때; 1번부터면 K + 목록 수).
-    (n, 근거 줄, K)."""
+    """단서: 같은 글에서 가장 큰 번호 K 뒤에 남은 것이 몇 개인지.
+    - 목록 'Next labs: A → B → C'·'다음 실습: A, B' → n = K + 1 + 목록 수(0번부터일 때; 1번부터면 K + 목록 수).
+      항목에 번호가 있으면('Upcoming labs: Lab 4, Lab 5') 그 가장 큰 번호로 센다. 항목이 이름이 아니면 세지 않는다.
+    - 남은 개수 'Remaining labs: 4'·'3 more homework assignments'·'남은 과제: 2개' → n = K (+1) + 그 수.
+    (n, 근거 줄, K). 'the next 3 labs'처럼 마지막이라는 말이 없는 수는 세지 않는다."""
     s = str(text or "")
-    nums = numbered(s, fam) + list(extra_numbers or [])
+    extra = list(extra_numbers or [])
+    nums = numbered(s, fam) + extra
     if not nums:
         return None
-    rx = re.compile(rf"(?i)(?:{_NEXT[fam]})[ \t]*[:：][ \t]*([^\n]+)")
+    one = 1 if zero_based else 0
+    rx = re.compile(rf"(?i)(?<![a-z])(?:{_NEXT[fam]})[ \t]*[:：][ \t]*([^\n]+)")
     for m in rx.finditer(s):
         body = m.group(1).strip()
-        parts = [p for p in _ARROWS.split(body) if p.strip()]
-        if len(parts) < 2:
-            parts = [p for p in re.split(r"\s*[,·、]\s*", body) if p.strip()]
-        if not 1 <= len(parts) <= 15:
-            continue
-        before = numbered(s[:m.start()], fam) + list(extra_numbers or [])
-        K = max(before or nums)
-        n = K + (1 if zero_based else 0) + len(parts)
+        K = max(numbered(s[:m.start()], fam) + extra or nums)
+        cm = _COUNT_ONLY.match(body)
+        if cm and _num(cm.group(1)) is not None:          # 'Remaining labs: 4'
+            n = K + one + _num(cm.group(1))
+        else:
+            parts = [p.strip() for p in _ARROWS.split(body) if p.strip()]
+            arrows = len(parts) >= 2
+            if not arrows:
+                parts = [p.strip() for p in re.split(r"\s*[,·、]\s*", body) if p.strip()]
+            if not 1 <= len(parts) <= 15 or any(_NOT_TITLE.search(p) or len(p) > 60 for p in parts):
+                continue
+            if not arrows and len(parts) < 2 and re.search(r"[가-힣]", m.group(0)):
+                continue   # '다음 실습: STA' — 다음 것 하나일 뿐, 마지막이라는 말이 없다
+            listed = [x for p in parts for x in numbered(p, fam)]
+            n = max(listed) + one if listed else K + one + len(parts)
         if 1 <= n <= MAX_COUNT:
             return n, _line_of(s, m.start(), m.end()), K
+    for rx2 in _remaining_patterns(fam):
+        for m in rx2.finditer(s):
+            r = _num(m.group(1))
+            if not r:
+                continue
+            K = max(numbered(s[:m.start()], fam) + extra or nums)
+            n = K + one + r
+            if 1 <= n <= MAX_COUNT:
+                return n, _line_of(s, m.start(), m.end()), K
     return None
 
 

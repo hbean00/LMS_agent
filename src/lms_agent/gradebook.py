@@ -5,6 +5,8 @@
 계산은 grades.py(정규분포 근사, 항목 사이 상관 가정)가 하고, 여기서는 저장된 설정과 Canvas 원본을
 화면용 묶음(state["grades"])으로 만든다. 점수 문장은 후보로만 보여 주고, 사용자가 골라 항목에 넣는다.
 평가 비중은 사용자가 손대지 않은 과목에 한해 강의계획서·공지에서 찾아 자동으로 넣는다(auto_fill, "auto": true).
+학점 비율(상대평가)·점수 기준(절대평가)도 글에서 찾아 config.dist_auto에 둔다(auto_dist, 계약 16장) —
+사용자가 정한 비율(config.dist) > 자동(dist_auto, 가장 최근 글) > 기본값.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ from datetime import datetime, timedelta
 
 from . import agent_cli
 from . import core as _core  # core.sync가 auto_fill을 부르므로 순환 import에도 안전하게 모듈로
+from . import distribution as dm
 from . import grades as g
 from . import links as lk
 from . import scorefile
@@ -70,7 +73,11 @@ def save_course(store, course_id: str, body: dict) -> None:
             raise ValueError("; ".join(problems))
     size = body.get("class_size")
     size = int(_num(size, "수강 인원", 1, 100000)) if size not in (None, "") else None
-    store.data.setdefault("grades", {})[str(course_id)] = {"components": comps, "dist": dist, "class_size": size}
+    prev = (store.data.get("grades") or {}).get(str(course_id)) or {}
+    cfg = {"components": comps, "dist": dist, "class_size": size}
+    if prev.get("dist_auto"):   # 강의계획서에서 찾은 학점 비율은 남겨 둔다(사용자 비율이 있으면 그쪽이 이긴다)
+        cfg["dist_auto"] = prev["dist_auto"]
+    store.data.setdefault("grades", {})[str(course_id)] = cfg
 
 
 def candidate_key(cid, source_type, source_title, label, score) -> str:
@@ -137,16 +144,23 @@ def set_student_id(store, value) -> None:
     store.data["settings"]["student_id"] = value.strip()
 
 
-def _score_result(key: str, rec: dict, sid: str):
+def _score_results(key: str, rec: dict, sid: str) -> list:
+    """점수표 하나 → 평가마다 결과(scorefile.parse_score_results). 'Quiz 1 (10) | Midterm (100)'처럼 열마다 다른 평가면
+    열마다 하나, ASIC 'Lab0' 표처럼 한 평가의 세부 점수면 하나(베타테스터 제보: 열마다 다른 평가가 한 점수로 뭉쳐 자동으로 안 들어감)."""
     text = rec.get("text") or ""
     ck = (key, sid, len(text), hash(text), rec.get("filename"))
     if ck not in _SCORE_CACHE:
         if len(_SCORE_CACHE) > 500:
             _SCORE_CACHE.clear()
         fn = rec.get("filename") or ""
-        _SCORE_CACHE[ck] = (scorefile.parse_score_text(text, sid, filename=fn)
-                            if scorefile.is_score_file(fn, text) else None)
+        _SCORE_CACHE[ck] = (scorefile.parse_score_results(text, sid, filename=fn)
+                            if scorefile.is_score_file(fn, text) else [])
     return _SCORE_CACHE[ck]
+
+
+def _score_result(key: str, rec: dict, sid: str):
+    rs = _score_results(key, rec, sid)
+    return rs[0] if rs else None
 
 
 def score_file_candidates(store, names: dict | None = None) -> list[dict]:
@@ -161,18 +175,22 @@ def score_file_candidates(store, names: dict | None = None) -> list[dict]:
     for key, rec in sorted((store.data.get("pdf_texts") or {}).items()):
         if not isinstance(rec, dict):
             continue
-        r = _score_result(key, rec, sid)
-        if r is None:
-            continue
         cid = str(rec.get("course_id")) if rec.get("course_id") is not None else None
-        out.append({"course_id": cid, "course_short": _core.short_course_name(names.get(cid)) if cid else None,
-                    "source_type": "pdf", "source_title": rec.get("filename"),
-                    "posted_at": iso(parse_iso(rec.get("posted_at"))), "url": None,
-                    "label": r.label, "score": r.score, "max_score": r.max_score, "mean": r.mean, "sd": r.sd,
-                    "high": r.high, "low": r.low, "n": r.n, "rank": r.rank,
-                    "sentence": r.sentence, "notes": list(r.notes),
-                    "key": f"pdf:{key}"})
+        for r in _score_results(key, rec, sid):
+            out.append(_score_candidate(key, rec, r, cid, names))
     return out
+
+
+def _score_candidate(key: str, rec: dict, r, cid, names: dict) -> dict:
+    # 한 파일에 평가가 여럿이면 key에 열(평가) 이름을 붙여 따로 연결한다: "pdf:<첨부 키>#Quiz 1"
+    ckey = f"pdf:{key}" + (f"#{r.key}" if getattr(r, "key", None) else "")
+    return {"course_id": cid, "course_short": _core.short_course_name(names.get(cid)) if cid else None,
+            "source_type": "pdf", "source_title": rec.get("filename"),
+            "posted_at": iso(parse_iso(rec.get("posted_at"))), "url": None,
+            "label": r.label, "score": r.score, "max_score": r.max_score, "mean": r.mean, "sd": r.sd,
+            "high": r.high, "low": r.low, "n": r.n, "rank": r.rank,
+            "sentence": r.sentence, "notes": list(r.notes),
+            "key": ckey}
 
 
 def score_files(store) -> tuple[int, list[str]]:
@@ -384,14 +402,155 @@ def _apply(store, cid: str, cfg: dict | None, wf: WeightsFound, src: dict, by: s
         "auto_source_type": src.get("type"), "auto_posted_at": _when_iso(src), "auto_updated_at": now,
         "auto_previous": [{"name": c["name"], "weight": c["weight"]} for c in old] if old else None,
     }
+    if (cfg or {}).get("dist_auto"):
+        store.data["grades"][cid]["dist_auto"] = cfg["dist_auto"]
     how = " (AI CLI)" if by == "ai" else ""
     if old:
         return f"{short}: '{title}'에 따라 평가 비중을 바꿨습니다{how} — {_diff_text(_diff(old, comps))}"
     return f"{short}: 평가 비중 {len(comps)}개를 '{title}'에서 찾아 넣었습니다{how}(합 {wf.total:g}%)"
 
 
-def _better(grade: str, dist: dict) -> str | None:
-    usable = [x for x in g.GRADES if dist.get(x, 0) > 0]
+# ---------------------------------------------------------------- 학점 비율 자동 찾기(계약 16장)
+
+_DIST_HINT = re.compile(r"학점|등급|grade|grading|상대\s*평가|절대\s*평가|curv|(?<![A-Za-z0-9])[AB]\s*(?:\+|0)(?![A-Za-z0-9])",
+                        re.I)
+_SYLLABUS_NAME = re.compile(r"syllabus|강의\s*계획|계획서|course\s*(?:outline|info)", re.I)
+
+
+def _dist_target(srcs: list[dict]) -> dict | None:
+    """AI에 학점 비율을 물을 글: 강의계획서 > 이름이 강의계획서인 첨부 > 학점 낱말이 있는 가장 긴 글."""
+    cands = [s for s in srcs if _DIST_HINT.search(s.get("text") or "")]
+    if not cands:
+        return None
+    for pick in ([s for s in cands if s.get("type") == "syllabus"],
+                 [s for s in cands if s.get("type") == "pdf" and _SYLLABUS_NAME.search(s.get("title") or "")]):
+        if pick:
+            return max(pick, key=lambda s: len(s.get("text") or ""))
+    return max(cands, key=lambda s: len(s.get("text") or ""))
+
+
+def _dist_record(df: dm.DistFound, src: dict, by: str, now: str) -> dict:
+    title = src.get("title") or src.get("type") or "글"
+    if title.startswith("첨부 '") and title.endswith("'"):
+        title = title[4:-1]
+    return {"kind": df.kind, "dist": df.dist, "cutoffs": df.cutoffs, "ranges": df.ranges, "groups": df.groups,
+            "sentence": df.sentence, "source": f"{title}: {df.sentence}"[:300], "source_title": title,
+            "source_type": src.get("type"), "posted_at": _when_iso(src), "confidence": df.confidence,
+            "notes": list(df.notes), "by": by, "summary": dm.summary(df), "updated_at": now}
+
+
+def _same_dist(a: dict | None, b: dict) -> bool:
+    keys = ("kind", "dist", "cutoffs", "ranges", "sentence", "source_title", "by", "confidence")
+    return bool(a) and all(a.get(k) == b.get(k) for k in keys)
+
+
+def _ai_dist(store, cache: dict, cid: str, src: dict, session, ai_enabled: bool):
+    """규칙이 못 읽은 글을 AI(grade_distribution)에 한 번 묻는다. 같은 글이면 기억한 결과(실패는 AI_RETRY_HOURS 뒤 다시).
+    AI가 꺼져 있어도 이미 기억한 결과는 쓴다(새로 묻지는 않음). → (DistFound | None, 오류 | None)."""
+    text = src.get("text") or ""
+    h = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+    prev = cache.get(cid)
+    if prev and prev.get("hash") == h:
+        if prev.get("result"):
+            return dm.DistFound(**prev["result"]), None
+        at = parse_iso(prev.get("at"))
+        if not ai_enabled or not prev.get("error") or (at and now_local() - at < timedelta(hours=AI_RETRY_HOURS)):
+            return None, None
+    if not ai_enabled or session is None:
+        return None, None
+    res = session.run("grade_distribution", {"text": text, "is_html": bool(src.get("is_html")),
+                                             "title": src.get("title")})
+    if res.attempts == 0 and not res.ok:
+        return None, res.error   # 한도·꺼짐·CLI 없음: 기억하지 않는다
+    df = res.data if res.ok else None
+    if df is not None:
+        df.notes = list(df.notes) + [n for n in res.notes if n not in df.notes]
+    cache[cid] = {"hash": h, "at": iso(now_local()), "error": None if res.ok else res.error,
+                  "result": df.as_dict() if df else None}
+    return df, (None if res.ok else res.error)
+
+
+def auto_dist(store, sources: list[dict], ai_enabled: bool, runner=None,
+              session: agent_cli.AiSession | None = None) -> list[str]:
+    """학점 비율(상대평가)·점수 기준(절대평가)을 찾아 과목 설정의 config.dist_auto에 둔다. 한국어 기록 줄을 돌려준다.
+
+    core._after_sync가 평가 비중(auto_fill) 다음에 같은 AiSession으로 부른다(저장은 부르는 쪽이).
+    - 제외(hidden)·P/NP 과목은 건너뛴다(학점이 필요 없다).
+    - 규칙(distribution.find_distribution) high 중 **가장 최근 글**이 이긴다(같은 시각이면 '변경' 제목·강의계획서 순),
+      없으면 medium 중 가장 최근 글. low는 넣지 않는다.
+    - 규칙이 high·medium을 못 찾고 ai_enabled면 AI(grade_distribution)에 강의계획서(없으면 학점 낱말이 있는 가장 긴 글)를
+      한 번 묻는다 — 검증(원문 인용·합·범위)을 통과한 답만, 글마다 기억(store.data["dist_ai"]).
+    - 아무것도 못 찾으면 예전 dist_auto를 지운다(글이 바뀌어 근거가 사라짐). 사용자 비율(config.dist)은 건드리지 않는다 —
+      화면 계산에서 사용자 비율이 늘 이긴다(distribution.effective)."""
+    grades_cfg = store.data.setdefault("grades", {})
+    ai_cache = store.data.setdefault("dist_ai", {})
+    if ai_enabled and session is None:
+        session = agent_cli.AiSession(store, runner=runner, enabled=True)
+    by_course: dict[str, list[dict]] = {}
+    for s in sources or []:
+        if s.get("course_id") is not None and (s.get("text") or "").strip():
+            by_course.setdefault(str(s["course_id"]), []).append(s)
+    hidden = hidden_courses(store.data)
+    log, ai_blocked = [], None
+    now = iso(now_local())
+    for cid, srcs in sorted(by_course.items()):
+        if cid in hidden or course_mode(store.data, cid) == "pass_fail":
+            continue
+        short = _core.short_course_name(srcs[0].get("course_name")) or cid
+        found = []
+        for s in srcs:
+            df = dm.find_distribution(s.get("text") or "", bool(s.get("is_html")))
+            if df is not None:
+                found.append((df, s))
+
+        def newest(xs):
+            return max(xs, key=lambda x: (_when(x[1]), bool(_UPDATE_TITLE.search(x[1].get("title") or "")),
+                                          -_PRIORITY.get(x[1].get("type"), 5)))
+        chosen, by = None, "rules"
+        for level in ("high", "medium"):
+            xs = [x for x in found if x[0].confidence == level]
+            if xs:
+                chosen = newest(xs)
+                break
+        if chosen is None:
+            target = _dist_target(srcs)
+            if target is not None:
+                df, err = _ai_dist(store, ai_cache, cid, target, session, ai_enabled)
+                if df is not None:
+                    chosen, by = (df, target), "ai"
+                elif err:
+                    if err.startswith(("이번 동기화", "오늘", "AI CLI 사용이 꺼져")):
+                        ai_blocked = err
+                    else:
+                        log.append(f"{short}: AI CLI로 학점 비율을 찾지 못했습니다 — {err}")
+        cfg = grades_cfg.get(cid)
+        old = (cfg or {}).get("dist_auto")
+        if chosen is None:
+            if old:
+                cfg.pop("dist_auto", None)
+                log.append(f"{short}: 강의 글에서 학점 비율 근거가 사라져 자동 학점 비율을 뺐습니다")
+            elif any(x[0].confidence == "low" for x in found):
+                log.append(f"{short}: 학점 비율 후보가 있지만 확신이 낮아 넣지 않았습니다")
+            continue
+        rec = _dist_record(chosen[0], chosen[1], by, now)
+        if _same_dist(old, rec):
+            continue
+        if cfg is None:
+            cfg = grades_cfg.setdefault(cid, {"components": [], "dist": None, "class_size": None})
+        cfg["dist_auto"] = rec
+        how = " (AI CLI)" if by == "ai" else ""
+        what = "학점 기준(절대평가)" if rec["kind"] == "absolute" else "학점 비율"
+        verb = "바꿨습니다" if old else "찾아 넣었습니다"
+        log.append(f"{short}: {what}을 '{rec['source_title']}'에서 {verb}{how} — {rec['summary']}")
+    if ai_blocked:
+        log.append(f"AI CLI를 쓰지 않음(학점 비율): {ai_blocked}")
+    return log
+
+
+def _better(grade: str, dist: dict, cutoffs: dict | None = None) -> str | None:
+    usable = [x for x in g.GRADES if x in cutoffs] if cutoffs else [x for x in g.GRADES if dist.get(x, 0) > 0]
+    if cutoffs and grade not in usable:   # 절대평가에서 F(기준 없음) → 가장 낮은 기준 학점
+        return usable[-1] if usable else None
     i = usable.index(grade) if grade in usable else None
     return usable[i - 1] if i else None
 
@@ -784,6 +943,34 @@ def _schedule(items: list, cid: str, name: str, now) -> list:
     return out
 
 
+def dist_source(eff: dict) -> dict:
+    """courses[].dist_source(계약 16장): 학점을 무엇으로 매겼는지 — 사용자 비율 / 강의계획서(글) / 기본값."""
+    a = eff.get("auto") or {}
+    if eff["by"] != "syllabus":
+        return {"by": eff["by"], "kind": "relative", "sentence": None, "source_title": None, "source_type": None,
+                "posted_at": None, "ranges": None, "cutoffs": None, "confidence": None, "notes": [], "found_by": None,
+                "summary": None}
+    return {"by": "syllabus", "kind": a.get("kind"), "sentence": a.get("sentence"),
+            "source_title": a.get("source_title"), "source_type": a.get("source_type"), "posted_at": a.get("posted_at"),
+            "ranges": a.get("ranges") or None, "cutoffs": a.get("cutoffs"), "confidence": a.get("confidence"),
+            "notes": list(a.get("notes") or []), "found_by": a.get("by"), "summary": a.get("summary")}
+
+
+def _dist_notes(eff: dict) -> list[str]:
+    """추정 메모에 학점 기준의 출처: '학점 비율: 강의계획서 Syllabus.pdf — A+·A0 45%(40~50) …(범위는 가운데 값)'."""
+    a = eff.get("auto") or {}
+    if eff["by"] == "user":
+        return ["학점 비율: 직접 넣은 비율"]
+    if eff["by"] != "syllabus":
+        return []
+    where = a.get("source_title") or "강의 글"
+    how = " (AI CLI로 찾음)" if a.get("by") == "ai" else ""
+    if eff["kind"] == "absolute":
+        return [f"학점 기준: {where}의 절대평가 기준{how} — {a.get('summary') or ''}".rstrip(" —")]
+    tail = " — 범위는 가운데 값으로 계산" if a.get("ranges") else ""
+    return [f"학점 비율: {where}{how} — {a.get('summary') or ''}{tail}"]
+
+
 def section(store, courses: list[dict], items: list | None = None, sem: dict | None = None,
             cands: list | None = None) -> dict:
     """state["grades"]: 과목별 설정(+세부 점수·개수·일정)·추정·필요 점수·남은 평가, 우선순위, 점수 후보(+연결).
@@ -805,7 +992,8 @@ def section(store, courses: list[dict], items: list | None = None, sem: dict | N
         mode = course_mode(store.data, cid)
         cfg = copy.deepcopy(saved.get(cid) or {"components": [], "dist": None, "class_size": None})
         comps = cfg.setdefault("components", [])
-        dist = cfg.get("dist") or g.DEFAULT_DISTRIBUTION
+        eff = dm.effective(cfg)   # 사용자 비율 > 강의계획서 비율·기준표(dist_auto) > 기본값(계약 16장)
+        dist, cutoffs, basis = eff["dist"], eff["cutoffs"], eff["by"]
         mine = [x for x in cands if str(x.get("course_id")) == cid]
         links = link_candidates(store, cid, comps, mine) if comps else {}
         all_links.update(links)
@@ -826,33 +1014,41 @@ def section(store, courses: list[dict], items: list | None = None, sem: dict | N
         est, err, needed = None, None, []
         if comps and mode != "pass_fail":
             try:
-                est = g.estimate(expanded, dist, class_size=cfg.get("class_size"))
+                est = g.estimate(expanded, dist, class_size=cfg.get("class_size"), cutoffs=cutoffs)
             except ValueError as e:
                 err = str(e)
         if est:
-            est["notes"] = est["notes"] + _count_notes(comps)
+            est["letter_basis"] = basis
+            est["notes"] = est["notes"] + _count_notes(comps) + _dist_notes(eff)
             missing = [x for x in expanded if x["score"] is None and not x["fixed"] and x["weight"] > 0]
-            targets = [t for t in (_better(est["grade"], dist), est["grade"]) if t]
+            targets = [t for t in (_better(est["grade"], dist, cutoffs), est["grade"]) if t and not (cutoffs and t == "F")]
             for m in missing:
                 extra = {"parent": m["parent"]} if m.get("parent") else {}
                 for t in targets:
                     try:
-                        needed.append({"component": m["name"], **g.needed_on(expanded, m["name"], t, dist),
+                        needed.append({"component": m["name"], **g.needed_on(expanded, m["name"], t, dist,
+                                                                             cutoffs=cutoffs),
                                        "missing_weight": w_missing, **extra})
                     except ValueError as e:
                         needed.append({"component": m["name"], "target": t, "error": str(e),
                                        "missing_weight": w_missing, **extra})
             prio_in.append({"course": c["short_name"], "estimate": est,
                             "remaining_weight": sum(x["weight"] for x in missing), "dist": dist,
-                            "missing_weight": w_missing})
+                            "cutoffs": cutoffs, "letter_basis": basis, "missing_weight": w_missing})
         auto = bool(comps) and all(x.get("auto") for x in comps)
         changed = None
         if auto and cfg.get("auto_previous"):
             changed = {"at": cfg.get("auto_updated_at"), "source": cfg.get("auto_source"),
                        **_diff(cfg["auto_previous"], comps)}
+        pf = mode == "pass_fail"
         out_courses.append({"course_id": c["id"], "short_name": c["short_name"],
                             "canvas_score": c.get("current_score"), "config": cfg,
-                            "using_default_dist": cfg.get("dist") is None,
+                            "using_default_dist": basis == "default",
+                            "dist_source": None if pf else dist_source(eff),
+                            "dist_kind": None if pf else eff["kind"],
+                            "dist_used": None if pf or eff["kind"] == "absolute" else dict(dist),
+                            "cutoffs_used": None if pf else (dict(cutoffs) if cutoffs else None),
+                            "letter_basis": None if pf else basis,   # 이 과목 학점을 매기는 근거(추정 전에도)
                             "estimate": est, "error": err, "needed": needed,
                             "weight_total": w_total, "weight_missing": w_missing,
                             "missing_note": g.missing_weight_note(w_missing) if comps else None,

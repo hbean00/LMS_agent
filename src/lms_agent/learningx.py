@@ -76,7 +76,8 @@ class _WebRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def _opener(jar: http.cookiejar.CookieJar) -> urllib.request.OpenerDirector:
-    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), _WebRedirects)
+    from . import net
+    op = urllib.request.build_opener(net.https_handler(), urllib.request.HTTPCookieProcessor(jar), _WebRedirects)
     op.addheaders = [("User-Agent", USER_AGENT)]
     return op
 
@@ -187,6 +188,10 @@ class LearningX:
         except urllib.error.URLError as e:
             if isinstance(e.reason, (socket.timeout, TimeoutError)):
                 raise LearningXError(timeout_msg) from None
+            from . import net
+            if net.is_cert_error(e.reason):
+                host = urllib.parse.urlsplit(getattr(req, "full_url", "")).hostname or ""
+                raise LearningXError(net.cert_help(host, e.reason, "LearningX")) from None
             raise LearningXError(f"LearningX에 연결하지 못했습니다 ({e.reason})") from None
         except (socket.timeout, TimeoutError):
             raise LearningXError(timeout_msg) from None

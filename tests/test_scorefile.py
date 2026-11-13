@@ -160,3 +160,178 @@ def test_official_average_mismatch_is_reported():
                       "2026000003 20 20 40", "평균 35 35 70"])          # 계산 평균 60과 다름(행을 못 읽었다는 신호)
     r = scorefile.parse_score_text(text, "2026000002", filename="midterm_score.pdf")
     assert r.mean == 70.0 and any("계산한 평균" in n for n in r.notes)
+
+
+# ================================================================ 일반화(docs/CORNER_CASES.md 가족 5)
+# 다른 과목·다른 조교가 만든 점수표 모양: 만점 표시 방식, 열 순서, 학번 위치, 이름 칸, 등수·백분율 칸, 한 PDF에 표 여러 개.
+
+ROWS = ["2026000001 18 25 43", "2026000002 15 20 35", "2026000003 20 30 50"]
+
+
+@pytest.mark.parametrize("header", [
+    "학번 Prelab/20 Report/30 Total/50",
+    "Student ID Prelab [20] Report [30] Total [50]",
+    "Student ID Prelab[20] Report[30] Total[50]",
+    "학번 예비보고서(20점) 결과보고서(30점) 총점(50점)",
+    "학번 Prelab (max 20) Report (max 30) Total (max 50)",
+    "Student ID Prelab (20 pts) Report (30 pts) Total (50 pts)",
+    "학번 Prelab / 20 Report / 30 Total / 50",
+    "학번 Prelab (만점 20) Report (만점 30) Total (만점 50)",
+])
+def test_max_marker_styles(header):
+    r = scorefile.parse_score_text(header + "\n" + "\n".join(ROWS), "2026000002", filename="Lab2_score.pdf")
+    assert r is not None, header
+    assert [c["max_score"] for c in r.columns] == [20, 30, 50], header
+    assert (r.score, r.max_score, r.n) == (35, 50, 3)
+
+
+def test_max_row_under_header_is_not_a_student():
+    text = "학번 Prelab Report Total\n만점 20 30 50\n" + "\n".join(ROWS)
+    r = scorefile.parse_score_text(text, "2026000002", filename="Lab2_score.pdf")
+    assert [c["name"] for c in r.columns] == ["Prelab", "Report", "Total"]
+    assert [c["max_score"] for c in r.columns] == [20, 30, 50] and r.n == 3
+
+
+def test_id_not_first_name_column_and_total_not_last():
+    text = ("번호 이름 학번 Total(50) Prelab(20) Report(30)\n1 김*수 2026####11 43 18 25\n"
+            "2 이*희 2026####22 35 15 20\n3 박*민 2026####33 50 20 30")
+    r = scorefile.parse_score_text(text, "2026123433", filename="Lab2_score.pdf")
+    assert (r.column, r.score, r.rank) == ("Total", 50, 1)
+    assert {c["name"]: c["mine"] for c in r.columns} == {"Total": 50, "Prelab": 20, "Report": 30}
+
+
+def test_english_name_columns_with_spaces():
+    text = ("Student ID Name Score\n2026000001 Kim Minsu 85\n2026000002 Lee Jiwoo 70\n2026000003 Park Seo Yeon 90")
+    r = scorefile.parse_score_text(text, "2026000002", filename="quiz1_scores.pdf")
+    assert (r.column, r.score, r.n, r.rank) == ("Score", 70, 3, 3)
+
+
+@pytest.mark.parametrize("head,col", [("학번 HW1 HW2 HW3 Sum", "Sum"), ("학번 HW1 HW2 HW3 합계", "합계"),
+                                      ("Student ID Q1 Q2 Q3 Total", "Total")])
+def test_total_column_names(head, col):
+    text = head + "\n2026000001 1 2 3 6\n2026000002 2 2 2 6\n2026000003 3 3 3 9"
+    assert scorefile.parse_score_text(text, "2026000001", filename="hw_score.pdf").column == col
+
+
+@pytest.mark.parametrize("head", ["학번 중간 기말 합계 등수", "Student ID Midterm Final Total Rank"])
+def test_rank_column_is_not_a_score(head):
+    text = head + "\n2026000001 30 40 70 2\n2026000002 20 30 50 3\n2026000003 40 45 85 1"
+    r = scorefile.parse_score_text(text, "2026000002", filename="midterm_score.pdf")
+    assert [c["name"] for c in r.columns] == head.split()[-4:-1]           # 등수 칸은 뺀다
+    assert (r.score, r.rank) == (50, 3)
+
+
+def test_rank_column_without_total_still_picks_score():
+    text = "Student ID Score Rank\n2026000001 80 2\n2026000002 60 3\n2026000003 90 1"
+    r = scorefile.parse_score_text(text, "2026000002", filename="quiz_scores.pdf")
+    assert (r.column, r.score, r.rank) == ("Score", 60, 3)
+
+
+def test_percentage_column_is_dropped_with_its_name():
+    text = "학번 점수 백분율\n2026000001 45 90%\n2026000002 40 80%\n2026000003 35 70%"
+    r = scorefile.parse_score_text(text, "2026000002", filename="quiz_scores.pdf")
+    assert (r.column, r.score, r.n) == ("점수", 40, 3)
+
+
+MULTI = "\n".join([
+    "ASIC Design 2026",
+    "Lab0 Scores",
+    "Student ID Prelab(20) Report(30) Total(50)",
+    "2026000001 18 25 43", "2026000002 15 20 35", "2026000003 20 30 50",
+    "평균 (Average) 17.7 25.0 42.7",
+    "Lab1 Scores",
+    "Student ID Prelab(20) Report(30) Total(50)",
+    "2026000001 10 20 30", "2026000002 19 29 48", "2026000003 12 22 34",
+    "평균 (Average) 13.7 23.7 37.3",
+])
+
+
+def test_two_tables_in_one_pdf_are_not_mixed():
+    tables = scorefile.parse_score_results(MULTI, "2026000002", filename="Lab0_Lab1_score.pdf")
+    assert [(t.label, t.score, t.n) for t in tables] == [("Lab0", 35, 3), ("Lab1", 48, 3)]
+    assert tables[1].mean == 37.3 and tables[1].rank == 1
+    r1 = scorefile.parse_score_text(MULTI, "2026000002", label="Lab1")
+    assert (r1.label, r1.score, r1.mean) == ("Lab1", 48, 37.3)
+    r = scorefile.parse_score_text(MULTI, "2026000002", filename="scores.pdf")      # 어느 표인지 모르면 첫 표 + 알림
+    assert (r.label, r.score, r.n) == ("Lab0", 35, 3) and any("점수표가 2개" in n for n in r.notes)
+
+
+def test_repeated_page_header_is_the_same_table():
+    text = ("Lab0 Scores\n학번 점수\n2026000001 80\n2026000002 70\n- 1 -\nPage 1 of 2\n학번 점수\n"
+            "2026000003 60\n2026000004 90\n")
+    assert len(scorefile.parse_score_results(text, "2026000002")) == 1
+    r = scorefile.parse_score_text(text, "2026000002", filename="Lab0_score.pdf")
+    assert (r.n, r.rank) == (4, 3)
+
+
+# ---- 한 표에 서로 다른 평가가 여러 열(베타 사용자 제보 모양, 학번은 가짜): '순번 | 학번 | Quiz 1 (10) | Midterm (100)'
+# 열마다 평가 낱말이 있고 합계 열이 없으면 열마다 따로(SEPARATE), 합계 열이 있거나 만점 합이 맞으면 한 평가의 세부(PARTS).
+
+SEP = "\n".join(["성적", "순번 | 학번 | Quiz 1 (10) | Midterm (100)", "1 2099000001 0 45", "2 2099000002 7.5 51",
+                 "3 2099000003 9 80", "4 2099000004 10 72", "5 2099000005 6 60"])
+
+
+def test_separate_assessments_one_result_per_column():
+    rs = scorefile.parse_score_results(SEP, "2099000002", filename="성적.pdf")
+    assert [(r.label, r.column, r.score, r.max_score, r.n) for r in rs] == [
+        ("Quiz 1", "Quiz 1", 7.5, 10, 5), ("Midterm", "Midterm", 51, 100, 5)]
+    assert [r.key for r in rs] == ["Quiz 1", "Midterm"]
+    q, m = rs
+    assert q.mean == pytest.approx(statistics.fmean([0, 7.5, 9, 10, 6]), abs=1e-3) and q.rank == 3
+    assert m.rank == 4 and len(q.columns) == 1 and q.columns[0]["name"] == "Quiz 1"
+    assert any("열마다 따로" in n for n in q.notes) and not any(n.startswith("다른 열") for n in q.notes)
+    assert "Quiz 1" in q.sentence and "7.5/10" in q.sentence
+    # 예전 함수는 예전처럼 하나(마지막 열이 대표) — 열 이름의 번호는 이제 살아 있다
+    old = scorefile.parse_score_text(SEP, "2099000002", filename="성적.pdf")
+    assert old.column == "Midterm" and [c["name"] for c in old.columns] == ["Quiz 1", "Midterm"]
+    dumped = str([asdict(r) for r in rs])
+    assert "2099000001" not in dumped and "2099000002" not in dumped
+
+
+def test_three_separate_assessments_and_korean_headers():
+    text = ("학번 Quiz 1 (10) Quiz 2 (10) Midterm (20)\n2099000001 5 6 15\n2099000002 8 9 18\n2099000003 10 7 12")
+    rs = scorefile.parse_score_results(text, "2099000002", filename="scores.pdf")
+    assert [(r.label, r.score, r.max_score) for r in rs] == [("Quiz 1", 8, 10), ("Quiz 2", 9, 10), ("Midterm", 18, 20)]
+    ko = "번호 학번 퀴즈1(10) 중간고사(100)\n1 2099000001 7 70\n2 2099000002 9 85\n3 2099000003 4 60"
+    rs = scorefile.parse_score_results(ko, "2099000003", filename="성적.pdf")
+    assert [(r.label, r.score, r.max_score, r.rank) for r in rs] == [("퀴즈1", 4, 10, 3), ("중간고사", 60, 100, 3)]
+
+
+@pytest.mark.parametrize("header,name", [("학번 Lab 2 [20] HW 3 /10", "Lab 2"), ("학번 과제 2(10점) 퀴즈 3 (10)", "과제 2"),
+                                         ("학번 HW 3 /10 Quiz 2 (10)", "HW 3")])
+def test_small_number_before_max_marker_stays_in_the_name(header, name):
+    text = header + "\n2099000001 15 7\n2099000002 18 9\n2099000003 12 5"
+    r = scorefile.parse_score_text(text, "2099000002", filename="성적.pdf")
+    assert r.columns[0]["name"] == name and len(r.columns) == 2
+
+
+def test_total_column_means_parts_of_one_assessment():
+    text = "학번 Quiz 1 (10) Midterm (90) Total (100)\n2099000001 5 60 65\n2099000002 8 70 78\n2099000003 10 80 90"
+    rs = scorefile.parse_score_results(text, "2099000002", filename="Midterm_score.pdf")
+    assert len(rs) == 1 and (rs[0].column, rs[0].score, rs[0].label, rs[0].key) == ("Total", 78, "Midterm", None)
+
+
+def test_blank_and_absent_cells_in_separate_columns():
+    text = ("순번 학번 Quiz 1 (10) Midterm (100)\n1 2099000001 - 45\n2 2099000002 결시 51\n3 2099000003 9 80\n"
+            "4 2099000004 10 72")
+    rs = scorefile.parse_score_results(text, "2099000004", filename="성적.pdf")
+    assert [(r.label, r.score, r.n) for r in rs] == [("Quiz 1", 10, 2), ("Midterm", 72, 4)]
+    # 내 칸이 비면 그 평가는 결과에서 빠진다(점수 없는 후보를 만들지 않음)
+    rs = scorefile.parse_score_results(text, "2099000002", filename="성적.pdf")
+    assert [(r.label, r.score) for r in rs] == [("Midterm", 51)]
+    assert any("Quiz 1" in n and "비어" in n for n in rs[0].notes)
+
+
+def test_asic_parts_table_still_one_result():
+    text = "\n".join([
+        "ASIC Design 2026 Lab1 점수 (Lab1 Scores)",
+        "Student ID Required Items (10) Functional Description (25) Code Correctness (15) Total (50)",
+        "2026000001 10 25 15 50", "2026000002 10 22.5 15 47.5", "2026000003 8 20 12 40", "2026KU0004 10 12.5 10 32.5",
+        "평균 (Average) 9.5 20.0 13.0 42.5",
+    ])
+    rs = scorefile.parse_score_results(text, "2026000002", filename="Lab1_score-2.pdf")
+    assert len(rs) == 1 and (rs[0].label, rs[0].column, rs[0].score, rs[0].key) == ("Lab1", "Total", 47.5, None)
+    # 합계 열 이름이 없어도 만점 합(10 + 25 + 15 = 50)이 한 열과 맞으면 세부 점수
+    alt = text.replace("Total (50)", "Lab Grade (50)")
+    rs = scorefile.parse_score_results(alt, "2026000002", filename="Lab1_score-2.pdf")
+    assert len(rs) == 1 and rs[0].column == "Lab Grade"

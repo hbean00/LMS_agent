@@ -14,6 +14,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+from . import net
+
 USER_AGENT = "lms-agent/0.1"
 JSON_PREFIX = "while(1);"
 MAX_PAGES = 200
@@ -124,7 +126,7 @@ class Canvas:
         self._token = token
         self.timeout = timeout
         self.request_count = 0  # 실행 기록에 "요청 몇 번으로 끝냈는지" 남기려고 센다
-        self._opener = urllib.request.build_opener(_KeepAuthOnSameOrigin)
+        self._opener = urllib.request.build_opener(net.https_handler(), _KeepAuthOnSameOrigin)
 
     def __repr__(self) -> str:
         return f"Canvas({self.base_url!r})"
@@ -153,6 +155,8 @@ class Canvas:
         except urllib.error.URLError as e:
             if isinstance(e.reason, (socket.timeout, TimeoutError)):
                 raise CanvasError(timeout_msg) from None
+            if net.is_cert_error(e.reason):   # 백신·네트워크가 HTTPS를 가로채는 경우: 고칠 방법을 알려 준다
+                raise CanvasError(net.cert_help(self._origin[1], e.reason, "Canvas", self._origin[2] or 443)) from None
             raise CanvasError(
                 f"Canvas에 연결하지 못했습니다. 주소와 인터넷 연결을 확인하세요 ({e.reason})") from None
         except (socket.timeout, TimeoutError):

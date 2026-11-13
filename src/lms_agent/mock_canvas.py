@@ -132,7 +132,10 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     policy = ("<p>Dear All,</p><p>I have attached the updated grading policy, which includes the midterm quiz (5%) "
               "and the final quiz (5%).</p><ul><li>Homework assignments: 30% (w/ short reports)</li>"
               "<li>Midterm project: 25% (w/ midterm report)</li><li>Midterm quiz: 5%</li>"
-              "<li>Final project: 25% (w/ final report)</li><li>Final quiz: 5%</li><li>Attendance: 10%</li></ul>")
+              "<li>Final project: 25% (w/ final report)</li><li>Final quiz: 5%</li><li>Attendance: 10%</li></ul>"
+              # 학점 비율(계약 16장): 묶음(A+, A0)·범위(35~45%)·꼬리(C+ ~ F) — 데모 화면이 '강의계획서 비율'을 보여 준다
+              "<p>Letter grades (relative, guideline):</p><ul><li>A+, A0: 35~45%</li><li>B+, B0: 40~50%</li>"
+              "<li>C+ ~ F: 5~25%</li></ul>")
     midterm_week = ("<p>As I have mentioned in the last lecture, we will have a short quiz session (+ explanation on "
                     f"midterm project) in the regular class hour on {MONTHS[quiz_day.month - 1]}. {quiz_day.day}, "
                     f"{quiz_day.year} .</p><p>The quiz covers the lecture materials so far.</p>")

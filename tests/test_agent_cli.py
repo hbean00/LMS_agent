@@ -425,6 +425,12 @@ def eval_oracle(args, inp):
         return {"decisions": [D("f-lab4-b", "approved", "LAB4 보고서 마감이 11월 20일 자정으로 연장되었습니다."),
                               D("f-lab4-a", "rejected", "LAB4 보고서 마감: 11월 18일(수) 23:59"),
                               D("f-holiday", "rejected", "11월 15일 휴강입니다.")]}
+    if "상위 35% 정도까지 A" in inp:   # grade_distribution(계약 16장)
+        return {"kind": "relative", "groups": [{"grades": ["A+", "A0"], "pct": 35},
+                                               {"grades": ["B+", "B0"], "pct": 40}],
+                "evidence": "수강생의 상위 35% 정도까지 A를 주고, 그다음 40% 정도에 B를 주며"}
+    if "P/NP (Pass/Non-pass)" in inp:
+        return {"kind": "none"}
     return "모르겠습니다"
 
 

@@ -11,7 +11,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 # 마감 찾기 규칙이 바뀌면 올린다. 저장된 값과 다르면 다음 동기화 때 모든 글을 다시 읽는다.
-RULES_VERSION = "2026.11.13-3"  # -3: 제목이 종류·이름을(결과 제목 제외), 다음 줄 "시간:", 통계 소수는 날짜 아님
+# -3: 제목이 종류·이름을(결과 제목 제외), 다음 줄 "시간:", 통계 소수는 날짜 아님
+# -4: 일반화(docs/CORNER_CASES.md) — 마침표 모양으로 문장 나누기, 이름 덩어리의 머리 낱말이 종류를 정함, 칸 줄(공백·'|'),
+#     앞 줄 '시간:', 번호·버전·그림 번호·점수의 점 숫자는 날짜 아님, 앞에 쓴 영어 요일 확인, 점으로 쓴 시각
+RULES_VERSION = "2026.11.13-4"
 
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -48,30 +51,77 @@ def html_to_text(s: str | None) -> str:
     return "\n".join(ln for ln in lines if ln)
 
 
-# 마침표 뒤에서 자르되 "2026. 11. 20." 같은 날짜 안에서는 자르지 않는다.
-_SPLIT = re.compile(r"(?<=[!?。])\s+|(?<=[^\d\s.][.])\s+")
+# ---------------------------------------------------------------- 문장 나누기
+# 마침표가 문장 끝인지는 낱말 목록이 아니라 모양으로 정한다(docs/CORNER_CASES.md 가족 1):
+#  - 뒤가 소문자로 이어지면 같은 문장("U.S. students", "5 p.m. on Friday")
+#  - 뒤가 숫자·'(숫자'면 앞 조각이 줄임말 꼴(짧은 영문 조각·달·요일 이름)일 때 같은 문장("Oct. 22", "No. 3", "Eq. (2.1)")
+#  - 앞 조각 안에 마침표가 또 있거나 한 글자면 줄임말·이니셜("e.g.", "U.S.", "J. Smith") — a.m./p.m.은 뒤가 날짜 낱말이 아닐 때 끝
+#  - 호칭(Prof. Dr. Mr.)·절대 문장 끝이 아닌 줄임말(vs. cf. approx.)·달/요일 줄임말 + 날짜 낱말은 이어진다
+#  - 숫자로 끝난 조각("Nov. 20.", "2026. 11. 20.")은 예전처럼 잇되, 양쪽에 각자 날짜가 있고 뒤가 대문자 영어 낱말이면 끊는다
+#    ("Lab 3 is due Nov. 20. Lab 4 is due Nov. 27." → 두 마감)
+_WD_FULL = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_HONORIFIC = {"mr", "mrs", "ms", "mx", "dr", "prof", "sr", "jr", "st", "rev", "hon"}
+_NEVER_FINAL = {"vs", "cf", "approx", "incl", "viz", "ca", "al", "resp", "esp", "ref", "refs", "fig", "figs", "eq",
+                "eqs", "ch", "chap", "sec", "secs", "vol", "pp", "no", "nos", "ex", "tel", "ext", "dept", "univ"}
+_CAND = re.compile(r"[.!?。](?=\s+\S)")
 
 
-# 마침표로 끝나는 줄임말: 여기서 끊으면 'Oct. 22' 같은 날짜가 두 문장으로 갈라진다(실제 고려대 ASIC 공지)
-_ABBR = re.compile(r"(?i)(?:^|[\s(])(?:jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|mon|tue|tues|wed|thu|thur|thurs|"
-                   r"fri|sat|sun|no|vs|approx|dr|mr|ms|prof|e\.g|i\.e)\.$")
+def _date_word(w: str) -> bool:
+    """달·요일 이름(3글자 이상 앞부분): 'oct', 'sept', 'thurs', 'monday'."""
+    w = w.lower()
+    return len(w) >= 3 and (any(m.startswith(w) for m in EN_MONTHS) or w == "sept"
+                            or any(d.startswith(w) for d in _WD_FULL))
+
+
+def _has_date(s: str) -> bool:
+    return bool(find_dates(s, date(2000, 6, 15)))
+
+
+def _is_end(left: str, right: str, line_rest: str) -> bool:
+    """left는 문장 부호로 끝나는 조각, right는 공백 뒤 글. 여기서 문장을 끊을지."""
+    if left[-1] in "!?。":
+        return True
+    m = re.search(r"(\S*?)\s*\.$", left[-80:])
+    tok = (m.group(1) if m else "").lstrip("([{\"'“‘")
+    low = tok.lower().rstrip(".")
+    nxt = (re.match(r"[A-Za-z]+", right) or [""])[0]
+    first = right[:1]
+    if re.search(r"\d$", tok):          # "Nov. 20." / "11. 20." / "2026 ."
+        return (bool(re.match(r"[A-Z][A-Za-z]", right)) and nxt.upper() not in ("AM", "PM")
+                and _has_date(left[-300:]) and _has_date(line_rest[:300]))
+    if first.isascii() and first.islower():
+        return False
+    if first.isdigit() or re.match(r"[(\[]\s*\d", right):
+        if _date_word(low) or low in _NEVER_FINAL or (low.isascii() and low.isalpha() and len(low) <= 4):
+            return False
+        return True
+    if "." in tok.rstrip("."):            # e.g. / i.e. / U.S. / a.m. / p.m.
+        if low.replace(".", "") in ("am", "pm"):
+            return not _date_word(nxt)
+        return False
+    if len(low) == 1 and low.isalpha() and low.isascii():   # 이니셜 'J. Smith'
+        return False
+    if low in _HONORIFIC or low in _NEVER_FINAL:
+        return False
+    if _date_word(low) and _date_word(nxt):                   # 'Mon. Nov. 16', 'Thu. Oct. 22'
+        return False
+    return True
 
 
 def split_sentences(text: str) -> list[str]:
     out = []
     for line in text.split("\n"):
-        buf = ""
-        for part in _SPLIT.split(line):
-            part = part.strip()
-            if not part:
-                continue
-            buf = f"{buf} {part}" if buf else part
-            if _ABBR.search(buf):   # 줄임말 뒤 → 다음 조각과 이어 붙인다
-                continue
-            out.append(buf)
-            buf = ""
-        if buf:
-            out.append(buf)
+        start = 0
+        for m in _CAND.finditer(line):
+            right = line[m.end():].lstrip()
+            if _is_end(line[start:m.end()], right, right):
+                part = line[start:m.end()].strip()
+                if part:
+                    out.append(part)
+                start = m.end()
+        rest = line[start:].strip()
+        if rest:
+            out.append(rest)
     return out
 
 
@@ -81,7 +131,10 @@ STRONG = re.compile(r"(?i)마감|제출|기한|데드라인|due|deadline|submit|
 UNTIL = re.compile(r"(?i)까지|until|\bby\b")
 TASK = re.compile(r"(?i)과제|숙제|레포트|리포트|보고서|프로젝트|실습|에세이|(?<![a-z])(?:lab|hw|homework|assignment|report|project|essay)(?![a-z])")
 EXAM = re.compile(r"(?i)시험|중간고사|기말고사|퀴즈|(?<![a-z])(?:quiz|exam|midterm)(?![a-z])")
-NEGATIVE = re.compile(r"(?i)휴강|보강|강의실\s*변경|수업\s*없|class\s+(?:is\s+)?cancel")
+# 수업이 없다는 글(휴강·보강·강의실 변경, 'no class') — 제출 낱말이 없으면 마감이 아니다
+NEGATIVE = re.compile(r"(?i)휴강|보강|강의실\s*변경|수업\s*없|수업이\s*없|수업(?:은|이)?\s*진행(?:이|하지)?\s*(?:어렵|않)|"
+                      r"class(?:es)?\s+(?:is\s+|are\s+)?cancel|(?<![a-z])no\s+(?:class|classes|lecture|lectures)(?![a-z])|"
+                      r"class(?:es)?\s+will\s+not\s+(?:be\s+held|meet)")
 
 EMAIL_ADDR = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 EMAIL_KW = re.compile(r"(?i)이메일|메일|e-?mail")
@@ -100,41 +153,212 @@ def detect_method(text: str) -> tuple[str, str | None]:
     return "unknown", None
 
 
-def deadline_kind(sentence: str) -> str | None:
+# ---------------------------------------------------------------- 이름 덩어리(phrase)
+# 'Midterm Project', 'Final Exam Review session', '중간고사 대체 과제'처럼 붙어 있는 낱말 덩어리에서는
+# **마지막 낱말(머리)이 종류를 정한다**(docs/CORNER_CASES.md 가족 2). 낱말마다 종류:
+#   exam 시험 · task 과제 · event 발표(학기 시점·과제 낱말 뒤일 때만 과제 — '성적 발표'는 알림)
+#   meta 시험·과제에 '관한' 것(범위·성적·복습·해설·주간 — 그 자체는 일정이 아님)
+#   thru 종류를 바꾸지 않는 말(공지·안내·일정·시간·장소·session) · term 학기 시점(중간·기말 — 뒤 낱말이 정함)
+#   weak 'test': 학기 시점·번호가 붙을 때만 시험('Midterm test', 'Test 2' — 'test your code'는 아님)
+_LEX = [
+    ("exam", "midterm", r"중간\s*고사|중간\s*시험|중간\s*평가"),
+    ("exam", "final", r"기말\s*고사|기말\s*시험|기말\s*평가"),
+    ("exam", "quiz", r"쪽지\s*시험|퀴즈|quiz(?:zes|es)?"),
+    ("exam", "exam", r"시험|고사|exams?|examinations?"),
+    ("weak", "exam", r"tests?"),
+    ("term", "midterm", r"mid[\s\-]?terms?|중간"),
+    ("term", "final", r"finals?|기말"),
+    ("task", "hw", r"과제(?:물)?|숙제|homeworks?|hws?|assignments?|problem\s+sets?|psets?"),
+    ("task", "report", r"레포트|리포트|보고서|reports?|write-?ups?"),
+    ("task", "project", r"프로젝트|projects?"),
+    ("task", "lab", r"실습|실험|labs?"),
+    ("task", "essay", r"에세이|essays?"),
+    ("task", "proposal", r"제안서|proposals?"),
+    ("task", "paper", r"논문|papers?"),
+    ("event", "presentation", r"발표|시연|presentations?|demos?|demonstrations?|defen[cs]es?"),
+    ("meta", None, r"범위|성적|결과|점수|채점|해설|풀이|정답|복습|리뷰|설명회|통계|분포|주간|기간|대비|순서|자료|수업|강의|감독|"
+                   r"이의\s*신청|면제|reviews?|scopes?|coverage|range|results?|grades?|grading|scores?|solutions?|answers?|"
+                   r"keys?|feedback|surveys?|guides?|statistics|stats|distributions?|weeks?|period|break|prep|preparation|"
+                   r"study|regrades?|appeals?|slides?|materials?|order|class(?:es)?|lectures?|proctors?|proctoring|"
+                   r"polic(?:y|ies)|rubrics?|templates?|samples?|examples?|questions?|topics?|syllabus|outline|"
+                   r"average|mean|median"),
+    ("thru", None, r"공지|안내|일정|공고|알림|관련|사항|시간|장소|일시|날짜|일자|세션|notices?|announcements?|"
+                   r"info(?:rmation)?|schedules?|details|logistics|reminders?|updates?|sessions?|hours?|time|dates?|"
+                   r"days?|rooms?|locations?|venue|instructions?|guidelines?|requirements?|descriptions?|specs?|"
+                   r"specifications?"),
+]
+_LEX_RX = re.compile("(?i)(?<![A-Za-z])(?:" + "|".join(f"(?P<w{i}>{rx})" for i, (_, _, rx) in enumerate(_LEX))
+                     + ")(?![A-Za-z])")
+# 번호 뒤에 월·일·시 등이 오면 날짜·시간의 숫자이지 과제 번호가 아니다("기말고사 12월 12일").
+_NOT_NUM = r"(?!\d)(?!\s*(?:월|일|시|분|주|쪽|명|점|%|[:./~\-]\s*\d))"
+_NUM_AFTER = re.compile(r"[ \t]*#?[ \t]*(\d{1,2})" + _NOT_NUM)
+_NUM_BEFORE = re.compile(r"(?i)(?<!\d)(\d{1,2})\s*(?:차|번째?|st|nd|rd|th)\s*$")
+_LINK_STOP = {"and", "or", "the", "a", "an", "of", "for", "on", "in", "at", "by", "to", "is", "are", "was", "were",
+              "will", "be", "been", "with", "from", "after", "before", "this", "that", "these", "those", "next", "last",
+              "each", "every", "all", "any", "no", "not", "your", "our", "their", "its", "as", "than", "then", "due",
+              "until", "via", "per", "about", "into", "over", "under", "has", "have", "had", "can", "may", "must",
+              "또는", "그리고", "이번", "다음", "지난", "모든", "각"}
+
+
+@dataclass
+class _Word:
+    start: int
+    end: int        # 낱말 끝
+    tail: int       # 번호까지 포함한 끝
+    cat: str
+    fam: str | None
+    n: str | None
+    raw: str
+
+
+@dataclass
+class _Phrase:
+    start: int
+    end: int
+    cat: str | None          # exam | task | event | meta | None(투명한 말뿐)
+    name: str | None         # 'Midterm Project', 'LAB 3', '기말 프로젝트 발표'
+    term: str | None         # midterm | final
+    fams: frozenset          # 종류 계열(exam·quiz·project·report…) — same_task가 쓴다
+    words: list
+
+
+def _words(text: str) -> list[_Word]:
+    out = []
+    for m in _LEX_RX.finditer(text):
+        i = int(m.lastgroup[1:])
+        cat, fam, _ = _LEX[i]
+        n, tail = None, m.end()
+        if cat != "thru":
+            mn = _NUM_AFTER.match(text, m.end())
+            if mn:
+                n, tail = mn.group(1), mn.end()
+            else:
+                mp = _NUM_BEFORE.search(text[max(0, m.start() - 8):m.start()])
+                n = mp.group(1) if mp else None
+        out.append(_Word(m.start(), m.end(), tail, cat, fam, n, m.group(0)))
+    return out
+
+
+def _links(gap: str) -> bool:
+    """두 낱말이 한 덩어리인지: 사이가 공백뿐이거나, 공백으로 둘러싸인 모르는 낱말 하나('대체', 'take-home')."""
+    if re.fullmatch(r"[ \t]*", gap):
+        return True
+    m = re.fullmatch(r"[ \t]+([A-Za-z][A-Za-z\-]{2,}|[가-힣]{2,4})[ \t]+", gap)
+    if not m:
+        return False
+    w = m.group(1)
+    return w.lower() not in _LINK_STOP and not re.search(r"[은는이가을를의에와과도로]$", w)
+
+
+def _show(seg: str) -> str:
+    out = []
+    for tok in seg.split():
+        low = tok.lower()
+        if low in ("lab", "hw"):
+            out.append(low.upper())
+        elif re.fullmatch(r"[A-Za-z][A-Za-z\-]*", tok):
+            out.append(tok if tok.isupper() and len(tok) > 1 and not _LEX_RX.fullmatch(tok) else tok.title())
+        else:
+            out.append(tok)
+    return " ".join(out)
+
+
+def _phrase(ws: list[_Word], text: str) -> _Phrase:
+    core = [w for w in ws if w.cat != "thru"]
+    term = next((w.fam for w in ws if w.cat == "term" or (w.cat == "exam" and w.fam in ("midterm", "final"))), None)
+    cat = None
+    if core:
+        head = core[-1]
+        prev = core[-2] if len(core) > 1 else None
+        cat = head.cat
+        if cat == "event":       # '프로젝트 발표'·'Final presentation'만 발표 일정, '성적 발표'는 알림
+            cat = "event" if prev is not None and prev.cat in ("term", "task") else \
+                "meta" if prev is not None and prev.cat in ("meta", "exam") else None
+        elif cat == "weak":
+            cat = "exam" if (term or head.n or (prev is not None and prev.cat == "exam")) else None
+        elif cat == "term":      # 'Midterm' 혼자면 시험, 'final'·'finals'(기간)·'중간' 혼자면 알 수 없음
+            cat = "exam" if prev is None and head.raw.lower().startswith("mid") else None
+    name = None
+    if cat in ("exam", "task", "event"):
+        lead = next((w for w in ws if w.cat in ("term", "exam", "task", "event", "weak")), core[0])
+        k = ws.index(lead)
+        stop = next((w for w in ws[k:] if w.n), core[-1])   # 번호가 붙은 낱말에서 이름이 끝난다('LAB 3 보고서' → 'LAB 3')
+        name = _show(text[lead.start:stop.end]) + (f" {stop.n}" if stop.n else "")
+    fams = set()   # 머리와 같은 종류의 낱말 계열만('중간고사 대체 과제' → {hw}, 'Midterm project report' → {project, report})
+    for w in core:
+        if cat == "exam" and (w.cat in ("exam", "weak") or (w.cat == "term" and w is core[-1])):
+            fams.add("quiz" if w.fam == "quiz" else "exam")
+        elif cat in ("task", "event") and w.cat in ("task", "event"):
+            fams.add(w.fam)
+    return _Phrase(ws[0].start, ws[-1].tail, cat, name, term, frozenset(fams), ws)
+
+
+def phrases(text: str | None) -> list[_Phrase]:
+    """글 속 이름 덩어리들(글 순서)."""
+    text = text or ""
+    out, cur = [], []
+    for w in _words(text):
+        if cur and _links(text[cur[-1].tail:w.start]):
+            cur.append(w)
+            continue
+        if cur:
+            out.append(_phrase(cur, text))
+        cur = [w]
+    if cur:
+        out.append(_phrase(cur, text))
+    return out
+
+
+def _kind_of(sentence: str, ps: list[_Phrase] | None = None) -> str | None:
+    ps = phrases(sentence) if ps is None else ps
     strong = bool(STRONG.search(sentence))
-    exam = bool(EXAM.search(sentence))
     if NEGATIVE.search(sentence) and not strong:
         return None
-    if exam:
+    cats = {p.cat for p in ps}
+    if "exam" in cats:
         return "시험"
-    if strong or (UNTIL.search(sentence) and TASK.search(sentence)):
+    if "event" in cats:
+        return "과제"     # 'Midterm Presentation: Nov. 19' — 발표하는 날
+    if strong or (UNTIL.search(sentence) and "task" in cats):
         return "과제"
     return None
 
 
-# 점수 통계 낱말 바로 뒤의 점 숫자('표준편차 12.1')는 날짜가 아니다
-_STAT_BEFORE = re.compile(r"(?i)(?:평균|표준\s*편차|편차|중앙값|점수|최고점?|최저점?|만점|mean|avg|average|sd|std|stdev|"
-                          r"median|score|max|min)\s*[:：=]?\s*\(?\s*$")
+def deadline_kind(sentence: str) -> str | None:
+    return _kind_of(sentence)
+
+
+# 점수 통계·학점 낱말 바로 뒤의 점·빗금 숫자('표준편차 12.1', 'score: 9/10')는 날짜가 아니다
+_STAT_BEFORE = re.compile(r"(?i)(?:평균|표준\s*편차|편차|중앙값|점수|최고점?|최저점?|만점|평점|학점|백분위|비율|비중|가중치|"
+                          r"mean|avg|average|sd|std|stdev|median|scores?|max|min|gpa|grade|rate|percentile|weight)"
+                          r"\s*[:：=]?\s*\(?\s*$")
+# 번호를 붙여 부르는 것('Fig. 3.4', 'Section 1.2', 'v1.2', 'Problem 2.3', '식 (2.1)', 'at 10.30') 뒤의 점 숫자는 날짜가 아니다
+_REF_BEFORE = re.compile(r"(?i)(?:(?<![a-z])(?:fig(?:ure)?s?|eqs?|equations?|tables?|tab|sec(?:tion)?s?|ch(?:ap(?:ter)?)?s?|"
+                         r"parts?|pages?|pp?|vol(?:ume)?|ver(?:sion)?|v|rev(?:ision)?|release|steps?|items?|appendix|"
+                         r"problems?|prob|exercises?|ex|questions?|q|lemma|theorem|thm|def(?:inition)?|example|at)|§|@|"
+                         r"(?<![가-힣])(?:그림|식|표|절|장|쪽|페이지|버전|부록|단계|문제|문항|연습\s*문제|예제|정리))"
+                         r"\.?\s*[:#]?\s*[(\[]?\s*$")
+# 과제·실습 번호('Lab 2.1')는 바로 뒤에 '까지'·'by' 같은 마감 말이 없을 때만 번호로 본다('과제 11.20까지'는 날짜)
+_ITEM_BEFORE = re.compile(r"(?i)(?:(?<![a-z])(?:labs?|hws?|homeworks?|assignments?|quiz(?:zes)?|projects?|tasks?)|"
+                          r"(?<![가-힣])(?:과제|실습|퀴즈|프로젝트))\s*#?\s*$")
+_DUE_AFTER = re.compile(r"(?i)^\s*(?:까지|마감|전까지|until\b|by\b|due\b)")
 # 결과·성적을 알리는 제목
 _RESULT_TITLE = re.compile(r"(?i)성적|점수|결과|채점|score|result|grade|graded|feedback")
 
-# '날짜: 12월 15일' / '시간: 10:30am' 같은 칸 줄(제목이 종류를 말해 줄 때 쓴다)
+# '날짜: 12월 15일' / '시간: 10:30am' 같은 칸 줄(제목이 종류를 말해 줄 때 쓴다). 칸 구분은 ':'·'|' 또는
+# 표 칸처럼 공백 뒤에 바로 날짜·시각이 오는 경우('날짜 12/15' — HTML 표 <td>날짜</td><td>12/15</td>)
+_DATE_START = r"(?=\(?\d|(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s)"
+_FIELD_SEP = r"\s*[\])>]?\s*(?:[:：|]|(?<=[\w)\]>])\s+"
 _FIELD_DATE = re.compile(r"(?i)^\s*[\[(<]?\s*(?:날짜|일시|일자|시험\s*(?:일|일시|일자|날짜)|일정|date|when|"
-                         r"exam\s*date|time\s*(?:&|and)\s*date)\s*[\])>]?\s*[:：]")
-_FIELD_TIME = re.compile(r"(?i)^\s*[\[(<]?\s*(?:시간|시각|time)\s*[\])>]?\s*[:：]")
-
-# 'Midterm Project'처럼 학기 시점 낱말 바로 뒤의 종류 낱말(title_hint가 이어 붙인다)
-_TERM_WORD = re.compile(r"(?i)midterm|final|중간|기말")
-_FOLLOW = re.compile(r"(?i)\s*(project|report|quiz|exam|프로젝트|보고서|퀴즈|시험)(?![a-z])")
-_EXAM_ONLY = re.compile(r"(?i)시험|고사|퀴즈|(?<![a-z])(?:quiz|exam)(?![a-z])")
+                         r"exam\s*date|time\s*(?:&|and)\s*date|date\s*(?:&|and)\s*time)" + _FIELD_SEP + _DATE_START + ")")
+_FIELD_TIME = re.compile(r"(?i)^\s*[\[(<]?\s*(?:시간|시각|time|start\s*time|시작\s*시간)" + _FIELD_SEP
+                         + r"(?=\d|오전|오후|[ap]\.?m))")
 
 
 # ---------------------------------------------------------------- 과제 이름
 
 _TITLE_WORDS = (r"과제|숙제|레포트|리포트|보고서|프로젝트|실습|퀴즈|중간고사|기말고사|중간\s*시험|기말\s*시험|시험|"
                 r"lab|hw|homework|assignment|report|project|quiz|midterm|final\s+exam|final\s+report|exam")
-# 번호 뒤에 월·일·시 등이 오면 날짜·시간의 숫자이지 과제 번호가 아니다("기말고사 12월 12일").
-_NOT_NUM = r"(?!\d)(?!\s*(?:월|일|시|분|주|쪽|명|점|%|[:./~\-]\s*\d))"
 _TITLE_A = re.compile(r"(?i)(?<![a-z])(?P<w>" + _TITLE_WORDS + r")(?![a-z])(?:\s*#?\s*(?P<n>\d{1,2})" + _NOT_NUM + r")?")
 _TITLE_B = re.compile(r"(?i)(?<!\d)(?P<n>\d{1,2})\s*(?:차|번째?)\s*(?P<w>" + _TITLE_WORDS + r")(?![a-z])")
 
@@ -147,34 +371,23 @@ _SYN = {
 }
 
 
-def _display_word(w: str) -> str:
-    low = re.sub(r"\s+", " ", w.lower())
-    if low in ("lab", "hw"):
-        return low.upper()
-    if re.match(r"[a-z]", low):
-        return low.title()
-    return re.sub(r"\s+", " ", w)
-
-
-def title_hint(text: str) -> str | None:
-    best = None
-    for rx in (_TITLE_A, _TITLE_B):
-        m = rx.search(text)
-        if m and (best is None or m.start() < best.start()):
-            best = m
-    if not best:
+def title_hint(text: str, prefer: str | None = None) -> str | None:
+    """글에서 과제·시험 이름. 덩어리의 머리가 시험·과제·발표인 것 중 첫 번째(prefer="시험"|"과제"면 그 종류 먼저).
+    '기말고사 범위'·'Midterm grades'처럼 머리가 범위·성적인 덩어리는 이름이 아니다."""
+    ps = [p for p in phrases(text) if p.name]
+    if not ps:
         return None
-    w, n = _display_word(best.group("w")), best.group("n")
-    if not n and _TERM_WORD.fullmatch(best.group("w").strip()):
-        # 'Midterm Project'·'Final Report'·'Midterm Quiz': 학기 시점 낱말 뒤의 종류 낱말까지 이름에 넣는다
-        m2 = _FOLLOW.match(text, best.end())
-        if m2:
-            w = f"{w} {_display_word(m2.group(1))}"
-    return f"{w} {n}" if n else w
+    if prefer:
+        want = ("exam",) if prefer == "시험" else ("task", "event")
+        for p in ps:
+            if p.cat in want:
+                return p.name
+    return ps[0].name
 
 
 def title_tokens(text: str | None) -> set[tuple[str, str | None]]:
-    """'LAB4 보고서' -> {('lab','4'), ('report', None)}. 같은 과제인지 비교할 때 쓴다."""
+    """'LAB4 보고서' -> {('lab','4'), ('report', None)}. 같은 과제인지 비교할 때 쓴다.
+    학기 시점이 붙은 덩어리('Final Project', '기말 보고서')는 ('final', None)도 넣는다(한 과제를 가리키는 제목)."""
     out: set[tuple[str, str | None]] = set()
     if not text:
         return out
@@ -183,17 +396,27 @@ def title_tokens(text: str | None) -> set[tuple[str, str | None]]:
             key = _SYN.get(re.sub(r"\s+", "" if re.match(r"[가-힣]", m.group("w")) else " ", m.group("w").lower()))
             if key:
                 out.add((key, m.group("n")))
+    for p in phrases(text):
+        if p.term and p.cat in ("exam", "task", "event"):
+            out.add((p.term, None))
     return out
 
 
+def _signatures(text: str | None) -> set:
+    return {(p.term, p.fams) for p in phrases(text) if p.term and p.fams and p.cat in ("exam", "task", "event")}
+
+
 def same_task(a: str | None, b: str | None) -> bool:
+    """같은 과제·시험인지: 같은 번호의 같은 종류('LAB4 보고서'↔'LAB 4', '과제 3'↔'Homework 3'), 또는 같은 학기 시점에
+    같은 머리 종류('Midterm'↔'중간고사', 'Final Report'↔'기말 보고서'). 'Midterm Project'와 'Midterm Exam'은 다르다."""
     ta, tb = title_tokens(a), title_tokens(b)
     for k, n in ta:
         if n is not None and (k, n) in tb:
             return True
-        if n is None and k in ("midterm", "final") and any(k == k2 for k2, _ in tb):
-            return True
-    # 번호만 같고 종류 이름이 다른 경우(LAB4 vs 실습 4)는 위에서 lab으로 묶인다.
+    for t1, f1 in _signatures(a):
+        for t2, f2 in _signatures(b):
+            if t1 == t2 and f1 & f2:
+                return True
     return False
 
 
@@ -204,7 +427,10 @@ _WD_AFTER = (r"(?:\s*\(\s*(?P<wd>[월화수목금토일]|[A-Za-z]{3})[A-Za-z]*\.
 RX_YMD = re.compile(r"(?<!\d)(?P<y>20\d{2})\s*(?:[.\-/]|년)\s*(?P<m>\d{1,2})\s*(?:[.\-/]|월)\s*(?P<d>\d{1,2})(?!\d)\s*(?:일)?\.?" + _WD_AFTER)
 RX_MD_KO = re.compile(r"(?<!\d)(?P<m>\d{1,2})\s*월\s*(?P<d>\d{1,2})\s*일" + _WD_AFTER)
 RX_MD_NUM = re.compile(r"(?<![\d./\-:])(?P<m>\d{1,2})\s*[/.]\s*(?P<d>\d{1,2})(?![\d:])(?!\s*[./]\s*\d)\.?" + _WD_AFTER)
-RX_EN_MD = re.compile(r"(?i)(?<![a-z])(?P<mon>[a-z]{3,9})\.?\s+(?P<d>\d{1,2})(?:st|nd|rd|th)?(?![\d:])(?:,?\s*(?P<y>20\d{2}))?")
+# 'Thu., Oct. 22'·'Monday, Dec. 15'처럼 앞에 쓴 요일도 날짜에 넣는다(요일이 맞는지 확인하고, 요일만 따로 세지 않음)
+_EN_WD_BEFORE = r"(?:(?P<wdb>(?:mon|tue|wed|thu|fri|sat|sun)[a-z]{0,6})\.?,?\s+)?"
+RX_EN_MD = re.compile(r"(?i)(?<![a-z])" + _EN_WD_BEFORE + r"(?P<mon>[a-z]{3,9})\.?\s+(?P<d>\d{1,2})(?:st|nd|rd|th)?(?![\d:])"
+                      r"(?:,?\s*(?P<y>20\d{2}))?" + _WD_AFTER)
 RX_EN_DM = re.compile(r"(?i)(?<![\d:])(?P<d>\d{1,2})(?:st|nd|rd|th)?\s+(?P<mon>[a-z]{3,9})(?![a-z])\.?(?:,?\s*(?P<y>20\d{2}))?")
 
 RX_REL = re.compile(r"오늘|금일|내일|명일|모레")
@@ -213,7 +439,8 @@ RX_EN_REL = re.compile(r"(?i)(?<![a-z])(?:(?P<rel>today|tonight|tomorrow)|(?:(?P
 
 # 숫자 날짜(11/20, 11.20)는 소수·점수와 헷갈리므로, 뒤에 마감다운 말이 올 때만 날짜로 본다.
 _NUM_OK_AFTER = re.compile(r"(?i)^\s*(?:까지|마감|자정|정오|오전|오후|저녁|밤|새벽|\d{1,2}\s*[:시]|\d{1,2}\s*[ap]\.?m|[~\-–]|by\b|at\b|until\b|due\b|$|[,)\]])")
-_NUM_OK_BEFORE = re.compile(r"(?i)(?:마감|기한|due|deadline|by|until|[~\-–])\s*(?:일|일시|은|는)?\s*[:：]?\s*$")
+_NUM_OK_BEFORE = re.compile(r"(?i)(?:마감|기한|due|deadline|by|until|[~\-–]|(?<![가-힣])(?:일시|날짜|일자)|"
+                            r"(?<![a-z])(?:date|when))\s*(?:일|일시|은|는)?\s*[:：|]?\s*$")
 _PICK_AFTER = re.compile(r"(?i)^[^가-힣a-z]{0,20}(?:까지|마감|전까지|until)|^\s*(?:\S+\s*){0,3}?(?:까지|마감)")
 _PICK_BEFORE = re.compile(r"(?i)(?:마감|기한|due|deadline|by|until|[~\-–])\s*(?:일|일시|은|는|:|：)?\s*$")
 
@@ -273,7 +500,10 @@ def _infer_year(m: int, d: int, wd: int | None, ref: date) -> tuple[date | None,
 
 def _abs_hit(m: re.Match, mon: int, d: int, y: int | None, ref: date) -> _DateHit | None:
     gd = m.groupdict()
-    wd = _wd_index(gd.get("wd") or gd.get("wd2"))
+    wdb = gd.get("wdb")
+    if wdb and not any(full.startswith(wdb.lower()) for full in _WD_FULL):
+        wdb = None   # 'sunny' 같은 낱말은 요일이 아니다
+    wd = _wd_index(gd.get("wd") or gd.get("wd2") or wdb)
     notes: list[str] = []
     if y is not None:
         try:
@@ -304,12 +534,24 @@ def find_dates(s: str, ref: date) -> list[_DateHit]:
         h = _abs_hit(m, int(m["m"]), int(m["d"]), None, ref)
         if h and free(h.start, h.end):
             hits.append(h)
+    time_end = -1   # 날짜 바로 뒤의 점 숫자('12/15 10.30~11.30')는 시각이다
     for m in RX_MD_NUM.finditer(s):
         if not free(m.start(), m.end()):
             continue
-        if not (m["wd"] or m["wd2"]) and "." in s[m.start():m.end("d")] \
-                and _STAT_BEFORE.search(s[max(0, m.start() - 16):m.start()]):
-            continue   # '표준편차 12.1'·'mean: 10.3'은 소수(점수 통계)지 12월 1일이 아니다
+        before = s[max(0, m.start() - 24):m.start()]
+        if not (m["wd"] or m["wd2"]):
+            if _STAT_BEFORE.search(before[-16:]):
+                continue   # '표준편차 12.1'·'mean: 10.3'·'score: 9/10'은 점수지 날짜가 아니다
+            if "." in s[m.start():m.end("d")]:
+                if _REF_BEFORE.search(before):
+                    continue   # 'Fig. 3.4'·'Section 1.2'·'v1.2'·'식 (2.1)'·'at 10.30'
+                if _ITEM_BEFORE.search(before) and not _DUE_AFTER.match(s[m.end():]):
+                    continue   # 'Lab 2.1'(번호) — '과제 11.20까지'는 날짜
+                prev = max((h.end for h in hits if h.end <= m.start()), default=None)
+                if (prev is not None and re.fullmatch(r"[ \t]{0,2}", s[prev:m.start()])) or \
+                        (time_end >= 0 and re.fullmatch(r"\s*[~\-–]\s*", s[time_end:m.start()])):
+                    time_end = m.end()
+                    continue
         if not (m["wd"] or m["wd2"] or _NUM_OK_AFTER.match(s[m.end():])
                 or _NUM_OK_BEFORE.search(s[:m.start()])):
             continue
@@ -377,7 +619,12 @@ def _choose(s: str, hits: list[_DateHit]) -> _DateHit:
 _AP = r"(?P<ap1>오전|오후|저녁|밤|새벽|아침|낮)"
 RX_T_COLON = re.compile(r"(?:" + _AP + r"\s*)?(?<!\d)(?P<h>\d{1,2})\s*:\s*(?P<mi>\d{2})(?!\d)(?:\s*(?P<ap2>[AaPp]\.?\s?[Mm]\.?)(?![a-zA-Z]))?")
 RX_T_KO = re.compile(r"(?:" + _AP + r"\s*)?(?<!\d)(?P<h>\d{1,2})\s*시(?!간)(?:\s*(?P<mi>\d{1,2})\s*분|\s*(?P<half>반))?")
-RX_T_EN = re.compile(r"(?<![\d:])(?P<h>\d{1,2})\s*(?P<ap2>[AaPp]\.?\s?[Mm]\.?)(?![a-zA-Z])")
+RX_T_EN = re.compile(r"(?<![\d:.])(?P<h>\d{1,2})\s*(?P<ap2>[AaPp]\.?\s?[Mm]\.?)(?![a-zA-Z])")
+# 점으로 쓴 시각('10.30 am', 'at 11.30') — 오전/오후 표시가 있거나 'at'·'@' 뒤일 때만(그 밖의 '11.30'은 날짜 후보)
+RX_T_DOT_AP = re.compile(r"(?<![\d.])(?P<h>\d{1,2})\.(?P<mi>[0-5]\d)(?!\d)\s*(?P<ap2>[AaPp]\.?\s?[Mm]\.?)(?![a-zA-Z])")
+RX_T_DOT_AT = re.compile(r"(?i)(?:(?<=\bat\s)|(?<=@)|(?<=@\s))(?P<h>\d{1,2})\.(?P<mi>[0-5]\d)(?!\d)")
+# 날짜 바로 뒤('12/15 10.30~11.30') — find_time은 날짜 뒤 글을 받으므로 맨 앞만 본다
+RX_T_DOT_LEAD = re.compile(r"^[ \t]{1,2}(?P<h>\d{1,2})\.(?P<mi>[0-5]\d)(?![\d.])")
 RX_T_WORD = re.compile(r"(?i)자정|정오|midnight|noon")
 
 MIDNIGHT_NOTE = "'자정'은 그날 밤 23:59로 둠 — 다음 날 0시로 읽힐 수도 있어 확인 필요"
@@ -414,14 +661,14 @@ def _resolve_time(m: re.Match, rx) -> tuple[time | None, list[str]]:
     elif rx is RX_T_KO and 1 <= h <= 7:
         h += 12
         notes.append(f"오전/오후 미기재 → 오후 {h - 12}시로 둠(확인 필요)")
-    elif rx is RX_T_COLON and 1 <= h <= 7:
+    elif rx in (RX_T_COLON, RX_T_DOT_AT, RX_T_DOT_LEAD) and 1 <= h <= 7:
         notes.append("오전/오후 미기재 → 적힌 그대로 둠(확인 필요)")
     return time(h, mi), notes
 
 
 def find_time(s: str) -> tuple[time | None, list[str]]:
     best = None
-    for rx in (RX_T_COLON, RX_T_KO, RX_T_EN, RX_T_WORD):
+    for rx in (RX_T_COLON, RX_T_DOT_AP, RX_T_DOT_AT, RX_T_DOT_LEAD, RX_T_KO, RX_T_EN, RX_T_WORD):
         for m in rx.finditer(s):
             if best is None or m.start() < best[0].start():
                 best = (m, rx)
@@ -447,14 +694,20 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False, title: st
     found: dict[datetime, Found] = {}
     # 자기 날짜가 있는 줄(표의 다른 행, 다른 마감)은 옆 마감의 제출 방법 근거로 쓰지 않는다.
     dated = [bool(find_dates(ln, ref_day)) for ln in lines]
-    deadline_lines = sum(1 for ln, d in zip(lines, dated) if d and deadline_kind(ln))
-    # 결과를 알리는 제목('중간고사 성적 안내', 'Quiz 1 grade released')은 일정이 아니므로 종류를 빌려주지 않는다
-    title_kind = deadline_kind(title) if title and not _RESULT_TITLE.search(title) else None
+    sentence_phrases = [phrases(ln) for ln in lines]
+    deadline_lines = sum(1 for ln, d, ps in zip(lines, dated, sentence_phrases) if d and _kind_of(ln, ps))
+    # 결과를 알리는 제목('중간고사 성적 안내', 'Quiz 1 grade released')·범위/복습 제목('기말고사 범위 안내',
+    # 'Final Exam Review' — 머리 낱말이 범위·복습)은 일정이 아니므로 종류를 빌려주지 않는다
+    title_kind = _kind_of(title) if title and not _RESULT_TITLE.search(title) else None
 
     for i, s in enumerate(lines):
-        kind = deadline_kind(s)
+        ps = sentence_phrases[i]
+        kind = _kind_of(s, ps)
         from_title = False
-        if not kind and title_kind and dated[i] and (_FIELD_DATE.match(s) or sum(dated) == 1):
+        # 제목의 종류를 빌리는 줄: 날짜 칸 줄이거나 날짜가 하나뿐인 글, 그리고 그 줄 자체에는 휴강 말도,
+        # 다른 종류·범위·성적 낱말도 없을 때('Lab 5 보고서는 12월 1일…'·'12월 10일 복습 세션'은 빌리지 않음)
+        if (not kind and title_kind and dated[i] and (_FIELD_DATE.match(s) or sum(dated) == 1)
+                and not NEGATIVE.search(s) and not any(p.cat for p in ps)):
             kind, from_title = title_kind, True
         if not kind:
             continue
@@ -466,16 +719,18 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False, title: st
         t, tnotes = find_time(s[h.end:nxt])
         if t is None and len(hits) == 1:
             t, tnotes = find_time(s[:h.start])
-        if t is None:   # '날짜: 12월 15일' 다음 줄의 '시간: 10:30am - 11:30am'
-            for ln in lines[i + 1:i + 3]:
+        if t is None:   # '날짜: 12월 15일' 앞뒤 줄의 '시간: 10:30am - 11:30am'(뒤 줄 먼저)
+            for ln in lines[i + 1:i + 3] + lines[max(0, i - 2):i][::-1]:
                 if _FIELD_TIME.match(ln) and not find_dates(ln, ref_day):
                     t, tnotes = find_time(ln)
                     if t is not None:
-                        tnotes = tnotes + ["시간은 다음 줄의 '시간' 칸에서 읽음"]
+                        tnotes = tnotes + ["시간은 옆 줄의 '시간' 칸에서 읽음"]
                     break
         notes = list(h.notes) + tnotes
         if from_title:
             notes.append(f"제목 '{title.strip()[:40]}'을(를) 보고 {kind}(으)로 봄")
+        elif kind == "과제" and not STRONG.search(s) and any(p.cat == "event" for p in ps):
+            notes.append("발표하는 날로 봄(제출 마감이 따로 있을 수 있음)")
         has_time = t is not None
         if t is None:
             t = time(23, 59)
@@ -493,14 +748,13 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False, title: st
             addr = EMAIL_ADDR.search(window) or (EMAIL_ADDR.search(plain) if single else None)
             email_to = addr.group(0) if addr else None
 
-        hint = title_hint(s) or title_hint(" ".join(lines[max(0, i - 2):i]))
+        hint = title_hint(s, kind) or title_hint(" ".join(lines[max(0, i - 2):i]), kind)
         if from_title:
-            hint = title_hint(title) or hint   # 이 줄의 종류를 제목에서 가져왔으면 이름도 제목에서
-        if kind == "과제" and hint and EXAM.search(hint) and not TASK.search(hint):
-            kind = "시험"
-        elif kind == "시험" and hint and TASK.search(hint) and not _EXAM_ONLY.search(hint) \
-                and not _EXAM_ONLY.search(s):
-            kind = "과제"   # 'Midterm Project … due'는 프로젝트 마감(중간 '시험'이 아님)
+            hint = title_hint(title, kind) or hint   # 이 줄의 종류를 제목에서 가져왔으면 이름도 제목에서
+        if kind == "과제" and hint and not any(p.cat in ("exam", "task", "event") for p in ps):
+            # 이 문장은 '마감: …'뿐이고 이름은 앞 줄에서 왔다 → 이름 덩어리의 종류를 따른다('Midterm Exam' / '마감 …')
+            if any(p.cat == "exam" for p in phrases(hint)):
+                kind = "시험"
 
         score = (0 if h.relative else 2) + (1 if has_time else 0) + (1 if STRONG.search(s) else 0) - (2 if h.weekday_bad else 0)
         conf = "high" if score >= 4 else "medium" if score >= 2 else "low"
