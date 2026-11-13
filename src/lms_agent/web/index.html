@@ -217,6 +217,28 @@ a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
 .brackets { position: relative; height: 44px; }
 .bracket { position: absolute; top: 6px; height: 9px; border: 1.5px solid var(--burgundy); border-top: 0; }
 .bracket button { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); height: 26px; max-width: 100vw; padding: 0 6px; border: 0; background: var(--paper); color: var(--burgundy); font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+/* 구글 캘린더의 다른 일정(계약 23-4·23-5): 캘린더마다 색(--ev)이 있지만 색은 점·막대·띠에만, 글자는 늘 먹색.
+   마감(버건디 깃발·원)과 모양도 다르다: 일정은 깃발 위쪽 띠의 얇은 막대, 종일 일정은 그 날 칸 위쪽 얇은 띠 */
+.ev-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.ev-legend-h { margin-right: 4px; font-size: 14.5px; font-weight: 600; color: var(--graphite); }
+.ev-key { display: inline-flex; align-items: center; gap: 7px; height: 30px; max-width: 100%; padding: 0 10px 0 9px; border: 1px solid var(--rule-strong); border-radius: 15px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; line-height: 1; cursor: pointer; }
+.ev-key:hover { border-color: var(--ink); }
+.ev-key-name { min-width: 0; max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-key .tnum { color: var(--graphite); font-weight: 500; }
+.ev-key[aria-pressed="false"] { border-style: dashed; color: var(--graphite); }
+.ev-key[aria-pressed="false"] .ev-key-name { text-decoration: line-through; text-decoration-color: var(--rule-strong); }
+.ev-sw { display: inline-block; width: 14px; height: 6px; border-radius: 3px; flex: none; background: var(--ev, var(--graphite)); }
+.ev-sw.is-light, .evb.is-light, .erow-mk.is-light { box-shadow: inset 0 0 0 1px rgba(31, 26, 28, .3); }
+.ev-key[aria-pressed="false"] .ev-sw { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--ev, var(--graphite)); }
+/* 속이 빈 표시(한가함·숨김)인데 색까지 옅으면 바깥에 옅은 먹색 테두리를 더한다 */
+.ev-key[aria-pressed="false"] .ev-sw.is-light, .evb.is-free.is-light, .erow.is-free .erow-mk.is-light { box-shadow: inset 0 0 0 1.5px var(--ev, var(--graphite)), 0 0 0 1px rgba(31, 26, 28, .3); }
+.evs { position: absolute; left: 0; right: 0; z-index: 1; }
+.evb { position: absolute; min-width: 6px; height: 6px; border-radius: 3px; background: var(--ev, var(--graphite)); cursor: pointer; }
+.evb::before { content: ""; position: absolute; inset: -3px -2px; }   /* 얇은 막대도 마우스로 가리키기 쉽게 */
+.evb.is-allday { height: 5px; border-radius: 2px; }
+.evb.is-free { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--ev, var(--graphite)); }
+.evb:hover { outline: 1.5px solid var(--ink); outline-offset: 1px; }
+.ev-more { position: absolute; font-size: 12px; font-weight: 600; line-height: 14px; color: var(--graphite); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: pointer; }
 
 .dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--panel-gap); margin-top: var(--panel-gap); align-items: start; }
 .dash-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--panel-gap); }
@@ -261,6 +283,21 @@ a.tag:hover { color: var(--burgundy); border-color: var(--burgundy); }
 .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--burgundy); cursor: pointer; }
 .check input:disabled { cursor: default; }
 .tiny { font-size: 13.5px; color: var(--graphite); white-space: nowrap; }
+/* 날짜별 목록의 다른 일정 줄: 마감 줄보다 가볍게(체크·버건디 없음) */
+.ev-day { margin-top: 2px; }
+.arows + .ev-day { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--rule); }
+.ev-day-h { padding: 0 10px 2px; font-size: 13px; font-weight: 700; color: var(--graphite); }
+.erows { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.erow { display: grid; grid-template-columns: 54px 14px minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; min-height: 40px; padding: 4px 10px; border-radius: 8px; }
+.erow:hover { background: var(--desk); }
+.erow-time { font-size: 14.5px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.erow-time small { display: block; font-size: 12.5px; font-weight: 500; color: var(--graphite); }
+.erow-mk { justify-self: center; width: 5px; height: 20px; border-radius: 3px; background: var(--ev, var(--graphite)); }
+.erow.is-free .erow-mk { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--ev, var(--graphite)); }
+.erow-title { font-size: 15.5px; font-weight: 500; line-height: 1.4; }
+.erow.is-free .erow-title { color: var(--graphite); }
+.erow .arow-meta { font-size: 13.5px; }
+.erow a.tag:hover { color: var(--ink); border-color: var(--ink); }
 
 /* ---------- 학기 ---------- */
 .chart-wrap { padding-bottom: 12px; }
@@ -667,6 +704,16 @@ a.btn[aria-disabled="true"] { pointer-events: none; }
 .bg-row .input { width: auto; min-width: 140px; height: 38px; }
 .bg-meta { display: grid; gap: 4px; padding-left: 30px; font-size: 14.5px; color: var(--graphite); }
 .cmd { font-family: Consolas, ui-monospace, monospace; font-size: 13.5px; color: var(--graphite); white-space: normal; overflow-wrap: anywhere; word-break: break-all; }
+/* 구글 캘린더 → 다른 일정 읽기(계약 23-4) */
+.g-read { margin-top: 14px; border-top: 1px solid var(--rule); }
+.g-cals { margin: 0; padding: 0 0 6px 30px; border: 0; min-width: 0; }
+.g-cals legend { padding: 0; margin-bottom: 2px; font-size: 14.5px; font-weight: 700; }
+.g-cal { display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 15px; cursor: pointer; }
+.g-cal input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--burgundy); cursor: pointer; }
+.g-cal > span:not(.ev-sw):not(.tiny) { min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+.g-read-meta { display: grid; gap: 4px; padding-left: 30px; font-size: 14.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.g-read-meta .inline-error { font-size: 14.5px; }
+.g-read .form-actions { padding: 10px 0 0 30px; }
 
 /* 둘러보기(튜토리얼): 대상만 밝게 두고 나머지는 어둡게 */
 .tour { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
@@ -834,10 +881,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 .news-title { margin-top: 8px; font-size: 30px; font-weight: 800; line-height: 1.3; letter-spacing: -.025em; }
 .news-sub { margin-top: 6px; max-width: 30em; font-size: 16px; color: var(--graphite); }
 .news-list { justify-self: stretch; list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--rule); text-align: left; }
-.news-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 14px; padding: 11px 2px; border-bottom: 1px solid var(--rule); font-size: 15.5px; }
+/* 왼쪽(제목) 칸이 오른쪽의 긴 값에 밀려 0이 되지 않게(좁은 창에서 한 글자씩 줄바꿈되던 문제): 왼쪽은 최소 45%, 오른쪽은 넘치면 줄바꿈 */
+.news-list li { display: grid; grid-template-columns: minmax(45%, 1fr) minmax(0, auto); align-items: center; gap: 2px 14px; padding: 11px 2px; border-bottom: 1px solid var(--rule); font-size: 15.5px; }
 .nl-t { min-width: 0; font-weight: 700; overflow-wrap: anywhere; word-break: normal; }
 .nl-c { display: block; font-size: 13.5px; font-weight: 400; color: var(--graphite); }
-.nl-r { font-size: 14.5px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; color: var(--graphite); }
+.nl-r { min-width: 0; font-size: 14.5px; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; color: var(--graphite); }
+@media (max-width: 480px) { .news-list li { grid-template-columns: minmax(0, 1fr); } .nl-r, .nl-r.is-long { max-width: none; text-align: left; } }
 .nl-r.is-long { max-width: 60%; white-space: normal; }
 .nl-r b { color: var(--ink); }
 .news-more { justify-self: stretch; margin-top: 6px; font-size: 13.5px; color: var(--graphite); text-align: left; }
@@ -1799,6 +1848,109 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   };
   const gstate = () => (state && state.google) || {};
 
+  // ---------------------------------------------------------------- 구글 캘린더의 다른 일정 (계약 23): 대시보드에만, 읽기만, 이 PC에만
+  // 서버가 google.read·events를 주지 않으면(예전 서버) 아무것도 그리지 않는다. 마감 수·완주·보상 계산에는 넣지 않는다
+  const gread = () => { const r = gstate().read; return r && typeof r === 'object' ? r : null; };
+  const evShowing = () => { const r = gread(); return !!(r && r.enabled && Array.isArray(state.events)); };
+  // 색은 캘린더마다(23-5): 구글에서 정한 색, 없거나 잘못된 값이면 고정 팔레트에서 캘린더 id로 늘 같은 색
+  const EV_PAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#6250d6', '#008300'];
+  const hexOk = (c) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : null);
+  function strHash(s) { let x = 0; for (const ch of String(s)) x = (Math.imul(x, 31) + ch.codePointAt(0)) >>> 0; return x; }
+  const palColor = (cid) => EV_PAL[strHash(cid) % EV_PAL.length];
+  // 흰 바탕과 대비가 아주 낮은 색(구글의 연노랑 등)은 색을 바꾸지 않고 옅은 먹색 테두리만 더한다
+  function lightColor(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    if (!isFinite(n)) return false;
+    const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+    return 1.05 / (L + 0.05) < 2;   // 구글의 파스텔 색(#9fc6e7 등)까지. 앱 팔레트는 모두 2 이상
+  }
+  const evCal = (e) => String(e.calendar_id !== null && e.calendar_id !== undefined ? e.calendar_id : String(e.id || '').split(':')[0]);
+  // 캘린더 목록: 기본 캘린더 먼저, 나머지는 서버 순서
+  function readCals() {
+    const r = gread();
+    const list = r && Array.isArray(r.calendars) ? r.calendars.filter((c) => c && typeof c === 'object' && c.id !== null && c.id !== undefined) : [];
+    return list.map((c, i) => ({ c, i })).sort((a, b) => (b.c.primary ? 1 : 0) - (a.c.primary ? 1 : 0) || a.i - b.i).map((x) => x.c);
+  }
+  function calColorMap() {
+    const m = new Map();
+    for (const c of readCals()) { const v = hexOk(c.color); if (v) m.set(String(c.id), v); }
+    for (const e of (state && Array.isArray(state.events) ? state.events : [])) {
+      if (!e || typeof e !== 'object') continue;
+      const k = evCal(e);
+      if (!m.has(k) && hexOk(e.color)) m.set(k, hexOk(e.color));
+    }
+    return m;
+  }
+  const calColor = (m, cid) => m.get(String(cid)) || palColor(String(cid));
+  function evSwatch(color, cls) {
+    const el = h('span', { class: (cls || 'ev-sw') + (lightColor(color) ? ' is-light' : ''), 'aria-hidden': 'true' });
+    el.style.setProperty('--ev', color);
+    return el;
+  }
+  // 대시보드 범례에서 잠깐 숨긴 캘린더: 이 브라우저에만 기억(서버의 캘린더 고르기와 따로)
+  const EV_HIDE_KEY = 'lms-agent.evhide';
+  let evHidden = readEvHidden();
+  function readEvHidden() {
+    try {
+      const v = JSON.parse(localStorage.getItem(EV_HIDE_KEY) || '[]');
+      return new Set(Array.isArray(v) ? v.map(String) : []);
+    } catch (e) { return new Set(); }
+  }
+  function toggleEvCal(cid) {
+    if (evHidden.has(cid)) evHidden.delete(cid); else evHidden.add(cid);
+    try { localStorage.setItem(EV_HIDE_KEY, JSON.stringify(Array.from(evHidden))); } catch (e) { /* 저장 못 해도 이번에는 동작함 */ }
+    render();
+  }
+  // 기간 [t0, t1)에 걸친 일정. all: 숨긴 캘린더 포함(범례용), shown: 보일 것, keys: 범례(이 기간에 일정이 있는 캘린더만)
+  function dashEvents(t0, t1) {
+    const out = { all: [], shown: [], keys: [] };
+    if (!state || !evShowing()) return out;
+    const colors = calColorMap();
+    const cals = readCals();
+    const names = new Map(cals.map((c) => [String(c.id), c.name ? String(c.name) : '']));
+    const a = t0.getTime(), b = t1.getTime();
+    for (const e of state.events) {
+      if (!e || typeof e !== 'object') continue;
+      const s = parseDate(e.start);
+      if (!s) continue;
+      let en = parseDate(e.end);
+      if (!en || en.getTime() < s.getTime()) en = s;
+      const sm = s.getTime(), em = en.getTime();
+      if (em > sm ? !(sm < b && em > a) : !(sm >= a && sm < b)) continue;
+      const cid = evCal(e);
+      out.all.push({
+        id: String(e.id !== null && e.id !== undefined ? e.id : cid + ':' + sm), cid, s, en, allDay: e.all_day === true, busy: e.busy !== false,
+        title: String(e.title || '').trim() || '(제목 없음)', cal: names.get(cid) || String(e.calendar_name || '').trim() || '캘린더',
+        color: calColor(colors, cid), url: safeUrl(e.url), loc: e.location ? String(e.location).trim() : '',
+        day: sm < a ? new Date(a) : startOfDay(s)   // 목록에서 놓일 날(기간 전에 시작한 일정은 첫날)
+      });
+    }
+    out.all.sort((x, y) => x.day - y.day || (y.allDay ? 1 : 0) - (x.allDay ? 1 : 0) || x.s - y.s || x.title.localeCompare(y.title));
+    const order = new Map(cals.map((c, i) => [String(c.id), i]));
+    const byCal = new Map();
+    for (const x of out.all) {
+      if (!byCal.has(x.cid)) byCal.set(x.cid, { cid: x.cid, name: x.cal, color: x.color, n: 0 });
+      byCal.get(x.cid).n += 1;
+    }
+    const rank = (k) => (order.has(k.cid) ? order.get(k.cid) : 1e6);
+    out.keys = Array.from(byCal.values()).sort((p, q) => rank(p) - rank(q) || p.name.localeCompare(q.name));
+    out.shown = out.all.filter((x) => !evHidden.has(x.cid));
+    return out;
+  }
+  const isMidnight = (d) => d.getHours() === 0 && d.getMinutes() === 0;
+  // 종일 일정의 끝은 다음 날 0시: 마지막 날은 그 하루 전
+  const evLastDay = (x) => (x.en.getTime() > x.s.getTime() ? new Date(x.en.getTime() - 1) : x.s);
+  // '19:00–21:00', '종일', 여러 날이면 날짜도. 자정에 끝나면 24:00
+  function evRange(x) {
+    if (x.allDay) { const l = evLastDay(x); return dayKey(l) === dayKey(x.s) ? '종일' : '종일 ' + fmtMD(x.s) + '–' + fmtMD(l); }
+    if (x.en.getTime() <= x.s.getTime()) return fmtTime(x.s);
+    if (dayKey(x.en) === dayKey(x.s)) return fmtTime(x.s) + '–' + fmtTime(x.en);
+    if (isMidnight(x.en) && dayKey(evLastDay(x)) === dayKey(x.s)) return fmtTime(x.s) + '–24:00';
+    return fmtMD(x.s) + ' ' + fmtTime(x.s) + '–' + fmtMD(x.en) + ' ' + fmtTime(x.en);
+  }
+  const evTip = (x) => evRange(x) + ' ' + x.title + ' · ' + x.cal + (x.busy ? '' : ' · 한가함');
+
   // ---------------------------------------------------------------- 마감 충돌 = 하나만 고르는 그룹 (계약 13-1)
   // 서버가 group·alternatives·newest·replaced_by·status "replaced"를 주면 그대로 쓰고, 아직 없으면 같은 규칙으로 화면에서 맞춘다
   const flatTitle = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1934,7 +2086,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   const refresh = () => api('GET', '/api/state').then(applyState, () => {});
   // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking() || agRunning() || aiTestRunning()));
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || (gread() && gread().fetching) || updWorking() || agRunning() || aiTestRunning()));
   function pollWhileBusy() {
     if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
@@ -2305,27 +2457,72 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       errLine(it, 'arow-error'),
       ckPanel(it, wide ? '-w' : ''));
   }
-  function dayAgenda(items, emptyText) {
-    if (!items.length) return h('p', { class: 'empty' }, emptyText);
+  function agendaDay(d, right) {
+    const diff = dayDiff(d);
+    return h('div', { class: 'agenda-day' + (diff === 0 ? ' is-today' : '') },
+      h('div', null,
+        h('span', { class: 'agenda-num' }, String(d.getDate())),
+        h('span', { class: 'agenda-wd' }, (d.getMonth() + 1) + '월 ' + WD[d.getDay()] + '요일' + (diff === 0 ? ', 오늘' : diff === 1 ? ', 내일' : ''))),
+      right);
+  }
+  // evs: 구글 캘린더의 다른 일정(대시보드만 넘긴다, dashEvents().shown). 그 날 마감 아래에 가볍게
+  function dayAgenda(items, emptyText, evs) {
+    evs = Array.isArray(evs) ? evs : [];
+    if (!items.length && !evs.length) return h('p', { class: 'empty' }, emptyText);
     const wrap = h('div', { class: 'agenda' });
-    let key = '';
-    let ul = null;
-    for (const it of items) {
-      const d = parseDate(it.due);
-      const k = dayKey(d);
-      if (k !== key) {
-        key = k;
-        const diff = dayDiff(d);
-        ul = h('ul', { class: 'arows' });
-        wrap.appendChild(h('div', { class: 'agenda-day' + (diff === 0 ? ' is-today' : '') },
-          h('div', null,
-            h('span', { class: 'agenda-num' }, String(d.getDate())),
-            h('span', { class: 'agenda-wd' }, (d.getMonth() + 1) + '월 ' + WD[d.getDay()] + '요일' + (diff === 0 ? ', 오늘' : diff === 1 ? ', 내일' : ''))),
-          ul));
+    if (!evs.length) {
+      let key = '';
+      let ul = null;
+      for (const it of items) {
+        const d = parseDate(it.due);
+        const k = dayKey(d);
+        if (k !== key) {
+          key = k;
+          ul = h('ul', { class: 'arows' });
+          wrap.appendChild(agendaDay(d, ul));
+        }
+        ul.appendChild(agendaRow(it, false));
       }
-      ul.appendChild(agendaRow(it, false));
+      return wrap;
     }
-    return wrap;
+    const days = new Map();
+    const slot = (d) => { const k = dayKey(d); if (!days.has(k)) days.set(k, { d: startOfDay(d), items: [], evs: [] }); return days.get(k); };
+    for (const it of items) slot(parseDate(it.due)).items.push(it);
+    for (const x of evs) slot(x.day).evs.push(x);
+    for (const k of Array.from(days.keys()).sort()) {
+      const g = days.get(k);
+      const ul = g.items.length ? h('ul', { class: 'arows' }, g.items.map((it) => agendaRow(it, false))) : null;
+      const ev = g.evs.length ? h('div', { class: 'ev-day' },
+        h('p', { class: 'ev-day-h' }, '다른 일정'),
+        h('ul', { class: 'erows' }, g.evs.map(evRow))) : null;
+      wrap.appendChild(agendaDay(g.d, ul && !ev ? ul : h('div', { style: 'min-width:0' }, ul, ev)));
+    }
+    return items.length ? wrap : h('div', null, h('p', { class: 'empty', style: 'margin-bottom:6px' }, emptyText), wrap);
+  }
+  // 다른 일정 한 줄: 시간(또는 종일)·캘린더 색 막대·제목·캘린더 이름·[구글에서 열기]. 체크·버건디 없음
+  function evRow(x) {
+    let l1, l2 = null;
+    if (x.allDay) {
+      const last = evLastDay(x);
+      l1 = '종일';
+      if (dayKey(last) !== dayKey(x.s)) l2 = '–' + fmtMD(last);
+    } else {
+      l1 = dayKey(x.s) === dayKey(x.day) ? fmtTime(x.s) : fmtMD(x.s);
+      if (x.en.getTime() > x.s.getTime()) {
+        const endsToday = dayKey(x.en) === dayKey(x.day);
+        l2 = '–' + (endsToday ? fmtTime(x.en) : isMidnight(x.en) && dayKey(evLastDay(x)) === dayKey(x.day) ? '24:00' : fmtMD(x.en));
+      }
+    }
+    return h('li', { class: 'erow' + (x.busy ? '' : ' is-free'), 'data-row': 'ev-' + x.id },
+      h('span', { class: 'erow-time', title: evRange(x) }, h('span', { class: 'sr-only' }, evRange(x)), h('span', { 'aria-hidden': 'true' }, l1, l2 ? h('small', null, l2) : null)),
+      evSwatch(x.color, 'erow-mk'),
+      h('div', { style: 'min-width:0' },
+        h('div', { class: 'erow-title' }, x.title),
+        h('div', { class: 'arow-meta' },
+          h('span', null, x.cal),
+          x.loc ? h('span', null, x.loc) : null,
+          x.busy ? null : tag('한가함', 'quiet', '구글 캘린더에서 ‘한가함’으로 둔 일정'))),
+      h('div', { class: 'arow-side' }, x.url ? h('a', { class: 'tag', href: x.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': x.title + ' 구글 캘린더에서 열기(새 탭)' }, '구글에서 열기') : null));
   }
 
   // ---------------------------------------------------------------- 페이스메이커(캐릭터)
@@ -3094,6 +3291,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     // 마감이 둘로 적힌 것은 과제 수로 센다(후보 두 개 = 고를 일 하나)
     const conf = conflictGroups().filter((g) => g.some((x) => win.indexOf(x) >= 0)).length;
     const exams = win.filter((i) => i.kind === '시험').length;
+    const ev = dashEvents(t0, t1);   // 구글 캘린더의 다른 일정(계약 23): 위 세기·급한 마감과 상관없이 따로 그린다
     const seg = h('div', { class: 'seg', role: 'group', 'aria-label': '보는 기간' }, [7, 14].map((n) =>
       h('button', { type: 'button', 'aria-pressed': String(span === n), 'data-key': 'span-' + n, on: { click: () => { span = n; saveSpan(); render(); } } }, n + '일')));
     const hero = h('section', { class: 'hero', 'aria-labelledby': 'hero-line' },
@@ -3107,7 +3305,8 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
             exams ? legendMark('mk-sched mk-exam', '시험 ' + exams) : null,
             h('span', null, '앞으로 ' + span + '일'))),
         seg),
-      buildAxis(win, t0, span, urgent));
+      evLegend(ev.keys),
+      buildAxis(win, t0, span, urgent, ev.shown));
     // 코치 카드(계약 22-4): 이번 주 작전·지난주 돌아보기·학기 리포트. 모달이 아니라 맨 위 줄에(닫으면 그 주에는 안 보임)
     const coach = coachRow();
     if (coach) body.appendChild(coach);
@@ -3116,12 +3315,12 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (race) body.appendChild(race);
     body.appendChild(h('div', { class: 'dash-grid' },
       h('section', { 'aria-labelledby': 'agenda-h' },
-        h('h2', { class: 'sec-h', id: 'agenda-h', style: 'margin-bottom:10px' }, '날짜별 마감', h('span', { class: 'sec-n' }, fmtShort(t0) + ' – ' + fmtShort(addDays(t1, -1)))),
-        dayAgenda(win, '이 기간에 마감이 없어요.')),
+        h('h2', { class: 'sec-h', id: 'agenda-h', style: 'margin-bottom:10px' }, ev.shown.length ? '날짜별 마감·다른 일정' : '날짜별 마감', h('span', { class: 'sec-n' }, fmtShort(t0) + ' – ' + fmtShort(addDays(t1, -1)))),
+        dayAgenda(win, '이 기간에 마감이 없어요.', ev.shown)),
       dashSide()));
   }
 
-  function buildAxis(items, t0, days, urgent) {
+  function buildAxis(items, t0, days, urgent, evs) {
     const W = Math.max(520, Math.floor(panelInnerW($('dash-body'))));
     // 날짜 칸 안에서만 움직인다: 0시는 칸의 15%, 23:59는 85% 지점(밤 마감이 다음 날 칸 경계에 붙어 보이거나 마지막 칸에서 잘리지 않게)
     const colW = W / days;
@@ -3156,7 +3355,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     }
     const L = Math.max(1, laneEnds.length);
     const TOP = 26, BASE = 16, LANE = 54;   // LANE = 깃발 높이(46px, CSS .flag) + 간격
-    const H = TOP + BASE + L * LANE;
+    // 다른 일정 띠: 주차·'지금' 글자 아래, 깃발 위(깃발·지금 글자와 겹치지 않게). 지금 글자가 한 줄 내려가면 띠도 내린다
+    const evTop = weekOfDate(t0) && xOf(nowMs()) < 52 ? 40 : 24;   // '지금' 글자는 20px 높이(top 2px 또는 18px)
+    const EV = evs && evs.length ? evTrack(evs, t0, days, W, colW, xOf, evTop) : null;
+    const H = (EV ? evTop + EV.h + 6 : TOP) + BASE + L * LANE;
     const lanes = pos(h('div', { class: 'lanes' }), { height: H });
     const cols = h('div', { class: 'cols', 'aria-hidden': 'true' });
     cols.style.gridTemplateColumns = 'repeat(' + days + ', minmax(0, 1fr))';
@@ -3180,6 +3382,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
         h('span', { class: 'day-wd' }, wd)));
     }
     lanes.appendChild(cols);
+    if (EV) lanes.appendChild(EV.el);
     // 위치는 % 로 둔다: 창 너비가 바뀌어 다시 그리기 전이어도 표시가 날짜 칸에서 어긋나지 않게
     const P = (x) => (x / W * 100) + '%';
     const nx = xOf(nowMs());
@@ -3189,7 +3392,11 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     // 오른쪽 끝 가까이면 글자를 선 왼쪽에 둔다(축 밖으로 넘치지 않게)
     if (nx > W - 64) { nowLbl.style.left = 'auto'; nowLbl.style.right = '5px'; }
     lanes.appendChild(pos(h('div', { class: 'nowline', 'aria-hidden': 'true' }, nowLbl), { left: 'calc(' + P(nx) + ' - 1px)' }));
-    if (!pts.length) lanes.appendChild(h('p', { class: 'axis-empty' }, '이 기간에 마감이 없어요'));
+    if (!pts.length) {
+      const empty = h('p', { class: 'axis-empty' }, '이 기간에 마감이 없어요');
+      if (EV) empty.style.top = Math.round(evTop + EV.h + 6 + (BASE + L * LANE) / 2 - 14) + 'px';   // 일정 띠 아래 남은 칸 가운데
+      lanes.appendChild(empty);
+    }
     for (const p of pts) {
       const it = p.it;
       const isU = urgent && it.id === urgent.id;
@@ -3228,6 +3435,76 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       axis.appendChild(row);
     }
     return axis;
+  }
+  // 날짜 축의 다른 일정 띠(계약 23-4·23-5). 종일 일정은 그 날 칸 위쪽 얇은 띠(여러 날이면 이어서), 시간 일정은 마감과 같은 시각 자리(칸의 15~85%)에 얇은 막대.
+  // 겹치면 줄을 나누고, 줄이 모자라면 그 날 칸에 '+n'. 가리키면 '19:00–21:00 동아리 회의 · 개인'. 화면 읽기는 아래 날짜별 목록이 맡는다(aria-hidden)
+  function evTrack(evs, t0, days, W, colW, xOf, top) {
+    const AD_H = 5, AD_GAP = 2, T_H = 6, T_GAP = 3, MAX_AD = 2, MAX_T = colW < 64 ? 3 : 4;
+    const dayIdx = (d) => Math.round((startOfDay(d).getTime() - t0.getTime()) / 86400000);
+    const ad = [], tm = [];
+    for (const x of evs) {
+      if (x.allDay) {
+        const i1 = Math.max(0, dayIdx(x.s));
+        const i2 = Math.min(days, dayIdx(evLastDay(x)) + 1);
+        if (i2 <= i1) continue;
+        ad.push({ x, x1: i1 * colW + 3, x2: i2 * colW - 3, i: i1 });
+      } else {
+        let x1 = xOf(x.s.getTime());
+        let x2 = Math.max(x1 + 6, xOf(x.en.getTime()));
+        if (x2 > W) { x1 = Math.max(0, W - (x2 - x1)); x2 = W; }
+        tm.push({ x, x1, x2, i: Math.max(0, Math.min(days - 1, dayIdx(x.s))) });
+      }
+    }
+    const pack = (list, max) => {
+      const ends = [], over = [];
+      list.sort((p, q) => p.x1 - q.x1 || q.x2 - p.x2);
+      for (const p of list) {
+        let lane = 0;
+        while (lane < ends.length && ends[lane] > p.x1 - 2) lane++;
+        if (lane >= max) { over.push(p); continue; }
+        ends[lane] = p.x2;
+        p.lane = lane;
+      }
+      return { n: ends.length, over };
+    };
+    const A = pack(ad, MAX_AD), T = pack(tm, MAX_T);
+    const over = A.over.concat(T.over);
+    const adH = A.n * (AD_H + AD_GAP);
+    const gap = A.n && T.n ? 2 : 0;
+    const tH = T.n * (T_H + T_GAP);
+    const ht = adH + gap + tH + (over.length ? 16 : 0);
+    if (!ht) return null;
+    const wrap = pos(h('div', { class: 'evs', 'aria-hidden': 'true' }), { top, height: ht });
+    const P = (v) => (v / W * 100) + '%';
+    const bar = (p, y, allDay) => {
+      const x = p.x;
+      const el = h('span', { class: 'evb' + (allDay ? ' is-allday' : '') + (x.busy ? '' : ' is-free') + (lightColor(x.color) ? ' is-light' : ''), title: evTip(x), on: { click: () => showRow('ev-' + x.id) } });
+      el.style.setProperty('--ev', x.color);
+      return pos(el, { left: P(p.x1), width: P(p.x2 - p.x1), top: y });
+    };
+    for (const p of ad) if (p.lane !== undefined) wrap.appendChild(bar(p, p.lane * (AD_H + AD_GAP), true));
+    for (const p of tm) if (p.lane !== undefined) wrap.appendChild(bar(p, adH + gap + p.lane * (T_H + T_GAP), false));
+    const byDay = new Map();
+    for (const p of over) { if (!byDay.has(p.i)) byDay.set(p.i, []); byDay.get(p.i).push(p.x); }
+    for (const [i, list] of byDay) {
+      list.sort((a, b) => a.s - b.s);
+      wrap.appendChild(pos(h('span', { class: 'ev-more', title: list.map(evTip).join('\n'), on: { click: () => showRow('ev-' + list[0].id) } }, '+' + list.length),
+        { left: P(i * colW + 4), top: ht - 15 }));
+    }
+    return { el: wrap, h: ht };
+  }
+  // 날짜 축 위 범례: 이 기간에 일정이 있는 캘린더만(숨긴 것도 — 다시 켤 수 있게). 누르면 대시보드에서 숨기기/보이기
+  function evLegend(keys) {
+    if (!keys || !keys.length) return null;
+    return h('div', { class: 'ev-legend', role: 'group', 'aria-label': '다른 일정 캘린더, 눌러서 숨기기·보이기' },
+      h('span', { class: 'ev-legend-h', 'aria-hidden': 'true' }, '다른 일정'),
+      keys.map((k) => {
+        const on = !evHidden.has(k.cid);
+        return h('button', { type: 'button', class: 'ev-key', 'data-key': 'evkey-' + k.cid, 'aria-pressed': String(on),
+          'aria-label': k.name + ' 일정 ' + k.n + '개 보기', title: on ? '눌러서 대시보드에서 숨기기' : '눌러서 다시 보기',
+          on: { click: () => toggleEvCal(k.cid) } },
+          evSwatch(k.color), h('span', { class: 'ev-key-name' }, k.name), h('span', { class: 'tnum' }, String(k.n)));
+      }));
   }
   function showRow(id) {
     const el = document.querySelector('[data-row="' + CSS.escape(id) + '"]');
@@ -3294,7 +3571,8 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
           g.pushing ? '구글 캘린더에 반영하는 중…' : '구글 캘린더에 자동으로 반영해요'),
         g.last_push ? h('p', { class: 'help', style: 'margin-top:4px' }, '마지막 반영 ', relEl(g.last_push), res ? ': ' + resultText(res) : '') : null,
         res && !g.pushing && kept !== wantTotal(want) ? h('p', { class: 'help', style: 'margin-top:2px' }, '그 뒤 바뀐 ' + Math.abs(wantTotal(want) - kept) + '개는 다음 반영 때 맞춰요.') : null,
-        g.error ? h('p', { class: 'inline-error', style: 'margin-top:4px' }, g.error) : null
+        g.error ? h('p', { class: 'inline-error', style: 'margin-top:4px' }, g.error) : null,
+        readLine()
       ];
     } else {
       calBody = [
@@ -3382,6 +3660,16 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
   function resultText(r) {
     return '추가 ' + num(r.created) + ' · 수정 ' + num(r.updated) + ' · 유지 ' + num(r.unchanged) + ' · 삭제 ' + num(r.deleted);
+  }
+  // 대시보드 '캘린더' 칸의 한 줄: 다른 일정 읽기 상태(계약 23). 서버가 read를 주지 않으면 없음
+  function readLine() {
+    const R = gread();
+    if (!R) return null;
+    const toPane = (text) => h('a', { href: '#settings', on: { click: (e) => { e.preventDefault(); goSettings('pane-google', '[data-key="g-read"]'); } } }, text);
+    if (!R.enabled) return h('p', { class: 'help', style: 'margin-top:6px' }, '다른 일정도 날짜 축에 보이게 할 수 있어요. ', toPane('설정에서 켜기'));
+    if (!R.granted) return h('p', { class: 'help', style: 'margin-top:6px' }, '다른 일정을 보려면 읽기 권한이 필요해요. ', toPane('설정에서 허락하기'));
+    if (R.error) return h('p', { class: 'inline-error', style: 'margin-top:6px' }, '다른 일정: ' + String(R.error));
+    return h('p', { class: 'help', style: 'margin-top:6px' }, R.fetching ? '다른 일정을 가져오는 중…' : ['다른 일정 ' + num(R.count) + '개를 가져왔어요', R.fetched_at ? [' · ', relEl(R.fetched_at)] : null]);
   }
   // 캘린더에 있어야 할 일정 수: 서버(13-5)의 google.desired, 없으면 화면에서 센다(마감 + 일정이 있는 주의 주간 요약 + 공부 시간(22-5))
   function desiredCounts() {
@@ -6073,6 +6361,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       ag.errs.set(key, (undo ? '되돌리지 못했어요. ' : act ? '실행하지 못했어요. ' : '반영하지 못했어요. ') + err.message);
       renderAgent();
       if (act) refresh();   // 실패한 실행도 서버가 결과를 대화에 남긴다(다시 누를 수 있게)
+      // '다른 일정 보기'가 권한이 없어 실패하면 구글 동의는 사용자가 직접 — 설정의 그 칸을 열어 준다(계약 23-3)
+      if (act && !undo && p.action === 'gcal_read' && /권한/.test(String(err.message || ''))) {
+        setTimeout(() => { agLeave(); goSettings('pane-google', '[data-key="g-read"]'); }, 900);
+      }
     });
   }
   function agClear() {
@@ -7388,7 +7680,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (!g.connected) {
       box.appendChild(h('div', { class: 'stack' },
         h('p', { style: 'font-size:15.5px' }, '연결하면 승인한 마감이 구글 캘린더의 ‘LMS 마감’ 캘린더에 자동으로 들어가고, 고치거나 빼면 따라 바뀌어요.'),
-        h('p', { class: 'help' }, '이 앱은 자기가 만든 그 캘린더만 다뤄요. 다른 일정은 읽지도 바꾸지도 않아요.'),
+        h('p', { class: 'help' }, gread()
+          ? '이 앱은 자기가 만든 그 캘린더에만 써요. 다른 일정은 바꾸지 않고, 연결한 뒤 원하면 대시보드에 보이게만 할 수 있어요(읽기만, 기본 꺼짐).'
+          : '이 앱은 자기가 만든 그 캘린더만 다뤄요. 다른 일정은 읽지도 바꾸지도 않아요.'),
         h('div', { class: 'form-actions' }, h('button', { type: 'button', class: 'btn btn-primary', id: 'g-connect', disabled: googleBusy, on: { click: googleConnect } },
           googleBusy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '구글로 가는 중…'] : '구글 캘린더 연결')),
         g.error ? h('p', { class: 'inline-error' }, g.error) : null, err));
@@ -7408,6 +7702,91 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       g.calendar_link ? extLink(g.calendar_link, '구글 캘린더 열기') : null));
     box.appendChild(h('p', { class: 'help', style: 'margin-top:10px' }, '연결을 해제해도 구글 캘린더에 이미 들어간 일정은 남아요.'));
     if (err) box.appendChild(err);
+    const rd = googleReadPane();
+    if (rd) box.appendChild(rd);
+  }
+  // 다른 일정도 대시보드에(계약 23-4): 켜기 → (권한이 없으면) 구글 동의 화면 → 돌아오면 가져옴. 캘린더 고르기·다시 가져오기
+  let gReadBusy = false, gReadError = '';
+  const GREAD_FLAG = 'lms-agent.gread';   // 읽기 권한 동의로 떠났다가 돌아온 것인지(돌아왔을 때 알림 문구)
+  function googleReadPane() {
+    const R = gread();
+    if (!R) return null;
+    const busy = gReadBusy;
+    const fetching = !!R.fetching;
+    const sec = h('div', { class: 'g-read' },
+      h('label', { class: 'toggle' },
+        h('input', { type: 'checkbox', 'data-key': 'g-read', checked: !!R.enabled,
+          on: { change: (e) => { if (gReadBusy) { e.target.checked = !e.target.checked; return; } setGoogleRead(e.target.checked); } } }),
+        h('span', null, h('b', null, '다른 일정도 대시보드에 보기'),
+          h('small', null, '읽기 권한을 한 번 더 허락해야 할 수 있어요. 일정 내용은 이 PC에만 두고 AI에게 보내지 않아요.'))));
+    if (R.enabled && !R.granted) {
+      // 서버가 이유를 주면(권한 없음·거둠) 그 글을, 아니면 짧은 안내
+      sec.appendChild(h('div', { class: 'g-read-meta' },
+        h('p', null, R.error ? String(R.error) : '아직 읽기 권한이 없어요. 구글 동의 화면에서 캘린더 보기를 허락하면 바로 가져와요.')));
+      sec.appendChild(h('div', { class: 'form-actions' },
+        h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-key': 'g-read-grant', disabled: busy, on: { click: () => setGoogleRead(true) } },
+          busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '구글로 가는 중…'] : '권한 허락하기')));
+    } else if (R.enabled) {
+      const cals = readCals();
+      const colors = calColorMap();
+      sec.appendChild(h('fieldset', { class: 'g-cals' }, h('legend', null, '보일 캘린더'),
+        cals.length ? cals.map((c) => {
+          const id = String(c.id);
+          return h('label', { class: 'g-cal' },
+            h('input', { type: 'checkbox', 'data-key': 'gcal-' + id, checked: !!c.selected,
+              on: { change: (e) => { if (gReadBusy) { e.target.checked = !e.target.checked; return; } setReadCalendars(id, e.target.checked); } } }),
+            evSwatch(calColor(colors, id)),
+            h('span', null, String(c.name || id)),
+            c.primary ? h('span', { class: 'tiny' }, '기본') : null);
+        }) : h('p', { class: 'help' }, fetching ? '캘린더 목록을 가져오는 중…' : '캘린더 목록이 아직 없어요. [다시 가져오기]를 눌러 보세요.')));
+      const fa = parseDate(R.fetched_at);
+      const hid = cals.filter((c) => c.selected && evHidden.has(String(c.id))).map((c) => String(c.name || c.id));
+      sec.appendChild(h('div', { class: 'g-read-meta' },
+        h('p', null, fetching ? '다른 일정을 가져오는 중…'
+          : ['마지막으로 가져온 때 ', fa ? [fmtShortDT(fa) + ' (', relEl(R.fetched_at), ')'] : '아직 없음', typeof R.count === 'number' ? ' · 일정 ' + R.count + '개' : '']),
+        hid.length ? h('p', null, '대시보드 범례에서 숨긴 캘린더: ' + hid.join(', ') + '. 범례를 다시 누르면 보여요.')
+          : h('p', null, '대시보드 범례에서 캘린더를 눌러 잠깐 숨길 수도 있어요(이 브라우저에만 기억).'),
+        R.error ? h('p', { class: 'inline-error' }, String(R.error)) : null));
+      sec.appendChild(h('div', { class: 'form-actions' },
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'g-read-refresh', disabled: busy || fetching, on: { click: refreshGoogleRead } },
+          busy || fetching ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '가져오는 중…'] : '다시 가져오기')));
+    }
+    if (gReadError) sec.appendChild(h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:8px;padding-left:30px' }, gReadError));
+    return sec;
+  }
+  function setGoogleRead(on) {
+    gReadBusy = true;
+    gReadError = '';
+    render();
+    post('/api/google/read', { enabled: on }).then((r) => {
+      if (r && r.need_consent) {
+        const u = safeUrl(r.url);
+        if (!u) throw new Error('구글 권한 주소를 받지 못했어요.');
+        try { sessionStorage.setItem(GREAD_FLAG, '1'); } catch (e) { /* 없어도 돌아오면 연결 알림만 보임 */ }
+        location.href = u;   // 연결과 같이 같은 탭에서 동의 화면으로
+        return;
+      }
+      gReadBusy = false;
+      applyState(r);
+      toast(on ? '다른 일정을 가져와 대시보드 날짜 축에 보여 드려요' : '다른 일정을 대시보드에서 뺐어요. 가져온 일정도 지웠어요');
+    }).catch((e) => { gReadBusy = false; gReadError = e.message; render(); });
+  }
+  function setReadCalendars(id, on) {
+    const sel = readCals().filter((c) => (String(c.id) === id ? on : !!c.selected)).map((c) => c.id);
+    gReadBusy = true;
+    gReadError = '';
+    render();
+    post('/api/google/read/calendars', { selected: sel }).then((s) => {
+      gReadBusy = false;
+      applyState(s);
+      toast(on ? '그 캘린더의 일정도 대시보드에 보여요' : '그 캘린더의 일정은 대시보드에서 빼요');
+    }, (e) => { gReadBusy = false; gReadError = e.message; render(); });
+  }
+  function refreshGoogleRead() {
+    gReadBusy = true;
+    gReadError = '';
+    render();
+    post('/api/google/read/refresh', {}).then((s) => { gReadBusy = false; applyState(s); }, (e) => { gReadBusy = false; gReadError = e.message; render(); });
   }
   function googleConnect() {
     googleBusy = true;
@@ -8330,13 +8709,24 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }, 30000);
 
   // 구글 동의 화면에서 돌아오면 ?google=ok|error&msg= 가 붙어 온다. 알리고 주소를 정리한다
+  // 다른 일정 읽기 권한(계약 23-1)을 받으러 갔다 온 것이면 문구를 바꾼다. 받았는지는 상태를 읽은 뒤(boot)에 알린다
+  let googleReadReturn = false;
   function readGoogleReturn() {
     const q = new URLSearchParams(location.search);
     const g = q.get('google');
+    let readFlag = false;
+    try { readFlag = sessionStorage.getItem(GREAD_FLAG) === '1'; sessionStorage.removeItem(GREAD_FLAG); } catch (e) { /* 무시 */ }
     if (!g) return;
     googleReturn = true;
     // 성공 알림은 잠깐만(그리고 뜬 화면에서만), 실패는 닫을 때까지(뜬 화면에서만)
-    if (g === 'ok') banner('구글 캘린더를 연결했어요. 승인한 마감을 ‘LMS 마감’ 캘린더에 반영하고 있어요.', false, 8000);
+    // 읽기 동의에서 돌아오면 서버가 read=ok|denied|cancelled를 붙인다(쓰기 연결은 그대로라 google=ok). 없으면 떠날 때 남긴 표시로
+    const rd = q.get('read');
+    if (rd === 'ok') banner('다른 일정 읽기를 허락했어요. 가져오는 대로 대시보드 날짜 축에 보여요.', false, 8000);
+    else if (rd === 'denied') banner('다른 일정 읽기 권한이 허락되지 않았어요. 동의 화면에서 ‘캘린더 목록 보기’와 ‘일정 보기’를 체크해야 가져올 수 있어요. 구글 캘린더 반영은 그대로예요.', true);
+    else if (rd === 'cancelled') banner((q.get('msg') || '다른 일정 보기 권한 요청이 취소됐어요') + '. 다시 하려면 설정 → 구글 캘린더에서 켜 주세요.', true);
+    else if (readFlag && g === 'ok') googleReadReturn = true;
+    else if (readFlag) banner('구글 권한 허락 실패: ' + (q.get('msg') || '알 수 없는 문제') + '. 설정 → 구글 캘린더에서 다시 해 보세요.', true);
+    else if (g === 'ok') banner('구글 캘린더를 연결했어요. 승인한 마감을 ‘LMS 마감’ 캘린더에 반영하고 있어요.', false, 8000);
     else banner('구글 연결 실패: ' + (q.get('msg') || '알 수 없는 문제') + '. 다시 연결해 보세요.', true);
     try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* 무시 */ }
   }
@@ -8352,6 +8742,12 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       $('m-date').value = dayKey(new Date(Date.parse(s.now) || Date.now()));
       applyState(s);
       if (!s.configured) $('canvas-token').focus();
+      if (googleReadReturn) {
+        googleReadReturn = false;
+        const R = gread();
+        if (R && R.granted) banner('다른 일정 읽기를 허락했어요. 가져오는 대로 대시보드 날짜 축에 보여요.', false, 8000);
+        else if (R) banner('읽기 권한이 허락되지 않았어요. 동의 화면에서 캘린더 보기 항목을 체크해야 다른 일정을 가져올 수 있어요.', true);
+      }
     }, (err) => {
       msg.textContent = err.message;
       msg.className = 'inline-error';

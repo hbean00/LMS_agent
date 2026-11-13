@@ -2,6 +2,7 @@
 
 - make(): 미리 보기만(저장 안 함). 대상 = 준 항목 → 그 과목의 가장 가까운 시험 → 전체에서 가장 가까운 시험.
   오늘(또는 start)~시험 전날 하루 한 블록, 마감이 2개 이상인 날·이미 넣은 공부 블록과 겹치는 날·시험 당일은 건너뛰고,
+  구글 캘린더의 다른 일정(계약 23-3, 켰을 때)이 그 시각에 바쁨(busy)으로 겹치는 날도 건너뛴다(종일 일정은 겹침으로 보지 않음),
   최대 14블록(많으면 시험에 가까운 날부터). 시각은 hour:00, 길이 minutes — 시간대는 now의 것(앱 전체처럼 PC 로컬 = 한국 시간).
 - 저장: store.data["plans"] = [{"id": "p-…", "title", "course_id", "item_id", "blocks": [...], "created_at",
   "decided_by": "user"|"ai", "reason"?}] — add()/remove()는 잠금 안에서 부른다(features/plan.py).
@@ -245,9 +246,11 @@ def make(store, course_id=None, item_id=None, days=None, minutes=60, hour=20, st
         if d is not None:
             loads.setdefault(d.astimezone(tz).date(), []).append(str(it.get("title") or "마감"))
     taken = _slots(store)
+    from . import gevents
+    others = [(ts, te) for ts, te, all_day in gevents.busy(store) if not all_day]   # 제목은 쓰지 않는다
 
     chosen: list[tuple[date, datetime, datetime]] = []
-    busy, clash, passed, late = [], [], False, False
+    busy, clash, ev_clash, passed, late = [], [], [], False, False
     day = hi
     while day >= lo:
         s = datetime.combine(day, time(hour, 0), tzinfo=tz)
@@ -263,6 +266,8 @@ def make(store, course_id=None, item_id=None, days=None, minutes=60, hour=20, st
             busy.append(f"{_md(day)} " + "·".join(loads[day][:3]))
         elif any(s < te and ts < e for ts, te, _ in taken):
             clash.append(_md(day))
+        elif any(s < te and ts < e for ts, te in others):
+            ev_clash.append(_md(day))
         else:
             chosen.append((day, s, e))
         day -= timedelta(days=1)
@@ -275,6 +280,11 @@ def make(store, course_id=None, item_id=None, days=None, minutes=60, hour=20, st
                      + (f" 외 {len(busy) - 5}일" if len(busy) > 5 else "") + ".")
     if clash:
         notes.append("이미 넣은 공부 계획과 겹치는 날은 건너뛰었어요: " + ", ".join(reversed(clash[-5:])) + ".")
+    if ev_clash:
+        notes.append("일정과 겹쳐 뺀 날: " + ", ".join(reversed(ev_clash[-5:]))
+                     + (f" 외 {len(ev_clash) - 5}일" if len(ev_clash) > 5 else "") + "(구글 캘린더의 다른 일정).")
+    if gevents.enabled(store) and chosen and max(d for d, _, _ in chosen) >= gevents.window_range(now)[1].date():
+        notes.append(f"구글 캘린더의 다른 일정은 {gevents.DAYS_AFTER}일 뒤까지만 확인했어요.")
 
     for day, s, e in sorted(chosen):
         plan["blocks"].append({"start": iso(s), "end": iso(e),
@@ -498,10 +508,10 @@ def handle(store, message: str, course_id=None, now=None) -> dict | None:
         return {"answer": f"{head} 공부 계획을 짜지 못했어요. {reason}", "plan": plan}
     first, last = parse_iso(blocks[0]["start"]), parse_iso(blocks[-1]["start"])
     span = _md(first.date()) if first.date() == last.date() else f"{_md(first.date())}~{_md(last.date())}"
-    skipped = any(n.startswith(("마감이", "이미 넣은")) for n in plan["notes"])
+    skipped = any(n.startswith(("마감이", "이미 넣은", "일정과 겹쳐")) for n in plan["notes"])
     answer = ((unknown + " " if unknown else "")
               + f"{head} 전까지 공부 블록 {len(blocks)}개를 짰어요: {span}, 매일 {hour:02d}:00부터 {_dur(minutes)}씩."
-              + (" 마감이 몰린 날·이미 넣은 공부와 겹치는 날은 건너뛰었어요." if skipped else "")
+              + (" 마감이 몰린 날·이미 넣은 공부나 다른 일정과 겹치는 날은 건너뛰었어요." if skipped else "")
               + " 아직 캘린더에 넣지 않았어요 — [캘린더에 넣기]를 누르면 '[공부]' 일정으로 들어가요"
                 "(구글 캘린더가 연결돼 있으면 거기에도).")
     return {"answer": answer, "plan": plan}

@@ -67,6 +67,8 @@ CATALOG: list[dict] = [
            ("POST", "/api/autostart"), True),
     _entry("sync", "지금 동기화(전체 다시 확인)", {"full": "bool (선택)"}, ("POST", "/api/sync"), False),
     _entry("google_push", "구글 캘린더에 지금 반영", {}, ("POST", "/api/google/push"), False),
+    _entry("gcal_read", "구글 캘린더의 다른 일정 보기 켜기/끄기", {"enabled": "bool"}, ("POST", "/api/google/read"), True),
+    _entry("gcal_refresh", "구글 캘린더의 다른 일정 다시 가져오기", {}, ("POST", "/api/google/read/refresh"), False),
     _entry("course_mode", "과목 종류 바꾸기(성적 있음·P/NP·제외)", {"course_id": "str", "mode": "|".join(MODES)},
            ("POST", "/api/course/{course_id}/mode"), True),
     _entry("item_decision", "항목 승인·제외·확인 전으로", {"item_id": "str", "decision": "|".join(DECISIONS)},
@@ -225,6 +227,23 @@ def _v_none(store, p):
     return {}
 
 
+def _gcal_read_on(store) -> bool:
+    return (store.data.get("settings") or {}).get("gcal_read") is True
+
+
+def _v_gcal_read(store, p):
+    value = _bool(p, "enabled")
+    if _gcal_read_on(store) == value:
+        raise _Reject(f"구글 캘린더의 다른 일정 보기: 이미 {'켜져' if value else '꺼져'} 있어요")
+    return {"enabled": value}
+
+
+def _v_gcal_refresh(store, p):
+    if not _gcal_read_on(store):
+        raise _Reject("구글 캘린더의 다른 일정 보기가 꺼져 있어요. 먼저 켜 주세요(‘구글 다른 일정 보여줘’)")
+    return {}
+
+
 def _v_course_mode(store, p):
     cid = _id(p, "course_id")
     mode = p.get("mode")
@@ -345,7 +364,8 @@ def _v_tutorial(store, p):
 
 _VALIDATE = {
     "setting": _v_setting, "auto_download": _v_auto_download, "background": _v_background, "autostart": _v_autostart,
-    "sync": _v_sync, "google_push": _v_none, "course_mode": _v_course_mode, "item_decision": _v_item_decision,
+    "sync": _v_sync, "google_push": _v_none, "gcal_read": _v_gcal_read, "gcal_refresh": _v_gcal_refresh,
+    "course_mode": _v_course_mode, "item_decision": _v_item_decision,
     "item_submitted": _v_item_submitted, "update_check": _v_none, "update_apply": _v_none, "mascot": _v_mascot,
     "materials_folder": _v_none, "app_quit": _v_none, "coach_dismiss": _v_coach, "plan_apply": _v_plan_apply, "plan_remove": _v_plan_remove,
     "checklist_toggle": _v_checklist, "open_view": _v_open_view, "tutorial": _v_tutorial, "download_calendar": _v_none,
@@ -377,6 +397,8 @@ def title_of(store, aid: str, params: dict) -> str:
         return "컴퓨터를 켜면 앱 열기 켜기" + (" (브라우저는 열지 않음)" if p.get("open_browser") is False else "")
     if aid == "sync":
         return "전체 다시 확인" if p.get("full") else "지금 동기화"
+    if aid == "gcal_read":
+        return f"구글 캘린더의 다른 일정 보기 {on if p.get('enabled') else off}"
     if aid == "course_mode":
         c = _courses(store).get(str(p.get("course_id")))
         return f"{_short(c, p.get('course_id'))} 과목 종류 → {MODES.get(p.get('mode'), '?')}"
@@ -513,6 +535,14 @@ _BACKGROUND = re.compile(r"백그라운드|자동\s*동기화|주기적|정기�
 _HOURS = re.compile(r"(\d+)\s*시간")
 _GPUSH = re.compile(r"(?:구글|google)\s*(?:캘린더|calendar)?\s*(?:에|으로|로)?\s*(?:지금\s*)?(?:다시\s*)?"
                     r"(?:반영|동기화|올려|보내|푸시|push|업데이트|맞춰)|캘린더\s*(?:에|로)?\s*(?:지금\s*)?(?:반영|올려)", re.I)
+# 구글 캘린더의 다른 일정(계약 23-3): '구글 다른 일정 보여줘/꺼줘', '구글 일정 새로 고침'
+_GEV = re.compile(r"(?:구글|google)\s*(?:캘린더|calendar)?\s*(?:의|에\s*있는|에서|속)?\s*(?:다른\s*|개인\s*|내\s*|모든\s*)?"
+                  r"(?:일정|이벤트|약속)|다른\s*(?:캘린더\s*)?일정", re.I)
+_GEV_PUSH = re.compile(r"반영|올려|보내|푸시|push", re.I)
+_GEV_REFRESH = re.compile(r"새로\s*고침|다시\s*(?:가져|불러|읽|받)|갱신|최신|동기화|업데이트|refresh", re.I)
+_GEV_OFF = re.compile(r"꺼|끄|끈|숨겨|숨기|가려|감춰|안\s*보|보지\s*(?:않|말)|빼|없애|그만|해제|중지|disable|(?<![a-z])off", re.I)
+_GEV_ON = re.compile(r"보여|보이|보기|볼래|볼\s*수|띄워|표시|켜|가져|불러|넣어|연동|enable|(?<![a-z])on(?![a-z])", re.I)
+_GEV_OPEN = re.compile(r"열어|열기|열자|가\s*줘|이동|들어가", re.I)
 _UPDATE = re.compile(r"업데이트|새\s*버전|최신\s*버전|update", re.I)
 _UPDATE_CHECK = re.compile(r"확인|있(?:는지|나|어|으면)|나왔|체크", re.I)
 _SYNC = re.compile(r"동기화|sync|다시\s*(?:읽|확인)|전체\s*(?:다시\s*)?확인|새로\s*고침|새로고침|갱신", re.I)
@@ -561,7 +591,22 @@ def _norm(s) -> str:
 def _is_command(msg: str) -> bool:
     if _REQUEST.search(msg):
         return True
-    return bool(_BARE.search(msg)) and not _QUESTION.search(msg)
+    if _QUESTION.search(msg):
+        return False
+    return bool(_BARE.search(msg)) or bool(_gev_kind(msg.lower()))
+
+
+def _gev_kind(low: str) -> str | None:
+    """구글 캘린더의 다른 일정 명령: "refresh" | "off" | "on" | None. 반영(쓰기)·설정 칸 열기 말이면 None."""
+    if not _GEV.search(low) or _GEV_PUSH.search(low) or (_SCREEN.search(low) and _GEV_OPEN.search(low)):
+        return None
+    if _GEV_REFRESH.search(low):
+        return "refresh"
+    if _GEV_OFF.search(low):
+        return "off"
+    if _GEV_ON.search(low):
+        return "on"
+    return None
 
 
 def _toggle(text: str) -> bool:
@@ -682,6 +727,14 @@ def _open_intent(store, msg: str, low: str, course_id, why: str) -> list[dict]:
 def _intent(store, msg: str, low: str, course_id) -> tuple[list[dict], str | None, str | None]:
     """(제안 목록, 앞에 둘 말, 뒤에 덧붙일 말). 알아듣지 못하면 ([], None, None)."""
     why = f"요청: “{msg[:80]}”"
+
+    gev = _gev_kind(low)   # 구글 캘린더의 다른 일정(연결·해제 말보다 먼저 — '보기 해제'는 연결 해제가 아니다)
+    if gev == "refresh":
+        return [_p("gcal_refresh", {}, why)], None, None
+    if gev:
+        return ([_p("gcal_read", {"enabled": gev == "on"}, why)], None,
+                "처음 켤 때는 구글 동의(읽기 권한)가 필요해요 — 설정 → 구글 캘린더에서 직접 허락해 주세요." if gev == "on" else
+                "가져온 일정은 이 PC에서 지워요(구글 캘린더에는 그대로).")
 
     if _SCREEN.search(low):                     # '백그라운드 설정 열어줘' = 켜기가 아니라 그 칸 열기
         opened = _open_intent(store, msg, low, course_id, why)
@@ -921,6 +974,35 @@ def _r_google_push(app, p):
                  f"지움 {r.get('deleted') or 0})")
 
 
+def _gcal_ready(app, need_granted: bool = True) -> None:
+    g = getattr(app, "google", None)
+    if not (g and g.available and g.connected):
+        raise ApiError(400, "구글 캘린더가 연결돼 있지 않아요. 설정 → 구글 캘린더에서 먼저 연결해 주세요")
+    if need_granted and not g.read_granted:
+        raise ApiError(400, "다른 일정을 읽을 권한이 아직 없어요. 설정 → 구글 캘린더에서 권한을 허락해 주세요"
+                            "(구글 동의는 직접 해야 해요)")
+
+
+def _r_gcal_read(app, p):
+    prev = _gcal_read_on(app.store)
+    if p["enabled"]:
+        _gcal_ready(app)          # 권한이 없으면 동의 화면으로 보내지 않고 실패로 알린다(동의는 사용자가 직접)
+        res = _call(app, "/api/google/read", {"enabled": True}) or {}
+        if res.get("need_consent"):   # 그 사이 권한이 사라짐
+            raise ApiError(400, "다른 일정을 읽을 권한이 아직 없어요. 설정 → 구글 캘린더에서 권한을 허락해 주세요")
+        msg = "구글 캘린더의 다른 일정을 대시보드에 보여 줄게요(가져오는 중)"
+    else:
+        _call(app, "/api/google/read", {"enabled": False})
+        msg = "구글 캘린더의 다른 일정 보기를 껐어요(가져온 일정은 이 PC에서 지웠어요)"
+    return _done(msg, {"enabled": prev, "set": p["enabled"]})
+
+
+def _r_gcal_refresh(app, p):
+    _gcal_ready(app)
+    _call(app, "/api/google/read/refresh", {})
+    return _done("구글 캘린더의 다른 일정을 다시 가져오고 있어요")
+
+
 def _r_course_mode(app, p):
     prev = _course_mode(app.store, p["course_id"])
     _call(app, f"/api/course/{p['course_id']}/mode", {"mode": p["mode"]})
@@ -1009,7 +1091,8 @@ def _r_checklist(app, p):
 
 _RUN = {
     "setting": _r_setting, "auto_download": _r_auto_download, "background": _r_background, "autostart": _r_autostart,
-    "sync": _r_sync, "google_push": _r_google_push, "course_mode": _r_course_mode, "item_decision": _r_item_decision,
+    "sync": _r_sync, "google_push": _r_google_push, "gcal_read": _r_gcal_read, "gcal_refresh": _r_gcal_refresh,
+    "course_mode": _r_course_mode, "item_decision": _r_item_decision,
     "item_submitted": _r_item_submitted, "update_check": _r_update_check, "update_apply": _r_update_apply,
     "mascot": _r_mascot, "materials_folder": _r_materials_folder, "app_quit": _r_app_quit, "coach_dismiss": _r_coach,
     "plan_apply": _r_plan_apply, "plan_remove": _r_plan_remove, "checklist_toggle": _r_checklist,
@@ -1068,6 +1151,20 @@ def _u_autostart(app, u):
         body["open_browser"] = u["open_browser"]
     _call(app, "/api/autostart", body)
     return "컴퓨터를 켜면 앱 열기를 실행 전으로 되돌렸어요"
+
+
+def _u_gcal_read(app, u):
+    if not isinstance(u.get("enabled"), bool):
+        raise ApiError(400, "되돌릴 값이 올바르지 않아요")
+    _conflict(_gcal_read_on(app.store), u.get("set"))
+    if u["enabled"]:
+        _gcal_ready(app)
+        res = _call(app, "/api/google/read", {"enabled": True}) or {}
+        if res.get("need_consent"):
+            raise ApiError(400, "다른 일정을 읽을 권한이 아직 없어요. 설정 → 구글 캘린더에서 권한을 허락해 주세요")
+        return "구글 캘린더의 다른 일정 보기를 다시 켰어요(가져오는 중)"
+    _call(app, "/api/google/read", {"enabled": False})
+    return "구글 캘린더의 다른 일정 보기를 다시 껐어요"
 
 
 def _u_course_mode(app, u):
@@ -1138,7 +1235,7 @@ def _u_checklist(app, u):
 
 _UNDO = {
     "setting": _u_setting, "auto_download": _u_auto_download, "background": _u_background, "autostart": _u_autostart,
-    "course_mode": _u_course_mode, "item_decision": _u_item_decision, "item_submitted": _u_item_submitted,
+    "gcal_read": _u_gcal_read, "course_mode": _u_course_mode, "item_decision": _u_item_decision, "item_submitted": _u_item_submitted,
     "mascot": _u_mascot, "plan_apply": _u_plan_apply, "checklist_toggle": _u_checklist,
 }
 
@@ -1165,5 +1262,5 @@ def undo(app, p: dict) -> dict:
     return {"ok": True, "message": _UNDO[aid](app, u)}
 
 
-_PREV_KEY = {"setting": "value", "auto_download": "value", "course_mode": "mode", "item_decision": "decision",
+_PREV_KEY = {"setting": "value", "auto_download": "value", "gcal_read": "enabled", "course_mode": "mode", "item_decision": "decision",
              "item_submitted": "submitted", "mascot": "choice"}

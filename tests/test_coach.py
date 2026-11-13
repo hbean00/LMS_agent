@@ -375,3 +375,41 @@ def test_no_briefing_toast_when_the_app_ran_this_week_or_card_closed(cli_home):
     store.save()
     cli.main(["sync", "--background"])
     assert [t for t in shown if "작전" in t[0]]                           # 닫지 않았다면 알렸을 것
+
+
+# ---------------------------------------------------------------- 구글 캘린더의 다른 일정(계약 23-3)
+
+def _with_events(store, spans, on=True):
+    store.data["settings"]["gcal_read"] = on
+    store.data["gcal_events"] = {
+        "calendars": [{"id": "me", "name": "내 캘린더", "primary": True, "google_selected": True, "color": None,
+                       "access": "owner"}],
+        "events": [{"id": f"me:{i}", "calendar_id": "me", "calendar_name": "내 캘린더", "color": None, "title": t,
+                    "start": iso(s), "end": iso(s + timedelta(hours=1)), "all_day": False, "location": None,
+                    "url": None, "busy": b} for i, (t, s, b) in enumerate(spans)]}
+
+
+def test_briefing_busiest_day_counts_busy_events_without_titles(store):
+    now = at(3)                                                          # 월요일 — 하루 2개 이상 몰린 날 없음
+    _with_events(store, [("비밀 약속 1", at(4, 10), True), ("비밀 약속 2", at(4, 14), True),
+                         ("비밀 약속 3", at(4, 19), True), ("한가함", at(4, 20), False),
+                         ("일정만 있는 날", at(6, 10), True), ("일정만 있는 날", at(6, 12), True),
+                         ("일정만 있는 날", at(6, 14), True), ("지난 일정", at(3, 7), True)])
+    dl = line(coach.state(store, now=now)["briefing"], "deadline")
+    assert "화요일이 고비예요 — 마감 1개·일정 3개" in dl["text"]            # Homework 5(화) + 바쁨 일정 3개
+    card = coach.state(store, now=now)["briefing"]
+    assert "비밀" not in json.dumps(card, ensure_ascii=False) and "목요일" not in dl["text"]   # 수만, 일정만 있는 날은 아님
+    assert set(dl["item_ids"]) <= {v["id"] for v in store.view()}           # 근거 id는 항목만
+    # 끄면 예전과 같다
+    store.data["settings"]["gcal_read"] = False
+    assert "고비" not in line(coach.state(store, now=now)["briefing"], "deadline")["text"]
+
+
+def test_background_briefing_toast_has_no_events(store):
+    now = at(3)
+    _with_events(store, [("비밀 약속", at(4, 10 + i), True) for i in range(3)])
+    store.data["runs"] = []                                              # 이번 주에 앱을 연 적 없음 → 알림 대상
+    card = coach.toast_card(store, now=now)
+    assert card is not None
+    body = notify.briefing_message(card)[1]
+    assert "일정" not in body and "비밀" not in body and "고비" not in body

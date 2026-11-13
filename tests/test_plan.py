@@ -493,3 +493,48 @@ def test_google_push_creates_and_deletes_study_events(tmp_path):
         httpd.shutdown()
         cmock.shutdown()
         gmock.shutdown()
+
+
+# ---------------------------------------------------------------- 구글 캘린더의 다른 일정(계약 23-3)
+
+def _gcal_events(store, events, on=True):
+    store.data["settings"]["gcal_read"] = on
+    store.data["gcal_events"] = {
+        "calendars": [{"id": "me", "name": "내 캘린더", "primary": True, "google_selected": True, "color": None,
+                       "access": "owner"}],
+        "events": [{"id": f"me:{i}", "calendar_id": "me", "calendar_name": "내 캘린더", "color": None, "title": t,
+                    "start": iso(s), "end": iso(e), "all_day": ad, "location": None, "url": None, "busy": b}
+                   for i, (t, s, e, ad, b) in enumerate(events)]}
+
+
+def test_make_skips_days_with_busy_google_events(tmp_path):
+    s = synthetic(tmp_path, [{"id": "f-exam", "title": "기말고사", "kind": "시험", "due": iso(at(5, 10, 0))}])
+    _gcal_events(s, [
+        ("비밀 알바", at(1, 19, 0), at(1, 21, 0), False, True),                 # 20~21시와 겹침 → 뺌
+        ("공휴일", at(2, 0, 0), at(3, 0, 0), True, True),                      # 종일 일정은 겹침으로 보지 않는다
+        ("한가함", at(3, 20, 30), at(3, 21, 30), False, False),                # 한가함(transparent)도 아님
+        ("짧은 약속", at(4, 20, 30), at(4, 20, 45), False, True),              # 조금이라도 겹치면 뺌
+        ("끝난 뒤", at(0, 21, 0), at(0, 22, 0), False, True),                  # 21시에 시작 = 겹치지 않음
+    ])
+    p = plan.make(s, now=NOW)
+    assert starts(p) == [at(0, 20, 0), at(2, 20, 0), at(3, 20, 0)]
+    note = next(n for n in p["notes"] if n.startswith("일정과 겹쳐 뺀 날: "))
+    d1, d4 = T + timedelta(days=1), T + timedelta(days=4)
+    assert f"{d1.month}/{d1.day}(" in note and f"{d4.month}/{d4.day}(" in note
+    text = json.dumps(p, ensure_ascii=False)
+    assert "비밀 알바" not in text and "짧은 약속" not in text                  # 제목은 계획에 넣지 않는다
+    # 꺼져 있으면 다른 일정을 보지 않는다
+    s.data["settings"]["gcal_read"] = False
+    assert len(plan.make(s, now=NOW)["blocks"]) == 5
+    # 채팅 답에도 건너뛴 이유
+    s.data["settings"]["gcal_read"] = True
+    r = plan.handle(s, "기말 공부 계획 세워줘", now=NOW)
+    assert "다른 일정과 겹치는 날은 건너뛰었어요" in r["answer"] and "비밀" not in r["answer"]
+
+
+def test_make_notes_when_plan_goes_past_the_event_window(demo):
+    _gcal_events(demo, [])
+    p = plan.make(demo, course_id="103", days=14, now=NOW)                  # 시험 T+30 → 블록 T+16~T+29
+    assert any("21일 뒤까지만 확인" in n for n in p["notes"])
+    demo.data["settings"]["gcal_read"] = False
+    assert not any("21일 뒤까지만" in n for n in plan.make(demo, course_id="103", days=14, now=NOW)["notes"])

@@ -318,6 +318,84 @@ def test_sync_on_deleted_calendar(mock):
     assert expect_error(cal.sync, cid, [item(1)]).status == 404
 
 
+# ---- 읽기('다른 일정 보기', 계약 23장)
+
+def connect_read(u: dict) -> dict:
+    flow = OAuthFlow(DEMO_CLIENT_ID, REDIRECT, DEMO_CLIENT_SECRET, auth_url=u["auth_url"], token_url=u["token_url"])
+    q = browser(flow.authorization_url(read=True))
+    SECRETS.update([q["code"], flow.code_verifier])
+    tokens = flow.exchange(q["code"], q["state"])
+    SECRETS.update([tokens["access_token"], tokens["refresh_token"]])
+    return tokens
+
+
+def test_incremental_consent_merges_granted_scopes(mock):
+    srv, u = mock
+    first = connect(u)
+    assert not gcal.read_granted(first["scope"])
+    srv.grant_scope = gcal.SCOPE_LIST                       # 읽기 둘 중 하나만 체크(구글 세부 권한)
+    part = connect_read(u)
+    assert gcal.SCOPE in part["scope"].split() and not gcal.read_granted(part["scope"])   # 이미 준 쓰기는 그대로
+    srv.grant_scope = None
+    full = connect_read(u)
+    assert set(full["scope"].split()) == {gcal.SCOPE, gcal.SCOPE_LIST, gcal.SCOPE_EVENTS}
+    assert gcal.read_granted(full["scope"])
+
+
+def test_exchange_keeps_old_refresh_token_when_google_omits_it(mock):
+    srv, u = mock
+    old = connect(u)
+    flow = OAuthFlow(DEMO_CLIENT_ID, REDIRECT, DEMO_CLIENT_SECRET, auth_url=u["auth_url"], token_url=u["token_url"])
+    q = browser(flow.authorization_url(read=True))
+    SECRETS.add(q["code"])
+    orig_send = srv.RequestHandlerClass._send
+
+    def no_refresh(self, status, obj=None, *a, **k):   # 이번 응답에는 갱신 토큰이 없다(구글이 증분 동의에서 생략하는 경우)
+        if isinstance(obj, dict) and "refresh_token" in obj and "access_token" in obj:
+            obj = {k2: v for k2, v in obj.items() if k2 != "refresh_token"}
+        return orig_send(self, status, obj, *a, **k)
+    srv.RequestHandlerClass._send = no_refresh
+    try:
+        tokens = flow.exchange(q["code"], q["state"], old=old)
+    finally:
+        srv.RequestHandlerClass._send = orig_send
+    SECRETS.add(tokens["access_token"])
+    assert tokens["refresh_token"] == old["refresh_token"] and gcal.read_granted(tokens["scope"])
+
+
+def test_list_calendars_and_events_paging_and_fields(mock):
+    srv, u = mock
+    cal = client(u, connect_read(u))
+    managed = cal.ensure_calendar(None)                     # 앱의 캘린더도 목록에 나온다(앱이 스스로 뺀다)
+    srv.page_size = 2
+    n = len(srv.requests)
+    cals = cal.list_calendars()
+    ids = [c["id"] for c in cals]
+    assert managed in ids and "demo.student@example.com" in ids and len(ids) == 6
+    gets = [p for m, p in srv.requests[n:] if "/calendarList" in p]
+    assert len(gets) == 3 and "pageToken=p2" in gets[1] and "pageToken=p4" in gets[2]
+    assert "fields=items%28id%2Csummary" in gets[0] and "showHidden=false" in gets[0]
+    assert cal.list_calendars(limit=3) == cals[:3]
+
+    today = datetime.now().astimezone()
+    lo = today.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    hi = lo + timedelta(days=23)
+    n = len(srv.requests)
+    evs = cal.list_events("demo.student@example.com", lo, hi)
+    gets = [p for m, p in srv.requests[n:] if "/events" in p]
+    assert len(gets) == 4                                   # 7개 / 2개씩
+    q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(gets[0]).query))
+    assert q["singleEvents"] == "true" and q["orderBy"] == "startTime" and q["showDeleted"] == "false"
+    assert gcal._aware(q["timeMin"]) == lo and gcal._aware(q["timeMax"]) == hi
+    assert "description" not in q["fields"] and "attendees" not in q["fields"] and "summary" in q["fields"]
+    jobs = [e for e in evs if e.get("recurringEventId") == "demojob01"]
+    assert len(jobs) == 3 and len({e["id"] for e in jobs}) == 3   # 매주 반복을 펼침(4번째는 창 밖)
+    assert all(e.get("status") != "cancelled" for e in evs) and len(evs) == 7
+    assert len(cal.list_events("demo.student@example.com", lo, hi, limit=3)) == 3
+    e = expect_error(cal.list_events, "nope@example.com", lo, hi)
+    assert e.status == 404
+
+
 def test_zz_no_secret_in_any_error():
     """앞의 테스트에서 모은 모든 GoogleError 메시지에 토큰·코드·비밀값이 없다."""
     if not ERRORS:

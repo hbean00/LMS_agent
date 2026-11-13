@@ -117,3 +117,21 @@ def test_callback_without_pending_flow_is_rejected(env):
     app, url, _ = env
     code, _, headers = call(url + "/?state=x&code=y", follow=False)
     assert code == 302 and "google=error" in headers["Location"]
+
+
+def test_first_connect_asks_write_only_and_read_starts_off(env):
+    """다른 일정 보기(계약 23장)는 기본 꺼짐: 처음 연결은 예전처럼 쓰기 권한만, 상태에는 read·events 칸이 비어 있다."""
+    import urllib.parse
+
+    from lms_agent import gcal
+    app, url, gmock = env
+    auth = json.loads(call(url + "/api/google/connect", "POST", app.token, {})[1])["url"]
+    q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(auth).query))
+    assert q["scope"] == gcal.SCOPE and "include_granted_scopes" not in q
+    _, _, headers = call(auth, follow=False)
+    call(headers["Location"], follow=False)
+    wait_push(app)
+    st = json.loads(call(url + "/api/state", token=app.token)[1])
+    assert st["google"]["connected"] and st["events"] == []
+    assert st["google"]["read"]["enabled"] is False and st["google"]["read"]["granted"] is False
+    assert not any("calendarList" in p for _, p in gmock.requests)      # 켜기 전에는 읽지 않는다

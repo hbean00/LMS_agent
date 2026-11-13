@@ -1,6 +1,7 @@
 """Google 캘린더 API 클라이언트. 표준 라이브러리(urllib)만 쓴다.
 
 승인된 마감을 앱이 만든 'LMS 마감' 캘린더에 올린다(scope는 calendar.app.created라 다른 캘린더는 못 건드린다).
+'다른 일정 보기'(계약 23장)를 켤 때만 읽기 권한(캘린더 목록·일정 읽기)을 증분 동의로 더 받는다 — 읽기만, 쓰지 않는다.
 토큰·인증 코드·클라이언트 비밀값은 요청 헤더·본문에만 쓰고 오류 메시지·예외·URL에는 절대 넣지 않는다.
 """
 from __future__ import annotations
@@ -22,6 +23,13 @@ from datetime import datetime, timedelta, timezone
 from .canvas import origin
 
 SCOPE = "https://www.googleapis.com/auth/calendar.app.created"
+# 읽기(계약 23-1): 켤 때만 추가로 요청한다. 둘 다 있어야 '허용됨'
+SCOPE_LIST = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+SCOPE_EVENTS = "https://www.googleapis.com/auth/calendar.events.readonly"
+READ_SCOPES = (SCOPE_LIST, SCOPE_EVENTS)
+_FULL = "https://www.googleapis.com/auth/calendar"
+_READ_COVER = {SCOPE_LIST: {SCOPE_LIST, _FULL + ".calendarlist", _FULL + ".readonly", _FULL},
+               SCOPE_EVENTS: {SCOPE_EVENTS, _FULL + ".events", _FULL + ".readonly", _FULL}}
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
@@ -181,6 +189,12 @@ def _token_dict(data, old: dict | None = None) -> dict:
             "scope": data.get("scope") or old.get("scope") or ""}
 
 
+def read_granted(scope) -> bool:
+    """토큰의 scope 문자열에 '다른 일정 보기'에 필요한 읽기 권한(캘린더 목록·일정)이 둘 다 있는지(계약 23-1)."""
+    got = set(str(scope or "").split())
+    return all(got & cover for cover in _READ_COVER.values())
+
+
 # ---- OAuth (설치형 앱 loopback + PKCE, RFC 8252 / RFC 7636) ----
 
 class OAuthFlow:
@@ -196,23 +210,33 @@ class OAuthFlow:
         self.timeout = timeout
         self.state: str | None = None
         self.code_verifier: str | None = None
+        self.read = False   # True면 '다른 일정 보기' 읽기 권한까지 묻는 증분 동의(계약 23-1)
 
     def __repr__(self) -> str:
         return f"OAuthFlow({self.redirect_uri!r})"
 
-    def authorization_url(self) -> str:
-        """브라우저로 열 주소. 부를 때마다 state와 code_verifier를 새로 만든다."""
+    def authorization_url(self, read: bool = False) -> str:
+        """브라우저로 열 주소. 부를 때마다 state와 code_verifier를 새로 만든다.
+
+        read=False(처음 연결): 쓰기 권한(calendar.app.created)만 — 예전과 같은 주소.
+        read=True('다른 일정 보기'를 켤 때): 쓰기 + 읽기 둘을 묻고 include_granted_scopes=true(이미 준 권한은 그대로 합친다).
+        """
+        self.read = bool(read)
         self.state = secrets.token_urlsafe(32)
         self.code_verifier = secrets.token_urlsafe(64)  # 86자, RFC 7636의 43~128자 안
         digest = hashlib.sha256(self.code_verifier.encode("ascii")).digest()
         challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         params = {"response_type": "code", "client_id": self.client_id, "redirect_uri": self.redirect_uri,
-                  "scope": SCOPE, "access_type": "offline", "prompt": "consent",
+                  "scope": " ".join((SCOPE,) + READ_SCOPES) if self.read else SCOPE,
+                  "access_type": "offline", "prompt": "consent",
                   "code_challenge": challenge, "code_challenge_method": "S256", "state": self.state}
+        if self.read:
+            params["include_granted_scopes"] = "true"
         return self.auth_url + "?" + urllib.parse.urlencode(params)
 
-    def exchange(self, code: str, state: str) -> dict:
-        """콜백으로 받은 code를 토큰으로 바꾼다. state가 다르면 GoogleError."""
+    def exchange(self, code: str, state: str, old: dict | None = None) -> dict:
+        """콜백으로 받은 code를 토큰으로 바꾼다. state가 다르면 GoogleError.
+        old(지금 토큰)를 주면 구글이 갱신 토큰을 다시 주지 않을 때 그것을 이어 쓴다(증분 동의)."""
         if not self.state or not self.code_verifier:
             raise GoogleError("연결 요청이 만료됐습니다. 다시 연결하세요")
         if not isinstance(state, str) or not secrets.compare_digest(
@@ -228,7 +252,7 @@ class OAuthFlow:
         }), content_type="application/x-www-form-urlencoded", timeout=self.timeout)
         if not 200 <= status < 300:
             raise _token_error(status, data, refreshing=False)
-        tokens = _token_dict(data)
+        tokens = _token_dict(data, old if isinstance(old, dict) and old.get("refresh_token") else None)
         if not tokens.get("refresh_token"):
             raise GoogleError("구글이 갱신 토큰을 주지 않았습니다. 다시 연결하세요")
         if tokens["scope"] and SCOPE not in tokens["scope"].split():
@@ -486,6 +510,39 @@ class GoogleCalendar:
                         continue
                 res["deleted"] += 1
         return res
+
+    # ---- 읽기('다른 일정 보기', 계약 23장) — 읽기만 한다
+
+    def _pages(self, path: str, params: dict, limit: int) -> list[dict]:
+        out, token, seen = [], None, set()
+        while True:
+            q = dict(params)
+            if token:
+                q["pageToken"] = token
+            data = self._call("GET", path, q)
+            if not isinstance(data, dict):
+                raise GoogleError("구글 응답 형식이 예상과 다릅니다")
+            out += [x for x in data.get("items") or [] if isinstance(x, dict)]
+            token = data.get("nextPageToken")
+            if len(out) >= limit or not isinstance(token, str) or not token or token in seen:
+                return out[:limit]
+            seen.add(token)
+
+    def list_calendars(self, limit: int = 100) -> list[dict]:
+        """내 캘린더 목록(calendarList.list, 숨긴 것 빼고). 필요한 칸만 받는다."""
+        return self._pages("/users/me/calendarList", {
+            "maxResults": 250, "showHidden": "false",
+            "fields": "items(id,summary,summaryOverride,primary,backgroundColor,accessRole,selected,hidden,deleted),"
+                      "nextPageToken"}, limit)
+
+    def list_events(self, calendar_id: str, time_min: datetime, time_max: datetime, limit: int = 300) -> list[dict]:
+        """한 캘린더의 [time_min, time_max) 일정(events.list). 반복 일정은 펼쳐(singleEvents) 시작 순으로, 최대 limit개.
+        설명·참석자는 받지 않는다(fields)."""
+        return self._pages(f"/calendars/{_seg(calendar_id)}/events", {
+            "singleEvents": "true", "orderBy": "startTime", "showDeleted": "false",
+            "timeMin": _utc(time_min), "timeMax": _utc(time_max), "maxResults": 250,
+            "fields": "items(id,status,summary,start,end,location,htmlLink,transparency,visibility),nextPageToken"},
+            limit)
 
     def _patch_or_insert(self, base: str, old: dict, body: dict) -> dict:
         try:

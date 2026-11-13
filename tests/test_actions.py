@@ -461,3 +461,116 @@ def test_missing_route_is_a_clear_error(app, monkeypatch):
     with pytest.raises(ApiError) as e:
         actions.run(app, ok(app.store, "coach_dismiss", id="b-1"))
     assert e.value.status == 404 and "없어요" in str(e.value)
+
+
+# ---------------------------------------------------------------- 구글 캘린더의 다른 일정(계약 23-3)
+
+@pytest.fixture()
+def gapp(tmp_path, store, mock):
+    """가짜 구글로 연결(쓰기만)된 앱. 읽기 권한은 grant_read()로."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    from lms_agent.gcal import OAuthFlow
+    from lms_agent.mock_google import DEMO_CLIENT_ID, DEMO_CLIENT_SECRET, start_mock_google, urls
+
+    gmock, gbase = start_mock_google()
+    u = urls(gbase)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+    def tokens(read):
+        flow = OAuthFlow(DEMO_CLIENT_ID, "http://127.0.0.1:1/", DEMO_CLIENT_SECRET,
+                         auth_url=u["auth_url"], token_url=u["token_url"])
+        try:
+            urllib.request.build_opener(NoRedirect).open(flow.authorization_url(read=read), timeout=5)
+        except urllib.error.HTTPError as e:
+            q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(e.headers["Location"]).query))
+        return flow.exchange(q["code"], q["state"])
+
+    a = App(store, tmp_path, cfg={"canvas_url": mock, "token": DEMO_TOKEN, "google": {"tokens": tokens(False)}},
+            google=(DEMO_CLIENT_ID, DEMO_CLIENT_SECRET), google_urls=u, gcal_read_every=0)
+    a.grant_read = lambda: a.cfg["google"].update(tokens=tokens(True))
+    yield a
+    gmock.shutdown()
+    gmock.server_close()
+
+
+def _wait_fetch(app):
+    import time
+    end = time.time() + 8
+    while app.google.fetching and time.time() < end:
+        time.sleep(0.03)
+    assert not app.google.fetching
+
+
+@pytest.mark.parametrize("message, on", [
+    ("구글 다른 일정 보여줘", "on"), ("구글캘린더 연동해서 다른 일정도 대시보드에 보이게 해줘", "on"),
+    ("다른 일정도 대시보드에 보여줘", "on"), ("구글 다른 일정 꺼줘", "off"), ("구글 일정 안 보이게 해줘", "off"),
+    ("구글 다른 일정 보기 해제해줘", "off"), ("구글 일정 새로 고침", "refresh"), ("구글 일정 다시 가져와", "refresh"),
+])
+def test_handle_gcal_read_commands(store, message, on):
+    store.data["settings"]["gcal_read"] = on != "on"                        # '이미 그 상태'가 아니게
+    r = actions.handle(store, message)
+    assert r is not None, message
+    p = r["proposals"][0]
+    want = ("gcal_refresh", {}) if on == "refresh" else ("gcal_read", {"enabled": on == "on"})
+    assert (p["action"], p["params"]) == want and p["rejected_reason"] is None, message
+    assert p["undoable"] is (on != "refresh") and "[실행]" in r["answer"] and "새로" not in r["answer"]
+    if on == "on":
+        assert "설정 → 구글 캘린더" in r["answer"]                              # 동의는 사용자가 직접
+
+
+def test_handle_gcal_read_leaves_other_google_commands_alone(store):
+    assert actions.handle(store, "구글 캘린더에 반영해줘")["proposals"][0]["action"] == "google_push"
+    r = actions.handle(store, "구글 연결 해제해줘")
+    assert r["proposals"][0]["params"] == {"view": "settings", "pane": "google"} and "하지 않아요" in r["answer"]
+    assert actions.handle(store, "구글 일정 설정 열어줘")["proposals"][0]["params"] == {"view": "settings", "pane": "google"}
+    assert actions.handle(store, "구글 일정이 안 보여요") is None              # 불평은 '놓친 것' 갈래로
+    assert actions.handle(store, "구글 일정은 어디서 봐?") is None             # 질문
+    r = actions.handle(store, "구글 다른 일정 꺼줘")                           # 이미 꺼져 있음
+    assert "이미 꺼져" in r["proposals"][0]["rejected_reason"]
+    out = actions.check(store, {"action": "gcal_refresh", "params": {}})
+    assert "꺼져" in out["rejected_reason"]
+    out = actions.check(store, {"action": "gcal_read", "params": {"enabled": "yes"}})
+    assert "true 또는 false" in out["rejected_reason"]
+
+
+def test_run_gcal_read_needs_connection_and_permission(app, gapp):
+    with pytest.raises(ApiError, match="연결돼 있지 않아요") as e:              # 연결 안 됨
+        actions.run(app, ok(app.store, "gcal_read", enabled=True))
+    assert e.value.status == 400
+    with pytest.raises(ApiError) as e:                                       # 연결됐지만 읽기 권한 없음 → 거짓 성공 없이 안내
+        actions.run(gapp, ok(gapp.store, "gcal_read", enabled=True))
+    assert e.value.status == 400 and "설정 → 구글 캘린더에서 권한을 허락해 주세요" in str(e.value)
+    assert gapp.store.data["settings"].get("gcal_read") is not True and gapp.google.flow is None   # 동의 화면을 열지 않음
+    with pytest.raises(ApiError, match="꺼져 있어요"):                       # 꺼져 있으면 다시 가져오기도 거절
+        actions.run(gapp, {"type": "action", "action": "gcal_refresh", "params": {}})
+    gapp.store.data["settings"]["gcal_read"] = True                         # 켜져 있어도 권한이 없으면 안내
+    with pytest.raises(ApiError, match="권한을 허락해 주세요"):
+        actions.run(gapp, ok(gapp.store, "gcal_refresh"))
+
+
+def test_run_undo_gcal_read_and_refresh(gapp):
+    gapp.grant_read()
+    p = run_and_keep(gapp, ok(gapp.store, "gcal_read", enabled=True))
+    assert gapp.store.data["settings"]["gcal_read"] is True and p["_undo"] == {"enabled": False, "set": True}
+    _wait_fetch(gapp)
+    assert len(gapp.state()["events"]) == 12
+    r = actions.run(gapp, ok(gapp.store, "gcal_refresh"))
+    assert r["undo"] is None and "다시 가져오고" in r["message"]
+    _wait_fetch(gapp)
+    with pytest.raises(ApiError, match="되돌릴 수 없는"):
+        actions.undo(gapp, {"action": "gcal_refresh", "_undo": {}})
+    actions.undo(gapp, p)                                                    # 되돌리기 = 끄기(가져온 일정도 지움)
+    assert gapp.store.data["settings"]["gcal_read"] is False and gapp.state()["events"] == []
+    # 끈 것을 되돌리면 다시 켠다 / 실행한 뒤 사용자가 바꿨으면 409
+    off = run_and_keep(gapp, ok(gapp.store, "gcal_read", enabled=True))
+    _wait_fetch(gapp)
+    gapp.store.data["settings"]["gcal_read"] = False
+    with pytest.raises(ApiError) as e:
+        actions.undo(gapp, off)
+    assert e.value.status == 409

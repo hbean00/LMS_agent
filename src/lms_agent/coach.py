@@ -6,6 +6,8 @@
 - 바뀐 마감(changes)은 더 새 글의 문장을 그대로 인용할 수 있을 때만 낸다(지어내지 않음).
 - 성적은 화면 안에서만: 브리핑의 공부 줄은 학점 글자 없이 말하고, 백그라운드 알림(notify.briefing_message)은 마감·시험 줄만 쓴다.
 - 제외(hidden)한 과목은 store.view()와 성적 묶음이 이미 뺀다.
+- 구글 캘린더의 다른 일정(계약 23-3, 켰을 때): 브리핑의 '가장 몰린 요일'에 바쁨(busy) 일정 수도 센다 — 수만, 제목은 넣지 않는다.
+  백그라운드 알림(toast_card)에는 다른 일정을 넣지 않는다.
 기록: store.data["coach"] = {"dismissed": [닫은 카드 id…], "toasted": [브리핑을 알린 주의 월요일…]}(각각 최근 100개).
 """
 from __future__ import annotations
@@ -160,17 +162,32 @@ def live(items: list[dict]) -> list[dict]:
     return out
 
 
-def _busiest(vs: list[dict]) -> tuple[date, int] | None:
-    """일정이 2개 이상 몰린 날(같으면 이른 날)."""
-    by: dict[date, int] = {}
+def _busiest(vs: list[dict], events=()) -> tuple[date, int, dict] | None:
+    """마감·시험(과 바쁨 일정 시작 시각들)이 합쳐 2개 이상 몰린 날(같으면 이른 날) → (날, 합, {"deadline", "exam", "event"} 수).
+    마감·시험이 하나도 없는 날은 고르지 않는다(브리핑은 마감 줄이다)."""
+    by: dict[date, dict] = {}
     for v in vs:
         d = _due(v)
         if d:
-            by[d.date()] = by.get(d.date(), 0) + 1
-    if not by:
+            c = by.setdefault(d.date(), {"deadline": 0, "exam": 0, "event": 0})
+            c["exam" if _is_exam(v) else "deadline"] += 1
+    for start in events:
+        if start.date() in by:
+            by[start.date()]["event"] += 1
+    total = {k: sum(c.values()) for k, c in by.items()}
+    if not total:
         return None
-    day = min(by, key=lambda k: (-by[k], k))
-    return (day, by[day]) if by[day] >= 2 else None
+    day = min(total, key=lambda k: (-total[k], k))
+    return (day, total[day], by[day]) if total[day] >= 2 else None
+
+
+def _load_text(counts: dict) -> str:
+    """' — 마감 2개·일정 3개'(다른 일정이 있을 때만, 수만)."""
+    if not counts.get("event"):
+        return ""
+    parts = [f"{label} {counts[k]}개" for k, label in (("deadline", "마감"), ("exam", "시험"), ("event", "일정"))
+             if counts.get(k)]
+    return " — " + "·".join(parts)
 
 
 def _pace_text(cel: dict | None, nudge: bool = False) -> str | None:
@@ -230,7 +247,8 @@ def _study_line(grades: dict | None, lv: list[dict], now: datetime) -> dict | No
 
 # ---------------------------------------------------------------- C. 주간 브리핑
 
-def _briefing(sem: dict, lv: list[dict], grades: dict | None, cel: dict | None, now: datetime) -> dict | None:
+def _briefing(sem: dict, lv: list[dict], grades: dict | None, cel: dict | None, now: datetime,
+              events=()) -> dict | None:
     monday = _monday(now.date())
     wk = _week_n(sem, monday)
     if not wk:
@@ -238,6 +256,8 @@ def _briefing(sem: dict, lv: list[dict], grades: dict | None, cel: dict | None, 
     start = _start(monday, now.tzinfo)
     end = start + timedelta(days=7)
     week = [v for v in lv if start <= _due(v) < end]
+    # 이번 주의 아직 끝나지 않은 바쁨 일정(시작 시각만 — 제목 없음)
+    ev_starts = [s.astimezone(now.tzinfo) for s, t, _ in events if start <= s < end and t >= now]
     dl = [v for v in week if not _is_exam(v)]
     lines = []
     if dl:
@@ -247,9 +267,10 @@ def _briefing(sem: dict, lv: list[dict], grades: dict | None, cel: dict | None, 
         else:
             text = (f"이번 주 마감 {len(dl)}개" if len(left) == len(dl)
                     else f"이번 주 마감 {len(dl)}개 중 {len(left)}개 남았어요")
-            busy = _busiest(left + [v for v in week if _is_exam(v) and _due(v) >= now])
+            busy = _busiest(left + [v for v in week if _is_exam(v) and _due(v) >= now], ev_starts)
             if busy:
                 text += f", {'오늘' if busy[0] == now.date() else WD[busy[0].weekday()] + '요일'}이 고비예요"
+                text += _load_text(busy[2])
             elif len(left) == len(dl):
                 text += " — 하나씩 끊어 가요"
             lines.append(_line(text, _ids(dl), "deadline"))
@@ -543,24 +564,36 @@ def _inputs(store, now: datetime, sem, items, grades, celebrations):
     return sem, items, grades, celebrations
 
 
+def _events(store, events):
+    """브리핑에 셀 다른 일정 [(시작, 끝, 종일)] — 주지 않으면 저장된 것(꺼져 있으면 없음)."""
+    if events is not None:
+        return list(events)
+    try:
+        from . import gevents
+        return gevents.busy(store)
+    except Exception:   # 다른 일정은 덤이다
+        return []
+
+
 def cards(store, now: datetime | None = None, sem: dict | None = None, items: list | None = None,
-          grades: dict | None = None, celebrations: dict | None = None) -> dict:
-    """닫은 것도 포함한 지금의 카드 {"briefing", "retro", "report"}(없으면 None) + "changes"."""
+          grades: dict | None = None, celebrations: dict | None = None, events=None) -> dict:
+    """닫은 것도 포함한 지금의 카드 {"briefing", "retro", "report"}(없으면 None) + "changes".
+    events: 브리핑에 셀 바쁨 일정 [(시작, 끝, 종일)] — None이면 저장된 다른 일정(계약 23-3), []이면 세지 않음."""
     now = now or now_local()
     if store.data.get("cache") is None:   # 첫 동기화 전
         return empty()
     sem, items, grades, cel = _inputs(store, now, sem, items, grades, celebrations)
     lv = live(items)
-    return {"briefing": _briefing(sem, lv, grades, cel, now),
+    return {"briefing": _briefing(sem, lv, grades, cel, now, _events(store, events)),
             "retro": _retro(sem, items, lv, cel, now),
             "report": _report(store, sem, items, grades, cel, now),
             "changes": changes(store, items, now)}
 
 
 def state(store, now: datetime | None = None, sem: dict | None = None, items: list | None = None,
-          grades: dict | None = None, celebrations: dict | None = None) -> dict:
+          grades: dict | None = None, celebrations: dict | None = None, events=None) -> dict:
     """state.coach = {"briefing", "retro", "report": 카드|None, "changes": [...]} — 닫은 카드는 None."""
-    out = cards(store, now, sem, items, grades, celebrations)
+    out = cards(store, now, sem, items, grades, celebrations, events)
     gone = set(_strs(_read_box(store.data).get("dismissed")))
     for k in KINDS:
         if out[k] and out[k]["id"] in gone:
@@ -592,7 +625,7 @@ def toast_card(store, now: datetime | None = None) -> dict | None:
     """백그라운드 동기화가 알릴 이번 주 브리핑(계약 22-4: 주 1회, 그 주 첫 백그라운드 동기화). 알리지 않으면 None:
     이미 알린 주, 카드를 닫은 주, 그리고 이번 주에 앱·CLI로 동기화한 적이 있으면(화면에서 이미 볼 수 있었다 — 앱을 안 여는 사람용 알림)."""
     now = now or now_local()
-    card = state(store, now)["briefing"]
+    card = state(store, now, events=[])["briefing"]   # 알림(잠금 화면)에는 다른 일정을 넣지 않는다(계약 23장)
     if not card or card["created_for"] in _strs(_read_box(store.data).get("toasted")):
         return None
     since = _start(date.fromisoformat(card["created_for"]), now.tzinfo)
