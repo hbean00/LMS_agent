@@ -534,6 +534,38 @@ def test_state_and_check_route(served):
     assert st["update"]["dismissed"]
 
 
+def _get_update(app, token=True):
+    req = urllib.request.Request(f"http://127.0.0.1:{app.port}/api/update",
+                                 headers={"X-LMS-Agent": app.token} if token else {})
+    return json.loads(urllib.request.urlopen(req, timeout=10).read())["update"]
+
+
+def test_pending_lets_an_open_screen_wait_for_the_first_check(served):
+    """켠 직후 확인(19-2 pending): 화면이 먼저 열려도 결과를 기다렸다가 띠를 띄울 수 있게."""
+    from lms_agent.features.update import start_background_checks
+    app, _ = served(update_how="exe", update_platform="win32")
+    with pytest.raises(urllib.error.HTTPError) as e:
+        _get_update(app, token=False)
+    assert e.value.code == 403                                   # 다른 API처럼 세션 값이 필요하다
+    assert _get_update(app)["pending"] is False                  # 저절로 확인하지 않는 실행(테스트·데모)은 기다릴 것이 없다
+    start_background_checks(app, first_delay=1.0)
+    u = _get_update(app)
+    assert u["pending"] is True and u["latest"] is None          # 아직 묻기 전
+    assert _wait(lambda: _get_update(app)["latest"] == NEW)
+    u = _get_update(app)
+    assert u["pending"] is False and u["available"] and u["can_apply"]
+    assert _get_state(app)["update"] == u                        # 전체 state의 칸과 같은 모양
+    app.updater.store.data["update"]["checked_at"] = None        # 다시 확인할 차례여도
+    app.updater.store.data["settings"]["update_check"] = False   # 확인을 껐으면 기다리지 않는다
+    assert _get_update(app)["pending"] is False
+
+
+def test_pending_never_in_demo(served):
+    app, _ = served(update_how="exe", update_platform="win32", demo=True)
+    app.updater.auto = True
+    assert _get_update(app)["pending"] is False
+
+
 def test_apply_exe_through_api_restarts_on_same_port(served, tmp_path):
     exe = _fake_exe(tmp_path)
     app, launched = served(update_how="exe", update_exe=exe, update_platform="win32")

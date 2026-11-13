@@ -32,6 +32,12 @@ def update_state(app, ctx):
     return app.updater.status(demo=app.demo)
 
 
+@router.route("GET", r"/api/update")
+def update_only(app, body):
+    """업데이트 칸만(가볍게). 화면이 켠 직후 확인을 기다리거나, 오래 열어 둔 화면이 가끔 볼 때 쓴다."""
+    return {"update": app.updater.status(demo=app.demo)}
+
+
 @router.route("POST", r"/api/update/check")
 def check_now(app, body):
     """설정의 [지금 확인]. 확인을 꺼 두었어도 누르면 한 번 묻는다(사용자가 직접 누른 것)."""
@@ -132,8 +138,11 @@ def restart(app) -> None:
         os._exit(1)
 
 
-def start_background_checks(app, first_delay: float = 8.0, every: float = 3600.0) -> threading.Thread:
-    """cli serve만 부른다: 켜고 조금 뒤 한 번, 그 뒤 한 시간마다 '하루가 지났는지' 보고 GitHub에 묻는다."""
+def start_background_checks(app, first_delay: float = 3.0, every: float = 3600.0) -> threading.Thread:
+    """cli serve만 부른다: 켜고 조금 뒤 한 번, 그 뒤 한 시간마다 '하루가 지났는지' 보고 GitHub에 묻는다.
+    확인할 차례인 동안 state.update.pending이 참이라, 먼저 열린 화면도 결과를 기다렸다가 띠를 띄운다."""
+    app.updater.auto = True
+
     def loop():
         time.sleep(first_delay)
         while True:

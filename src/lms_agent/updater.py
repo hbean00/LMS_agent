@@ -404,6 +404,7 @@ class Updater:
         self.python = python or sys.executable
         self.phase = "idle"          # idle | checking | applying | restarting
         self.result: dict | None = None   # 마지막 적용 결과 {"ok", "message", "restart"}(메모리에만)
+        self.auto = False                 # 저절로 확인하는 실행인지(cli serve의 start_background_checks가 켬)
         self._mutex = threading.Lock()
 
     # ---- 캐시
@@ -560,6 +561,8 @@ class Updater:
             "checked_at": c.get("checked_at"),
             "error": "지난번 업데이트가 적용되지 않았어요. 다시 해 보거나 직접 받아 주세요" if stuck else c.get("error"),
             "phase": self.phase,
+            # 곧 저절로 확인한다(켠 직후 등): 화면은 이 값이 참인 동안 /api/update를 몇 초마다 다시 읽는다
+            "pending": bool(self.auto and not demo and self.due()),
             "result": self.result,
             "dismissed": bool(available and c.get("dismissed") == c.get("latest")),
             "updated": updated,

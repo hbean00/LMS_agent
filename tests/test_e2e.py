@@ -247,6 +247,23 @@ def test_server_flow_to_calendar(running):
     assert code == 400  # 데모에서는 설정 변경 불가
 
 
+def test_tutorial_version_setting(running):
+    """튜토리얼 판(계약 8장): 기본 0, 정수만(참·거짓·문자열·범위 밖은 400), 다른 설정과 함께 저장."""
+    app, url = running
+    st = json.loads(_req(url + "/api/state", token=app.token)[1])
+    assert st["settings"]["tutorial_version"] == 0 and st["settings"]["tutorial_done"] is False
+    code, body, _ = _req(url + "/api/settings", "POST", app.token, {"tutorial_done": True, "tutorial_version": 2})
+    st = json.loads(body)
+    assert code == 200 and st["settings"]["tutorial_version"] == 2 and st["settings"]["tutorial_done"] is True
+    for bad in (True, "2", 2.5, -1, 1001, None):
+        code, body, _ = _req(url + "/api/settings", "POST", app.token, {"tutorial_version": bad, "weekly_summary": False})
+        assert code == 400 and "tutorial_version" in json.loads(body)["error"]
+    st = json.loads(_req(url + "/api/state", token=app.token)[1])
+    assert st["settings"]["tutorial_version"] == 2 and st["settings"]["weekly_summary"] is True   # 거절되면 하나도 안 바뀜
+    app.store.data["settings"]["tutorial_version"] = "망가진 값"                                     # 손으로 고친 파일도 열린다
+    assert json.loads(_req(url + "/api/state", token=app.token)[1])["settings"]["tutorial_version"] == 0
+
+
 def test_server_grades_links_exams_and_modes(running):
     """계약 14·15장 칸이 화면 API에 그대로 나온다(데모: ASIC 'Updated Grading Policy'·퀴즈 공지, 105 교육 과목)."""
     app, url = running

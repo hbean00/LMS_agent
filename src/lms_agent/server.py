@@ -122,8 +122,22 @@ def make_handler(app: App):
             self.wfile.write(body)
 
         def _error(self, code: int, msg: str) -> None:
+            self._drain()
             self._send(code, json.dumps({"error": msg}, ensure_ascii=False).encode("utf-8"),
                        "application/json; charset=utf-8")
+
+        def _drain(self) -> None:
+            """읽지 않은 요청 본문을 비운다. 거절(403 등)하고 본문을 남긴 채 닫으면 Windows에서 보내던 쪽이
+            응답 대신 '연결이 끊김(10053)'을 볼 수 있다. 너무 큰 본문은 읽지 않는다."""
+            if getattr(self, "_body_read", True):
+                return
+            self._body_read = True
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return
+            if 0 < n <= MAX_BODY:
+                self.rfile.read(n)
 
         def _host_ok(self) -> bool:
             # DNS 리바인딩 막기: 다른 이름으로 들어온 요청은 받지 않는다
@@ -137,12 +151,14 @@ def make_handler(app: App):
             n = int(self.headers.get("Content-Length") or 0)
             if n > MAX_BODY:
                 raise ValueError("요청이 너무 큽니다")
+            self._body_read = True
             data = json.loads((self.rfile.read(n) if n else b"{}").decode("utf-8") or "{}")
             if not isinstance(data, dict):
                 raise ValueError("JSON 객체가 필요합니다")
             return data
 
         def _dispatch(self, method: str) -> None:
+            self._body_read = method == "GET"
             if not self._host_ok():
                 return self._error(403, "허용되지 않은 호스트입니다")
             parsed = urlparse(self.path)

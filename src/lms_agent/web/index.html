@@ -1262,9 +1262,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
             </section>
             <section id="pane-tour" class="pane" aria-labelledby="h-tour">
               <h2 id="h-tour" class="sec-h">튜토리얼</h2>
-              <p class="help">화면마다 무엇을 하는지 차례로 짚어 줘요. 1분이면 끝나요.</p>
+              <p class="help">화면마다 무엇을 하는지 차례로 짚어 줘요. 1분이면 끝나요. ‘달라진 점’은 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외만 짚어요.</p>
               <div class="form-actions" style="margin-top:12px">
                 <button id="tour-replay" class="btn btn-line" type="button" data-key="tour-replay">튜토리얼 다시 보기</button>
+                <button id="tour-whatsnew" class="btn btn-line" type="button" data-key="tour-whatsnew">달라진 점 보기</button>
               </div>
             </section>
             <section id="pane-update" class="pane" aria-labelledby="h-update" hidden>
@@ -1410,7 +1411,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
 
 <div id="tour-offer" class="offer" role="region" aria-label="튜토리얼 제안" hidden>
   <div class="offer-top"><span id="offer-pm" aria-hidden="true"></span><div aria-live="polite"><p id="offer-title" class="offer-title"></p></div></div>
-  <p class="offer-body">대시보드, 확인함, 근거, 일정에 넣기까지 네 곳만 짚어 드려요.</p>
+  <p id="offer-body" class="offer-body">대시보드, 확인함, 근거, 일정에 넣기, 에이전트에게 묻기까지 다섯 곳만 짚어 드려요.</p>
   <div class="offer-actions">
     <button id="offer-later" class="btn btn-quiet btn-sm" type="button">다음에</button>
     <button id="offer-go" class="btn btn-primary btn-sm" type="button">둘러보기</button>
@@ -1830,6 +1831,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (!s.configured) setupPhase = null;
     render();
     pollWhileBusy();
+    watchUpdatePending();
     if (s.update && s.update.phase === 'restarting') waitForRestart();
     // 겹치는 창은 하나씩: 소식 카드가 먼저, 튜토리얼 제안은 소식을 닫은 뒤, 마지막에 '앱을 안 열어도 돼요'
     maybePopups();
@@ -1847,6 +1849,31 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       api('GET', '/api/state').then(applyState, () => { const u = upd(); if (u && u.phase === 'applying' && u.how === 'exe') waitForRestart(); else pollWhileBusy(); });
     }, 2000);
   }
+  // 새 버전 알림이 화면에 늦게 뜨지 않게(계약 19-2 pending): 업데이트 칸만 가볍게 다시 읽어 띠를 고친다.
+  // 켠 직후에는 확인이 끝날 때까지 3초마다(최대 1분), 오래 열어 둔 화면은 30분마다·다시 볼 때(10분 넘었으면) 한 번
+  let updPeekTimer = null, updPeekTries = 0, updPeekAt = Date.now();
+  function updPeek() {
+    updPeekAt = Date.now();
+    if (!state || restartWait || updWorking()) return Promise.resolve();
+    return api('GET', '/api/update').then((r) => {
+      if (!state || !r || !r.update || typeof r.update !== 'object') return;
+      const before = JSON.stringify(state.update || null);
+      state.update = r.update;
+      if (JSON.stringify(r.update) === before) return;
+      renderUpdateBanner();
+      if (view === 'settings') renderUpdatePane();
+      pollWhileBusy();
+    }, () => {});
+  }
+  function watchUpdatePending() {
+    const u = upd();
+    if (!u || !u.pending) { updPeekTries = 0; return; }
+    if (updPeekTimer || updPeekTries >= 20) return;
+    updPeekTimer = setTimeout(() => { updPeekTimer = null; updPeekTries += 1; updPeek().then(watchUpdatePending); }, 3000);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - updPeekAt > 10 * 60000) updPeek();
+  });
 
   // ---------------------------------------------------------------- 알림
   let toastTimer = null;
@@ -6578,12 +6605,16 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
 
   // ---------------------------------------------------------------- 튜토리얼
-  // 처음에는 묻기만 한다(둘러보기/다음에). 핵심 투어는 4단계, 학기·과목·성적·설정은 처음 들어갈 때 팁 하나씩.
+  // 처음에는 묻기만 한다(둘러보기/다음에). 핵심 투어는 5단계(대시보드·확인함·근거·일정에 넣기·에이전트에게 묻기),
+  // 학기·과목·성적·설정은 처음 들어갈 때 팁 하나씩. 튜토리얼을 이미 마친(넘긴) 사람에게는 판(TOUR_VERSION)이 오르면
+  // '달라진 점'(mode 'new')을 한 번만 제안한다(계약 8장 tutorial_version).
   // 대상만 밝게 두고 나머지는 어둡게(구멍 난 상자 + 큰 그림자). 기록: docs/BENCHMARK.md "우리 앱에 적용할 것"
   const TOUR_KEY = 'lms-agent.tour';
   const TIP_KEY = 'lms-agent.tip.';
   const TIP_VIEWS = ['semester', 'courses', 'grades', 'settings'];
-  const tour = { open: false, mode: 'core', i: 0, steps: [], startView: 'dash', opener: null, raf: 0, offered: false, pendingNav: false, openedChain: null, returnTo: null };
+  const TOUR_VERSION = 2;   // 1: 핵심 4단계(~v0.5) · 2: 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외(v0.6.3)
+  const KO_COUNT = ['', '한', '두', '세', '네', '다섯', '여섯'];
+  const tour = { open: false, mode: 'core', i: 0, steps: [], startView: 'dash', opener: null, raf: 0, offered: false, offerMode: 'core', pendingNav: false, openedChain: null, returnTo: null };
   const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const railNav = () => window.innerWidth < 1024;
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); return true; } catch (e) { return false; } }
@@ -6595,12 +6626,23 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const s = stored(TOUR_KEY);
     return s === undefined ? true : s === 'done';   // 저장소를 못 쓰면 다시 묻지 않는다
   }
-  // how: 'done'(끝까지 봄) | 'declined'(다음에·건너뛰기 — 그때만 화면별 팁을 보여 줌)
+  // 마지막으로 본 튜토리얼 판(서버가 주지 않으면 null → '달라진 점'을 묻지 않음)
+  const tourVer = () => { const v = state && state.settings ? state.settings.tutorial_version : undefined; return typeof v === 'number' ? v : null; };
+  const whatsNewDue = () => tourDone() && tourVer() !== null && tourVer() < TOUR_VERSION;
+  // how: 'done'(끝까지 봄) | 'declined'(다음에·건너뛰기 — 그때만 화면별 팁을 보여 줌). 핵심 투어는 지금 판까지 본 것으로 친다
   function markTourDone(how) {
     store(TOUR_KEY, how === 'declined' ? 'declined' : 'done');
-    if (!state || !state.settings || state.settings.tutorial_done === true) return;
-    state.settings.tutorial_done = true;   // 응답 전에 다시 묻지 않게
-    post('/api/settings', { tutorial_done: true }).then(applyState, () => {});
+    if (!state || !state.settings) return;
+    const body = {};
+    if (state.settings.tutorial_done !== true) { body.tutorial_done = true; state.settings.tutorial_done = true; }   // 응답 전에 다시 묻지 않게
+    if (tourVer() !== null && tourVer() < TOUR_VERSION) { body.tutorial_version = TOUR_VERSION; state.settings.tutorial_version = TOUR_VERSION; }
+    if (Object.keys(body).length) post('/api/settings', body).then(applyState, () => {});
+  }
+  // '달라진 점'을 봤거나 넘겼다(화면별 팁 설정은 건드리지 않는다)
+  function markTourVersion() {
+    if (!state || !state.settings || tourVer() === null || tourVer() >= TOUR_VERSION) return;
+    state.settings.tutorial_version = TOUR_VERSION;
+    post('/api/settings', { tutorial_version: TOUR_VERSION }).then(applyState, () => {});
   }
   // 지금 다른 창(소식 카드·고르기·튜토리얼·제안)이 떠 있는지: 창은 한 번에 하나만
   const overlayOpen = () => cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('agent-dlg').open || !$('tour-offer').hidden;
@@ -6623,19 +6665,33 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (state.syncing || syncing || overlayOpen() || newsPending()) return;
     if (!state.last_sync && !state.items.length) return;
     tour.offered = true;
-    if (googleReturn || tourDone()) { maybeTip(); return; }
-    $('offer-title').textContent = '처음이라면 1분만 둘러볼까요?';
+    if (googleReturn) { maybeTip(); return; }
+    if (tourDone()) {
+      if (whatsNewDue() && newSteps().length) showOffer('new');
+      else maybeTip();
+      return;
+    }
+    showOffer('core');
+  }
+  // 짚을 곳 이름을 이어 말한다: "대시보드, 확인함, …까지 다섯 곳만"
+  const stepsLine = (steps) => steps.map((s) => s.label).join(', ') + '까지 ' + (KO_COUNT[steps.length] || steps.length) + ' 곳만 짚어 드려요.';
+  function showOffer(mode) {
+    tour.offerMode = mode;
+    const steps = mode === 'new' ? newSteps() : coreSteps();
+    $('offer-title').textContent = mode === 'new' ? '그동안 늘어난 기능, 30초만 볼까요?' : '처음이라면 1분만 둘러볼까요?';
+    $('offer-body').textContent = stepsLine(steps);
     $('offer-pm').replaceChildren(mascot('start', 48, { slot: 'offer' }));
     $('tour-offer').hidden = false;
     syncOverlay();
   }
   function hideOffer() { $('tour-offer').hidden = true; $('offer-title').textContent = ''; syncOverlay(); }
-  $('offer-go').addEventListener('click', () => { hideOffer(); openTour('core'); });
+  $('offer-go').addEventListener('click', () => { hideOffer(); openTour(tour.offerMode === 'new' ? 'new' : 'core'); });
   $('offer-later').addEventListener('click', () => {
     hideOffer();
-    markTourDone('declined');
+    if (tour.offerMode === 'new') markTourVersion();
+    else markTourDone('declined');
     $('page-title').focus({ preventScroll: true });
-    toast('설정에서 언제든 튜토리얼을 볼 수 있어요.');
+    toast('설정의 튜토리얼에서 언제든 볼 수 있어요.');
     maybeTip();
   });
   $('tour-offer').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); $('offer-later').click(); } });
@@ -6696,23 +6752,54 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const g = gstate();
     const steps = [
       // 날짜 축 전체(14칸 모두)를 비추고 말풍선은 그 아래에. 머리글까지 비추면 낮은 창에서 날짜 줄이 말풍선에 가려진다
-      { view: 'dash', sel: ['#dash-body .hero .axis', '#dash-body .hero'], where: '대시보드', title: () => (span === 7 ? '이번 주 마감이 한 줄에' : '앞으로 2주 마감이 한 줄에'),
+      { label: '대시보드', view: 'dash', sel: ['#dash-body .hero .axis', '#dash-body .hero'], where: '대시보드', title: () => (span === 7 ? '이번 주 마감이 한 줄에' : '앞으로 2주 마감이 한 줄에'),
         body: () => '앞으로 ' + span + '일의 마감이 날짜 칸마다 찍히고, 색으로 상태를 나눠요. 축 바로 위 문장이 가장 급한 마감이니 그것부터 처리해요.' },
-      { view: null, sel: ['#nav a[data-view="inbox"]'], where: '메뉴', title: '숨은 마감은 확인함에', prefer: 'right',
+      { label: '확인함', view: null, sel: ['#nav a[data-view="inbox"]'], where: '메뉴', title: '숨은 마감은 확인함에', prefer: 'right',
         body: () => (railNav() ? '왼쪽 받은편지함 아이콘이 확인함이에요. ' : '') + '공지·메시지에서 찾은 마감 후보가 여기 모여요. 학기·과목·성적은 메뉴에서 언제든 볼 수 있어요. 확인함을 눌러 보세요.',
         interactive: true, act: '확인함 열기', onTarget: () => showStep(tour.i + 1) }
     ];
     if (up.length) {
-      steps.push({ view: 'inbox', sel: [TOUR_CARD], where: '확인함', title: '근거부터 보세요',
+      steps.push({ label: '근거', view: 'inbox', sel: [TOUR_CARD], where: '확인함', title: '근거부터 보세요',
         body: '어느 글의 어떤 문장에서 찾았는지 보여 주고, 날짜는 그 자리에서 고칠 수 있어요. 평소에는 카드 아래 근거 줄을 누르면 펼쳐져요.',
         enter: openFirstChain, leave: closeTourChain });
-      steps.push({ view: 'inbox', sel: [TOUR_CARD + ' [data-decision="approved"]'], where: '확인함', title: '맞으면 일정에 넣기', tight: true,
+      steps.push({ label: '일정에 넣기', view: 'inbox', sel: [TOUR_CARD + ' [data-decision="approved"]'], where: '확인함', title: '맞으면 일정에 넣기', tight: true,
         body: () => (g.connected ? '누르면 구글 ‘LMS 마감’ 캘린더에 들어가요.' : '누르면 일정에 들어가요. 구글 캘린더를 연결해 두면 거기에도 저절로 들어가요.') +
           ' 언제든 ‘확인 전으로’ 되돌릴 수 있어요.' + (demo ? ' 데모라 실제 캘린더에는 들어가지 않으니 눌러 보세요.' : ' 근거를 확인한 뒤 직접 눌러 주세요.'),
         interactive: demo, act: demo ? '일정에 넣어 보기' : null, onTarget: demo ? approveInTour : null });
     } else {
-      steps.push({ view: 'inbox', sel: ['#manual-form'], where: '확인함', title: '메일·PDF 마감은 붙여 넣기',
+      steps.push({ label: '붙여 넣기', view: 'inbox', sel: ['#manual-form'], where: '확인함', title: '메일·PDF 마감은 붙여 넣기',
         body: '지금은 바로 넣을 후보가 없어요. Canvas 밖에서 받은 안내를 붙여 넣으면 날짜를 찾아 확인함에 올려요.' });
+    }
+    const ask = askStep();
+    if (ask) steps.push(ask);
+    return steps;
+  }
+  // 규칙이 놓친 것은 말로: 핵심 투어 마지막 단계이자 '달라진 점' 첫 단계. 에이전트 기능이 없는 서버면 뺀다
+  function askStep() {
+    if (!agState()) return null;
+    return { label: '에이전트에게 묻기', view: null, sel: ['#ask-btn'], where: '메뉴', title: '놓친 건 말로 물어보세요', prefer: 'right',
+      body: () => (railNav() ? '왼쪽 말풍선 아이콘이에요. ' : '') +
+        '‘기말고사 날짜가 안 보여요’처럼 물으면 모아 둔 공지·자료에서 찾아 근거와 함께 제안해요. 반영은 직접 누르고, 언제든 되돌릴 수 있어요.' +
+        (agState() && agState().enabled ? '' : ' 설정 → AI에서 Claude Code·Codex 같은 에이전트를 연결하면 더 잘 찾아요.') };
+  }
+  // 튜토리얼을 마친 뒤 늘어난 것(TOUR_VERSION 2): 지금 이 사용자에게 보일 곳만 고른다
+  function newSteps() {
+    const steps = [];
+    const ask = askStep();
+    if (ask) steps.push(ask);
+    const ex = examsData();
+    if (ex.up.length || ex.na.length) {
+      steps.push({ label: '시험 일정', view: 'dash', sel: ['section[aria-labelledby="ds-exam"]'], where: '대시보드', title: '시험 일정은 대시보드에',
+        body: '공지·강의계획서에서 찾은 중간·기말·퀴즈 날짜가 D-day와 함께 모여요. 날짜가 아직 안 보이는 시험은 ‘묻기’를 눌러 찾아 달라고 하세요.' });
+    }
+    const G = state.grades;
+    if (G && Array.isArray(G.courses) && G.courses.length) {
+      steps.push({ label: '점수 연결', view: 'grades', sel: ['#grades-body section[aria-labelledby="g-ed-h"]', '#grades-body .g-sec'], where: '성적', title: '점수는 평가 항목으로',
+        body: '공지·메시지·점수표 PDF에서 찾은 점수를 강의계획서의 평가 항목에 이어 줘요. LAB처럼 이름이 다른 점수는 칩을 눌러 어느 항목인지 고를 수 있어요.' });
+    }
+    if (modeSupported() && state.courses.length) {
+      steps.push({ label: 'P/NP·제외', view: 'courses', sel: ['#courses-body .mode-box'], where: '과목', title: 'P/NP·제외는 과목에서',
+        body: 'P/NP 과목은 학점 추정을 빼고, 실제로 듣지 않는 과목은 ‘제외’로 대시보드·캘린더에서 뺄 수 있어요. 아래 평가 지도에는 항목별 비중·일정·점수가 모여요.' });
     }
     return steps;
   }
@@ -6723,11 +6810,11 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     }
     if (v === 'courses') {
       return { view: 'courses', sel: ['#courses-body .tbl-wrap', '#courses-body'], where: '과목', title: '과목별 다음 마감',
-        body: '과목을 고르면 다음 마감과 지난 과제를 한 번에 봐요. 제출 표시가 없는 지난 과제는 빨갛게 보여요.' };
+        body: '과목을 고르면 다음 마감·지난 과제·평가 지도를 한 번에 봐요. 제출 표시가 없는 지난 과제는 빨갛게 보이고, P/NP·제외도 여기서 정해요.' };
     }
     if (v === 'grades') {
       return { view: 'grades', sel: ['#grades-body .g-sec', '#grades-body'], where: '성적', title: '내 위치는 어림값',
-        body: '평균과 표준편차를 넣으면 반에서 대략 몇 %쯤인지 어림해요. 실제 순위·학점과 다를 수 있어요.' };
+        body: '평균과 표준편차를 넣으면 반에서 대략 몇 %쯤인지 어림해요. 공지·점수표에서 찾은 점수는 ‘점수 후보’에 모여요. 실제 순위·학점과 다를 수 있어요.' };
     }
     if (v === 'settings') {
       const bg = state.background && state.background.supported;
@@ -6762,6 +6849,8 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (viaClick) focusAfter = { root: 'review-list', index: Math.max(0, idx), toCard: false };
     else if (btn) btn.click();   // 키보드로 고르면 버튼을 대신 누른다(다음 카드로 포커스가 간다)
     handoffWanted = true;
+    // 뒤에 단계(에이전트에게 묻기)가 남았으면 승인이 그려진 뒤 이어 간다
+    if (tour.i < tour.steps.length - 1) { setTimeout(() => { if (tour.open) showStep(tour.i + 1); }, 350); return; }
     closeTour('finish', true);
   }
 
@@ -6775,7 +6864,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function openTour(mode, v) {
     if (tour.open || !state || !state.configured) return;
     hideOffer();
-    const steps = mode === 'tip' ? [tipStep(v)].filter(Boolean) : coreSteps();
+    const steps = mode === 'tip' ? [tipStep(v)].filter(Boolean) : mode === 'new' ? newSteps() : coreSteps();
     if (!steps.length) return;
     tour.mode = mode;
     tour.steps = steps;
@@ -6800,7 +6889,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     tour.i = Math.max(0, Math.min(tour.steps.length - 1, i));
     const st = tour.steps[tour.i];
     const n = tour.steps.length;
-    const core = tour.mode === 'core';
+    const core = tour.mode !== 'tip';   // 핵심 투어와 '달라진 점'은 여러 단계(진행 막대·이전·건너뛰기)
     const last = tour.i === n - 1;
     $('tour-where').textContent = st.where || '';
     $('tour-pm').replaceChildren(mascot('start', 40, { slot: 'tour' }));
@@ -6942,7 +7031,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       e.preventDefault();
       const dir = e.key === 'ArrowRight' ? 1 : -1;
       if (st.arrows) { st.arrows(dir); return; }
-      if (tour.mode !== 'core') return;
+      if (tour.mode === 'tip') return;
       if (dir > 0) tourNext(true); else if (tour.i > 0) showStep(tour.i - 1);
     }
   }
@@ -6975,6 +7064,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       markTourDone(how === 'finish' ? 'done' : 'declined');
       if (how === 'finish') handoffWanted = true;   // 끝까지 봤으면 '앱을 안 열어도 돼요'로 이어 준다
       if (how === 'finish' && !(st && st.onTarget && st.act && st.interactive)) toast('튜토리얼을 마쳤어요. 설정에서 다시 볼 수 있어요.');
+    } else if (tour.mode === 'new') {
+      markTourVersion();
+      if (how === 'finish') toast('달라진 점을 다 봤어요. 설정의 튜토리얼에서 다시 볼 수 있어요.');
     } else if (how === 'off') {
       for (const v of TIP_VIEWS) store(TIP_KEY + v, 'seen');
       toast('팁을 껐어요. 설정의 튜토리얼 다시 보기로 다시 켤 수 있어요.');
@@ -6992,11 +7084,12 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
   $('tour-next').addEventListener('click', () => tourNext(false));
   $('tour-prev').addEventListener('click', () => { if (tour.i > 0) showStep(tour.i - 1); });
-  $('tour-skip').addEventListener('click', () => closeTour(tour.mode === 'core' ? 'skip' : 'off'));
+  $('tour-skip').addEventListener('click', () => closeTour(tour.mode === 'tip' ? 'off' : 'skip'));
   $('tour-replay').addEventListener('click', () => {
     for (const v of TIP_VIEWS) if (v !== view) store(TIP_KEY + v, null);   // 화면별 팁도 다시 보여 준다
     openTour('core');
   });
+  $('tour-whatsnew').addEventListener('click', () => openTour('new'));
 
   // ---------------------------------------------------------------- 틀
   function pageSub(v) {
@@ -7343,6 +7436,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   // 상대 시각·D-day·지금 선을 시간이 흐르는 대로 맞춘다
   setInterval(() => {
     if (!state) return;
+    if (document.visibilityState === 'visible' && Date.now() - updPeekAt > 30 * 60000) updPeek();
     if (dayKey(new Date(nowMs())) !== lastDay) { render(); return; }
     document.querySelectorAll('[data-rel]').forEach((el) => { el.textContent = relTime(el.getAttribute('data-rel')); });
   }, 30000);

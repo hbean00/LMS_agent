@@ -190,10 +190,10 @@ def test_launcher_is_refreshed_on_start(tmp_path, monkeypatch):
     from lms_agent.store import Store
     monkeypatch.setattr(schedule, "supported", lambda: True)
     vbs = tmp_path / "background-sync.vbs"
-    vbs.write_text('sh.Run "C:\old\python.exe -m lms_agent sync", 0, False', encoding="utf-16")
+    vbs.write_text(r'sh.Run "C:\old\python.exe -m lms_agent sync", 0, False', encoding="utf-16")
     App(Store(tmp_path / "state.json"), tmp_path, cfg={})
     text = vbs.read_text(encoding="utf-16")
-    assert "C:\old\python.exe" not in text and "lms_agent" in text
+    assert r"C:\old\python.exe" not in text and "lms_agent" in text
     assert str(__import__("pathlib").Path(sys.executable).parent) in text
 
 

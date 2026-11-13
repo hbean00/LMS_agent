@@ -343,6 +343,15 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 `state.settings.tutorial_done`(기본 false). 화면은 처음 열 때 false면 튜토리얼을 띄우고, 끝내거나 건너뛰면 `POST /api/settings {"tutorial_done": true}`.
 설정의 [튜토리얼 다시 보기]는 화면에서만 다시 띄운다(값은 바꾸지 않아도 됨). 서버에 저장하는 이유: 포트가 바뀌면 브라우저 localStorage가 달라져 튜토리얼이 다시 뜨기 때문.
 
+**튜토리얼 판 (v0.6.3)**: `state.settings.tutorial_version`(정수, 기본 0 — 이 칸이 없던 옛 파일도 0). `POST /api/settings`는 0~1000 정수만 받고,
+참·거짓·문자열·소수·범위 밖이면 400(그 요청의 다른 설정도 바꾸지 않음). 저장된 값이 망가져 있으면 0으로 보여 준다.
+화면의 판은 `TOUR_VERSION`(지금 2). 핵심 투어는 대시보드 → 확인함 → 근거 → 일정에 넣기 → **에이전트에게 묻기**(20장, 에이전트 칸이 없는 서버면 뺌) 5단계이고,
+끝내거나 건너뛰면 `tutorial_done: true`와 함께 `tutorial_version: TOUR_VERSION`을 저장한다.
+이미 튜토리얼을 마친(또는 넘긴) 사람(`tutorial_done` 참, `tutorial_version` < 판)에게는 첫 동기화·소식 카드 뒤에 **'달라진 점'**을 한 번 제안한다
+(에이전트에게 묻기 · 대시보드 시험 일정(있을 때) · 성적의 점수 → 평가 항목 연결(성적 칸이 있을 때) · 과목의 P/NP·제외(과목 종류가 있을 때)).
+보거나 [다음에]·건너뛰기를 누르면 `tutorial_version`만 올린다(화면별 팁 설정은 그대로). 설정 → 튜토리얼의 [달라진 점 보기]로 다시 볼 수 있다.
+판을 올릴 때: 늘어난 기능을 `newSteps()`에 넣고 `TOUR_VERSION`을 1 올린다.
+
 ## 9. 로그인·로그아웃 (Canvas 토큰)
 
 앱은 학교 포털 아이디·비밀번호를 받지 않는다(포털 비밀번호 자동 입력은 이번에 만들지 않기로 함 — PROGRESS 참고).
@@ -653,7 +662,10 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 
 ### 19-1. 확인
 - 앱을 켤 때(`lms-agent serve`) 하루 한 번(실패하면 3시간 뒤 다시) + 설정의 [지금 확인]. 화면 서버는 한 시간마다 '하루가 지났는지'만 본다.
-  데모·테스트의 `App`은 저절로 확인하지 않는다(`start_background_checks`는 cli만 부름).
+  데모·테스트의 `App`은 저절로 확인하지 않는다(`start_background_checks`는 cli만 부름). 첫 확인은 켜고 3초 뒤(v0.6.3 전에는 8초).
+- **화면이 늦게 알지 않게 (v0.6.3)**: 저절로 확인하는 실행(`Updater.auto`, `start_background_checks`가 켬)에서 확인할 차례(`due()`)면 `update.pending: true`.
+  화면은 이 값이 참인 동안 `GET /api/update`(업데이트 칸만)를 3초마다(최대 20번) 다시 읽어 띠를 고친다. 오래 열어 둔 화면은 30분마다,
+  탭을 다시 볼 때(10분 넘었으면) 한 번 더 읽는다. v0.6.2까지는 켤 때 동기화가 확인보다 먼저 끝나면 띠가 다음 동작·다음 실행 때 떴다.
 - 요청은 `GET https://api.github.com/repos/hbean00/LMS_agent/releases/latest` 하나. 헤더는 고정 `User-Agent: lms-agent-update-check`뿐(토큰·이름·학교·버전 없음).
   초안·미리 보기 릴리스는 GitHub이 빼고 준다. 버전은 `tag_name`(`vX.Y.Z`)을 숫자로 비교(`0.10.0 > 0.9.9`, `0.6.0-rc1 < 0.6.0`).
 - 인터넷 없음·GitHub 제한(403 + `X-RateLimit-Remaining: 0`, 429)·서버 오류는 조용히 `error`에만 남기고 지난번 답(`latest`)은 그대로 둔다. 404 = 공개된 버전 없음(오류 아님).
@@ -678,6 +690,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
   "checked_at": "2026-11-20T09:00:00+09:00",
   "error": null,                 // 확인 실패, 또는 "지난번 업데이트가 적용되지 않았어요 …"
   "phase": "idle",               // "idle" | "checking" | "applying" | "restarting"
+  "pending": false,              // 곧 저절로 확인한다(켠 직후 등, 19-1). 데모는 늘 false
   "result": null,                // 이 실행에서 적용한 결과 {"ok", "message", "restart"}(pip·git 성공이면 restart: true → [다시 시작])
   "dismissed": false,            // 이 버전 알림을 닫았는지(더 새 버전이 나오면 다시 false)
   "updated": null,               // 방금 바뀐 경우 {"from": "0.5.0", "to": "0.6.0", "at"} — 닫을 때까지
@@ -690,6 +703,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 
 | 요청 | 동작 |
 |---|---|
+| `GET /api/update` | `{"update": …}`(19-2와 같은 칸만, 가볍게). 세션 값 필요 |
 | `POST /api/update/check` | 지금 GitHub에 묻는다(몇 초). 결과는 `update.latest`·`error` |
 | `POST /api/update/apply` | 백그라운드로 적용 시작 → `phase: "applying"`. 데모·최신·`can_apply: false`면 400, 이미 하는 중이면 409 |
 | `POST /api/update/restart` | pip·git 설치를 마친 뒤(`result.restart`) 새 버전으로 다시 켜기 → `phase: "restarting"`. 그 밖에는 400 |

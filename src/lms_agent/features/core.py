@@ -16,6 +16,16 @@ CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 
 SETTINGS = {"include_canvas": True, "weekly_summary": True, "review_reminder": False,  # 키: 기본값
             "tutorial_done": False, "notify": True,
             "update_check": True, "auto_update": False}                                # 계약 19장
+# 정수 설정: 키 → (기본값, 최솟값, 최댓값). tutorial_version = 마지막으로 본(또는 넘긴) 튜토리얼 판(계약 8장)
+INT_SETTINGS = {"tutorial_version": (0, 0, 1000)}
+
+
+def _settings_view(saved: dict) -> dict:
+    out = {k: bool(saved.get(k, default)) for k, default in SETTINGS.items()}
+    for k, (default, lo, hi) in INT_SETTINGS.items():
+        v = saved.get(k, default)
+        out[k] = v if isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi else default
+    return out
 
 
 def items(ctx):
@@ -55,7 +65,7 @@ def base_state(app, ctx) -> dict:
         "configured": is_configured(app.cfg), "canvas_url": app.cfg.get("canvas_url"),
         "last_sync": d.get("last_sync"), "syncing": app.syncing, "sync_error": app.sync_error,
         "report": d.get("report"),
-        "settings": {k: bool(d["settings"].get(k, default)) for k, default in SETTINGS.items()},
+        "settings": _settings_view(d["settings"]),
         "semester": semester(ctx), "courses": courses(ctx), "items": items(ctx),
         "runs": list(reversed((d.get("runs") or [])[-10:])),   # 최근 실행 기록, 최신 먼저
         "last_export": (d.get("last_export") or {}).get("at"),
@@ -149,9 +159,17 @@ def add_manual(app, body):
 
 @router.route("POST", r"/api/settings")
 def settings(app, body):
+    for key, (_, lo, hi) in INT_SETTINGS.items():
+        if key in body:
+            v = body[key]
+            if not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi:
+                raise ApiError(400, f"{key}는 {lo}~{hi} 사이의 정수여야 해요")
     for key in SETTINGS:
         if key in body:
             app.store.data["settings"][key] = bool(body[key])
+    for key in INT_SETTINGS:
+        if key in body:
+            app.store.data["settings"][key] = body[key]
     app.store.save()
     app.emit("changed")
     return app.state()
