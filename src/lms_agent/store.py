@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import __version__
 from .extract import title_tokens
+from .migrate import migrate, stored_version
+from .updater import is_newer
 from .timeutil import iso, now_local, parse_iso, parse_local_input
 
 DECISIONS = ("approved", "rejected", "pending")
@@ -119,6 +123,7 @@ def _apply_groups(out: list[dict], user: dict) -> None:
 def _default() -> dict:
     return {
         "version": 1,
+        "app_version": __version__,   # 마지막으로 저장한 앱 버전(옛 파일을 맞추는 기준, migrate.py)
         "cache": None,          # 마지막 동기화로 받은 Canvas 원본 (core.collect 결과)
         "items": [],            # core.build_items 결과
         "user": {},             # item id -> {decision, submitted, title, due}
@@ -151,8 +156,14 @@ class Store:
             try:
                 loaded = json.loads(self.path.read_text("utf-8"))
                 if isinstance(loaded, dict):
+                    self._before_migrate(loaded)
+                    try:
+                        migrate(loaded)   # 옛 버전이 저장한 파일을 지금 모양으로(계약 16-4). 모르는 칸은 그대로 둔다
+                    except Exception:     # 맞추기가 실패해도 멀쩡한 파일을 '깨진 파일'로 치우지 않는다(백업은 이미 있음)
+                        pass
                     data.update(loaded)
-                    data["settings"] = {**_default()["settings"], **(loaded.get("settings") or {})}
+                    saved = loaded.get("settings")
+                    data["settings"] = {**_default()["settings"], **(saved if isinstance(saved, dict) else {})}
                 self.mtime = self.path.stat().st_mtime_ns
             except (OSError, ValueError):
                 broken = self.path.with_suffix(".broken.json")
@@ -161,6 +172,19 @@ class Store:
                 except OSError:
                     pass
         self.data = data
+
+    def _before_migrate(self, loaded: dict) -> None:
+        """옛 버전이 저장한 파일을 이 버전이 처음 읽을 때 한 번: 옆에 state.before-<이 버전>.json으로 복사해 둔다
+        (앱 안 업데이트는 그 전에 이미 같은 이름으로 백업한다 — 있으면 덮지 않는다)."""
+        stored = stored_version(loaded)
+        if stored is not None and not is_newer(__version__, stored):
+            return
+        backup = self.path.with_name(f"{self.path.stem}.before-{__version__}{self.path.suffix}")
+        if not backup.exists():
+            try:
+                shutil.copy2(self.path, backup)
+            except OSError:
+                pass
 
     def reload_if_changed(self) -> bool:
         """다른 프로세스가 저장했으면 다시 읽는다. 읽었으면 True."""

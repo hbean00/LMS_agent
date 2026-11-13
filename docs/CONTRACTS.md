@@ -614,3 +614,85 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 자료: 공지 첨부 묶음의 화면 이름 `board_title` = "공지 첨부 파일", 디스크 폴더 이름은 `board_folder`("공지")로 그대로. `state.courses[].read_counts` — `board_posts`는 공지 첨부 묶음 제외, `attachments`는 포함.
 - 데모: ASIC에 Updated Grading Policy·성적 PDF 2개(가짜 학번)·퀴즈 공지·Lab6.pdf "Next labs: …", Capstone에 P/NP 문장, 과목 105 "[학생] [한국어] 2026 연구실 안전 교육 - 01분반"(제외 제안), 데모만 가짜 학번 2026000002.
 - 화면: 성적 표의 세부 점수 줄·연결 칩(`openChooser`, `#pick-dlg` 재사용, 되돌리기)·개수 줄(고치기)·남은 비중, 학번 안내 띠(`sidBanner`)와 설정 → 성적 칸, 대시보드 "시험 일정"(`examSection`), 과목 "평가 지도"(`gradeMapBlock`), 과목 종류 단추(`modeControl`)와 제안 칩, 제외한 과목 묶음, 과목별 읽은 글 수.
+
+## 16. 업데이트: 새 버전 확인과 한 번 누르기 업데이트 (사용자 요청 2026-11-13: "옛 버전을 쓰는 사람이 새 버전을 쉽게")
+
+`updater.py`(확인·체크섬·백업·교체·다시 시작), `migrate.py`(state.json 맞추기), `features/update.py`(경로·상태 칸).
+릴리스 쪽은 `.github/workflows/release.yml`이 태그마다 `SHA256SUMS.txt`(`sha256sum` 형식, 실행 파일 3개 + wheel)를 함께 올린다.
+
+### 16-1. 확인
+- 앱을 켤 때(`lms-agent serve`) 하루 한 번(실패하면 3시간 뒤 다시) + 설정의 [지금 확인]. 화면 서버는 한 시간마다 '하루가 지났는지'만 본다.
+  데모·테스트의 `App`은 저절로 확인하지 않는다(`start_background_checks`는 cli만 부름).
+- 요청은 `GET https://api.github.com/repos/hbean00/LMS_agent/releases/latest` 하나. 헤더는 고정 `User-Agent: lms-agent-update-check`뿐(토큰·이름·학교·버전 없음).
+  초안·미리 보기 릴리스는 GitHub이 빼고 준다. 버전은 `tag_name`(`vX.Y.Z`)을 숫자로 비교(`0.10.0 > 0.9.9`, `0.6.0-rc1 < 0.6.0`).
+- 인터넷 없음·GitHub 제한(403 + `X-RateLimit-Remaining: 0`, 429)·서버 오류는 조용히 `error`에만 남기고 지난번 답(`latest`)은 그대로 둔다. 404 = 공개된 버전 없음(오류 아님).
+- 설정 `settings.update_check`(기본 true): 끄면 저절로 묻지 않는다([지금 확인]은 눌렀을 때 한 번 묻는다).
+- 캐시 `store.data["update"] = {"checked_at", "latest": "0.6.0", "tag": "v0.6.0", "notes_url", "notes"(본문 앞 1,500자), "published_at",
+  "assets": [{"name", "url", "size"}], "error", "dismissed"?: "0.6.0", "applied"?: {"version", "from", "at", "how", "seen"?}}`.
+
+### 16-2. `GET /api/state` 추가
+
+```json
+"update": {
+  "current": "0.5.0",            // 지금 도는 버전
+  "latest": "0.6.0",             // 확인한 최신(모르면 null)
+  "available": true,             // latest > current
+  "notes_url": "https://github.com/hbean00/LMS_agent/releases/tag/v0.6.0",   // [바뀐 점 보기]
+  "notes": "- 앱 안 업데이트 …",  // 릴리스 본문 앞부분(없으면 null)
+  "published_at": "2026-11-20T01:00:00Z",
+  "how": "exe",                  // "exe" | "pip" | "git" | "unknown" (sys.frozen → exe, site-packages 안 → pip, src/ 위에 .git → git)
+  "can_apply": true,             // [지금 업데이트]로 될 때(데모는 늘 false)
+  "reason": null,                // 안 될 때 이유(예: "이번 릴리스에 확인값 파일(SHA256SUMS.txt)이 없어 …")
+  "command": null,               // 직접 할 명령(pip·git·unknown). exe는 null → notes_url에서 받기
+  "checked_at": "2026-11-20T09:00:00+09:00",
+  "error": null,                 // 확인 실패, 또는 "지난번 업데이트가 적용되지 않았어요 …"
+  "phase": "idle",               // "idle" | "checking" | "applying" | "restarting"
+  "result": null,                // 이 실행에서 적용한 결과 {"ok", "message", "restart"}(pip·git 성공이면 restart: true → [다시 시작])
+  "dismissed": false,            // 이 버전 알림을 닫았는지(더 새 버전이 나오면 다시 false)
+  "updated": null,               // 방금 바뀐 경우 {"from": "0.5.0", "to": "0.6.0", "at"} — 닫을 때까지
+  "data_newer": null             // state.json을 더 새 버전이 저장했으면 그 버전(옛 exe로 돌아간 경우)
+}
+```
+`settings.update_check`(기본 true)·`settings.auto_update`(기본 false)는 `state.settings`에 있고 `POST /api/settings`로 바꾼다.
+
+### 16-3. 요청 (성공하면 새 state, 실패는 4xx `{"error"}`)
+
+| 요청 | 동작 |
+|---|---|
+| `POST /api/update/check` | 지금 GitHub에 묻는다(몇 초). 결과는 `update.latest`·`error` |
+| `POST /api/update/apply` | 백그라운드로 적용 시작 → `phase: "applying"`. 데모·최신·`can_apply: false`면 400, 이미 하는 중이면 409 |
+| `POST /api/update/restart` | pip·git 설치를 마친 뒤(`result.restart`) 새 버전으로 다시 켜기 → `phase: "restarting"`. 그 밖에는 400 |
+| `POST /api/update/dismiss` | 배너 닫기: 새 버전 알림이면 `dismissed = latest`, 방금 업데이트 알림이면 `applied.seen`, 실패 결과면 지움 |
+
+적용(언제나 사용자가 누를 때만. 자동은 16-5):
+1. **exe**: 이 OS의 파일(`lms-agent-windows.exe`·`lms-agent-macos`·`lms-agent-linux`)과 `SHA256SUMS.txt`를 받아 SHA-256이 맞을 때만
+   실행 파일 옆에 `<이름>.new`로 저장(디스크에서 한 번 더 확인) → state·config 백업 → `applied` 기록 → `phase: "restarting"`(화면이 볼 틈 1.2초) →
+   실행 중인 파일을 `<이름>.old`로 이름 바꾸고 `.new`를 그 자리로(실패하면 되돌림) → 포트를 비우고 같은 포트·`--no-browser`로 다시 켬
+   (Windows는 새 콘솔 창, macOS·Linux는 `exec`로 같은 터미널). 같은 경로라 작업 스케줄러의 백그라운드 동기화(.vbs)도 그대로 새 버전을 쓴다.
+   `.old`는 다음에 켤 때 지운다. Windows에서 파일이 잠겨 이름을 못 바꾸면 숨은 PowerShell이 이 프로세스가 끝난 뒤 바꾸고 다시 켠다.
+   PyInstaller 환경 값(`_MEIPASS2`·`_PYI_*`)은 지우고 `PYINSTALLER_RESET_ENVIRONMENT=1`로 켠다.
+2. **pip**: 릴리스의 wheel(`lms_agent-*-py3-none-any.whl`)을 같은 방식으로 확인 → 백업 → `python -m pip install --upgrade --no-deps <받은 파일>`
+   (셸 없이, 5분 제한) → `result.restart: true` → 사용자가 [다시 시작]. wheel·체크섬이 없으면 명령만 보여 준다.
+3. **git**: `git status --porcelain --untracked-files=no`가 비어 있을 때만 백업 → `git pull --ff-only`(비밀번호를 묻지 않게 `GIT_TERMINAL_PROMPT=0`) → [다시 시작].
+   고친 파일이 있으면 아무것도 하지 않고 명령을 알려 준다.
+4. **unknown**: 릴리스 주소와 `python -m pip install -U git+https://github.com/hbean00/LMS_agent@<tag>`만 보여 준다.
+
+보안: 주소는 https만, 리다이렉트는 `github.com`·`api.github.com`·`objects.githubusercontent.com`·`release-assets.githubusercontent.com`으로만 따라간다.
+체크섬이 맞지 않으면 아무것도 저장·실행·교체하지 않는다. 체크섬은 같은 릴리스에 있으므로 '받는 도중 바뀐 파일'은 막지만 '릴리스 자체가 바뀐 경우'는 못 막는다
+(다음 단계 후보: 코드 서명 또는 앱에 넣은 ed25519 공개 키로 서명한 SHA256SUMS).
+
+화면은 `phase`가 checking·applying이면 2초마다 state를 다시 묻고, restarting이 되거나(exe) 응답이 끊기면 `GET /`을 1초마다 불러
+세션 값(`lms-agent-token`)이 바뀐 화면이 오면 새로 고친다(2분 넘으면 "직접 다시 켜 주세요").
+
+### 16-4. 백업과 state.json 맞추기
+- 업데이트 직전: `state.json`·`config.json`을 같은 폴더에 `state.before-<새 버전>.json`·`config.before-<새 버전>.json`으로 복사(권한 그대로, 덮어씀).
+- `state.json`에 `app_version`(마지막으로 저장한 앱 버전)을 둔다. 0.6.0 전 파일에는 없다.
+- 옛 버전이 저장한 파일을 처음 읽을 때 `state.before-<이 버전>.json`이 없으면 만든다(직접 pip·git으로 바꾼 경우도 백업이 남게).
+- `migrate.MIGRATIONS`: `@migration("<버전>")` 단계 중 `app_version`보다 새 것만 차례로(여러 번 돌아도 같은 결과). 0.6.0 단계는 최상위 칸 모양이
+  틀린 파일(예: `settings`가 목록)을 열 수 있게 고치고 틀린 값은 `_repaired`에 옮긴다.
+- 더 새 버전이 저장한 파일은 고치지 않는다: 모르는 칸은 그대로 지닌 채 저장하고 `app_version`도 낮추지 않는다 → `update.data_newer`.
+
+### 16-5. 켤 때 자동 업데이트(선택)
+`settings.auto_update`(기본 false, exe·pip만, `update_check`가 켜져 있어야 함). 켜 두면 `lms-agent serve`가 화면을 열기 전에 확인(하루 한 번 규칙)하고
+새 버전이 있으면 16-3과 같은 확인·백업을 거쳐 바꾼 뒤 원래 인자로 다시 켠다. 지난번에 같은 버전으로 바꿨는데 아직 옛 버전이 돌면(`applied.version == latest`)
+되풀이하지 않고 `error`로 알린다. 터미널: `lms-agent update [--check] [-y]`.

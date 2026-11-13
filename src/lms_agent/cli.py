@@ -1,4 +1,4 @@
-"""명령어: lms-agent [serve|demo|setup|sync|list|export]. 인자 없이 실행하면 화면을 연다."""
+"""명령어: lms-agent [serve|demo|setup|sync|list|update|export]. 인자 없이 실행하면 화면을 연다."""
 from __future__ import annotations
 
 import argparse
@@ -53,12 +53,58 @@ def _run_server(app, port: int, open_browser: bool) -> None:
 
 
 def cmd_serve(args) -> None:
+    from . import updater
+    from .features.update import start_background_checks
     from .server import App
 
     home = data_dir()
-    app = App(_store(home), home)
+    store = _store(home)
+    up = updater.Updater(store, home)
+    up.startup_cleanup()            # 지난 업데이트가 남긴 옛 실행 파일(.old) 지우기
+    if up.auto_update_at_start(out=_out):   # 설정에서 켰을 때만(exe·pip). 적용하면 새 버전으로 다시 켜져 돌아오지 않는다
+        return
+    app = App(store, home)
     app.sync_in_background()  # 켤 때마다 바뀐 곳만 확인한다
+    start_background_checks(app)    # 새 버전 확인은 하루 한 번(설정에서 끌 수 있음, 계약 16장)
     _run_server(app, args.port, not args.no_browser)
+
+
+def cmd_update(args) -> None:
+    """터미널에서 새 버전 확인·업데이트. 화면의 [지금 업데이트]와 같은 확인(체크섬)·백업을 거친다."""
+    from . import updater
+
+    home = data_dir()
+    up = updater.Updater(_store(home), home)
+    c = up.check()
+    if c.get("error"):
+        _out(f"확인하지 못했어요: {c['error']}")
+        sys.exit(1)
+    if not up.available():
+        _out(f"지금 버전(v{__version__})이 최신이에요.")
+        return
+    _out(f"새 버전이 있어요: v{up.latest()} (지금 v{__version__}). 바뀐 점: {c.get('notes_url') or updater.RELEASES_PAGE}")
+    if args.check:
+        return
+    plan = up.plan()
+    if not plan["can_apply"]:
+        _out(f"{plan['reason']}. " + (f"직접 하려면: {plan['command']}" if plan["command"] else "릴리스 페이지에서 받아 바꿔 주세요."))
+        sys.exit(1)
+    if not args.yes and input("지금 업데이트할까요? 데이터는 먼저 백업해요 [y/N] ").strip().lower() not in ("y", "yes", "ㅇ"):
+        _out("업데이트하지 않았어요.")
+        return
+    r = up.prepare()
+    if not r.get("ok"):
+        _out(r["message"])
+        sys.exit(1)
+    if r.get("finish"):
+        try:
+            r["finish"]()
+        except OSError as e:
+            _out(f"실행 파일을 바꾸지 못했어요({e}). 앱을 모두 닫고 다시 해 보거나 릴리스 페이지에서 받아 주세요.")
+            sys.exit(1)
+        _out(f"v{up.latest()} 파일로 바꿨어요. 앱을 다시 켜면 새 버전이 열려요.")
+        return
+    _out(r["message"])
 
 
 def cmd_demo(args) -> None:
@@ -224,6 +270,10 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--mine", action="store_true", help="데모 대신 내 승인된 일정으로 시험")
     sp.set_defaults(fn=lambda a: sys.exit(__import__("lms_agent.gtest", fromlist=["run"]).run(mine=a.mine, out=_out)))
     sub.add_parser("ai-eval", help="AI CLI 하네스 평가(데모 문장으로 실제 CLI 시험)").set_defaults(fn=cmd_ai_eval)
+    sp = sub.add_parser("update", help="새 버전 확인·업데이트(데이터를 먼저 백업)")
+    sp.add_argument("--check", action="store_true", help="확인만 하고 바꾸지 않음")
+    sp.add_argument("-y", "--yes", action="store_true", help="묻지 않고 업데이트")
+    sp.set_defaults(fn=cmd_update)
     sp = sub.add_parser("export", help="캘린더 파일(.ics) 저장")
     sp.add_argument("-o", "--output", default="lms-deadlines.ics")
     sp.set_defaults(fn=cmd_export)

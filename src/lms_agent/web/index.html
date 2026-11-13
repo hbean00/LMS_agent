@@ -908,6 +908,10 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   .confetti { display: none; }
   .win-ring .fg { transition: none; }
 }
+/* 새 버전 알림(계약 16장): 배너 모양 그대로, 버튼만 오른쪽에 */
+.update-banner { flex-wrap: wrap; align-items: center; }
+.update-banner p { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-top: 0; }
+.update-banner .upd-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 </style>
 </head>
 <body>
@@ -950,6 +954,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     <div class="content">
       <div id="banner" class="banner" role="status" hidden></div>
       <div id="sync-error" class="banner banner-error" role="alert" hidden></div>
+      <div id="update-banner" class="banner update-banner" role="status" hidden></div>
 
       <div id="boot">
         <p id="boot-msg" class="empty">불러오는 중…</p>
@@ -1079,6 +1084,10 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
               <div class="form-actions" style="margin-top:12px">
                 <button id="tour-replay" class="btn btn-line" type="button" data-key="tour-replay">튜토리얼 다시 보기</button>
               </div>
+            </section>
+            <section id="pane-update" class="pane" aria-labelledby="h-update" hidden>
+              <h2 id="h-update" class="sec-h">업데이트</h2>
+              <div id="update-box" aria-live="polite"></div>
             </section>
           </div>
           <div>
@@ -1219,7 +1228,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   const DYN = {
     dash: ['dash-body'], semester: ['sem-body'], courses: ['courses-body'], materials: ['materials-body'], grades: ['grades-body'],
     inbox: ['ai-bar', 'review-list', 'review-past', 'approved-box', 'nodl-box', 'inbox-groups'],
-    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'materials-box', 'ai-box', 'mascot-box', 'grades-box']
+    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'materials-box', 'ai-box', 'mascot-box', 'grades-box', 'update-box']
   };
   const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -1611,6 +1620,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     if (!s.configured) setupPhase = null;
     render();
     pollWhileBusy();
+    if (s.update && s.update.phase === 'restarting') waitForRestart();
     // 겹치는 창은 하나씩: 소식 카드가 먼저, 튜토리얼 제안은 소식을 닫은 뒤, 마지막에 '앱을 안 열어도 돼요'
     maybePopups();
     maybeOfferTour();
@@ -1619,12 +1629,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   const refresh = () => api('GET', '/api/state').then(applyState, () => {});
   // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  const serverBusy = () => !!(state && (state.syncing || gstate().pushing));
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking()));
   function pollWhileBusy() {
     if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
       pollTimer = null;
-      api('GET', '/api/state').then(applyState, () => pollWhileBusy());
+      api('GET', '/api/state').then(applyState, () => { const u = upd(); if (u && u.phase === 'applying' && u.how === 'exe') waitForRestart(); else pollWhileBusy(); });
     }, 2000);
   }
 
@@ -4875,7 +4885,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     renderFirstSync();
     $('canvas-conf').hidden = !conf || reconfiguring;
     for (const id of ['pane-google', 'pane-options', 'pane-file', 'pane-runs', 'pane-tour']) $(id).hidden = !conf;
-    if (!conf) { for (const id of ['pane-bg', 'pane-materials', 'pane-ai', 'pane-mascot', 'pane-grades']) $(id).hidden = true; return; }
+    if (!conf) { for (const id of ['pane-bg', 'pane-materials', 'pane-ai', 'pane-mascot', 'pane-grades', 'pane-update']) $(id).hidden = true; return; }
     renderAccount();
     $('include-canvas').checked = !!state.settings.include_canvas;
     const hasWeekly = Object.prototype.hasOwnProperty.call(state.settings, 'weekly_summary');
@@ -4913,6 +4923,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
           h('ul', null, errs.map((e) => h('li', null, String(e))))] : null));
     }
     renderBackground();
+    renderUpdatePane();
     renderGoogle();
     renderRuns();
     renderMaterialsPane();
@@ -5120,6 +5131,160 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     pollWhileBusy();
     maybeOfferTour();
     maybePopups();
+  }
+
+  // ---------------------------------------------------------------- 업데이트 (계약 16장)
+  // 새 버전 알림은 모든 화면 위에 조용히 한 줄. 받기·바꾸기는 사용자가 [지금 업데이트]를 눌러야만 한다
+  const upd = () => (state && state.update && typeof state.update === 'object' ? state.update : null);
+  const updWorking = () => { const u = upd(); return !!(u && (u.phase === 'checking' || u.phase === 'applying')); };
+  // 버전 뒤 조사는 끝 숫자를 읽는 소리로: 0 영·3 삼·6 육 → 이/으로, 1 일·7 칠·8 팔 → 이/로, 2·4·5·9 → 가/로
+  const verI = (v) => 'v' + v + ('013678'.indexOf(String(v).slice(-1)) >= 0 ? '이' : '가');
+  const verRo = (v) => 'v' + v + ('036'.indexOf(String(v).slice(-1)) >= 0 ? '으로' : '로');
+  const HOW_LABEL = { exe: '실행 파일', pip: 'pip 설치', git: '소스 폴더(git)', unknown: '알 수 없음' };
+  let updBusy = '';            // 이 화면에서 누르고 응답을 기다리는 것: 'check' | 'apply' | 'restart'
+  let updError = '';
+  let restartWait = 0;         // 다시 켜지기를 기다리기 시작한 때(ms)
+  const spinTxt = (t) => [h('span', { class: 'spin', 'aria-hidden': 'true' }), t];
+  function renderUpdateBanner() {
+    const b = $('update-banner');
+    const u = upd();
+    b.replaceChildren();
+    let text = null, closable = true, err = false;
+    const actions = [];
+    const notes = u ? extLink(u.notes_url, '바뀐 점 보기') : null;
+    if (restartWait || (u && u.phase === 'restarting')) {
+      text = spinTxt('새 버전으로 다시 켜는 중이에요. 잠시만요, 화면이 저절로 새로 고쳐져요');
+      closable = false;
+    } else if (!u) {
+      text = null;
+    } else if (u.phase === 'applying') {
+      text = spinTxt('새 버전(v' + u.latest + ')을 받고 확인하는 중이에요. 기록은 먼저 백업해요');
+      closable = false;
+    } else if (u.result && u.result.ok === false) {
+      text = [String(u.result.message || '업데이트하지 못했어요'), notes];
+      err = true;
+      if (u.can_apply) actions.push(h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'updb-retry', disabled: !!updBusy, on: { click: applyUpdate } }, '다시 시도'));
+    } else if (u.result && u.result.ok && u.result.restart) {
+      text = [String(u.result.message || '설치를 마쳤어요'), notes];
+      actions.push(h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-key': 'updb-restart', disabled: !!updBusy, on: { click: restartApp } }, '다시 시작'));
+      closable = false;
+    } else if (u.updated && u.updated.to) {
+      text = [verRo(u.updated.to) + ' 업데이트했어요. 마감·결정 기록은 그대로예요', notes];
+    } else if (u.available && !u.dismissed) {
+      text = ['새 버전 ' + verI(u.latest) + ' 나왔어요', notes];
+      actions.push(u.can_apply
+        ? h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-key': 'updb-apply', disabled: !!updBusy, on: { click: applyUpdate } }, '지금 업데이트')
+        : h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'updb-how', on: { click: () => goSettings('pane-update') } }, '업데이트 방법'));
+    }
+    b.hidden = !text;
+    if (!text) return;
+    b.appendChild(h('p', { class: err ? 'inline-error' : null }, text));
+    if (actions.length) b.appendChild(h('div', { class: 'upd-actions' }, actions));
+    const later = !!(u && u.available && !u.result && !u.updated);
+    if (closable) b.appendChild(h('button', { type: 'button', class: 'icon-btn', 'aria-label': later ? '나중에(이 버전 알림 닫기)' : '알림 닫기',
+      title: later ? '나중에' : null, 'data-key': 'updb-close', on: { click: dismissUpdate } }, icon('x')));
+  }
+  function renderUpdatePane() {
+    const pane = $('pane-update');
+    const box = $('update-box');
+    const u = upd();
+    pane.hidden = !u;
+    box.replaceChildren();
+    if (!u) return;
+    const s = state.settings || {};
+    const checked = parseDate(u.checked_at);
+    const busy = !!updBusy || u.phase !== 'idle' || !!restartWait;
+    const autoOk = u.how === 'exe' || u.how === 'pip';
+    let line;
+    if (u.available) line = h('p', { class: 'ok-msg' }, h('b', null, '새 버전 ' + verI(u.latest) + ' 있어요'), ' · ', extLink(u.notes_url, '바뀐 점 보기'));
+    else if (u.latest) line = h('p', { class: 'ok-msg' }, '최신 버전을 쓰고 있어요');
+    else line = h('p', { class: 'ok-msg' }, checked ? '공개된 새 버전이 아직 없어요' : '아직 새 버전을 확인하지 않았어요');
+    add(box, [
+      h('dl', { class: 'conn' }, h('dt', null, '지금 버전'), h('dd', null, 'v' + u.current), h('dt', null, '설치 방식'), h('dd', null, HOW_LABEL[u.how] || String(u.how))),
+      line,
+      h('p', { class: 'help' }, '마지막 확인: ', checked ? [fmtShortDT(checked) + ' (', relEl(u.checked_at), ')'] : '아직 없음'),
+      u.error ? h('p', { class: 'inline-error', style: 'margin-top:6px' }, String(u.error)) : null,
+      u.data_newer ? h('p', { class: 'help', style: 'margin-top:6px' }, '이 PC의 기록은 더 새 버전(v' + u.data_newer + ')이 저장했어요. 그대로 열지만, 새 버전으로 다시 바꾸는 것을 권해요.') : null,
+      u.available && u.reason ? h('p', { class: 'help', style: 'margin-top:6px' }, String(u.reason)) : null,
+      u.available && !u.can_apply && u.command ? h('p', { class: 'cmd', title: '직접 할 명령' }, String(u.command)) : null,
+      u.available && !u.can_apply && !u.command ? h('p', { class: 'help' }, extLink(u.notes_url, '릴리스 페이지'), '에서 새 파일을 받아 지금 파일과 바꿔 주세요.') : null,
+      h('div', { class: 'form-actions', style: 'margin-top:12px' },
+        u.available && u.can_apply ? h('button', { type: 'button', class: 'btn btn-primary', 'data-key': 'upd-apply', disabled: busy, on: { click: applyUpdate } },
+          updBusy === 'apply' || u.phase === 'applying' ? spinTxt('받는 중…') : '지금 업데이트') : null,
+        h('button', { type: 'button', class: 'btn btn-line', 'data-key': 'upd-check', disabled: busy, on: { click: checkUpdate } },
+          updBusy === 'check' || u.phase === 'checking' ? spinTxt('확인하는 중…') : '지금 확인')),
+      h('label', { class: 'toggle', style: 'margin-top:8px' },
+        h('input', { type: 'checkbox', 'data-key': 'upd-check-on', checked: s.update_check !== false,
+          on: { change: (e) => updSetting(e.target, 'update_check', '하루 한 번 새 버전을 확인해요', '새 버전 확인을 껐어요. [지금 확인]으로는 언제든 볼 수 있어요') } }),
+        h('span', null, h('b', null, '새 버전 확인 (하루 한 번)'),
+          h('small', null, 'GitHub(api.github.com)에 최신 버전 번호만 물어봐요. 이름·토큰·학교 정보는 보내지 않아요.'))),
+      h('label', { class: 'toggle' },
+        h('input', { type: 'checkbox', 'data-key': 'upd-auto', checked: !!s.auto_update, disabled: !autoOk || s.update_check === false,
+          on: { change: (e) => updSetting(e.target, 'auto_update', '켤 때 새 버전이 있으면 자동으로 바꿔요', '자동 업데이트를 껐어요. 새 버전이 나오면 알려만 드려요') } }),
+        h('span', null, h('b', null, '켤 때 자동으로 업데이트'),
+          h('small', null, autoOk ? '앱을 켤 때 새 버전이 있으면 기록을 백업하고, 확인값(SHA-256)이 맞을 때만 바꾼 뒤 다시 켜요.'
+            : '실행 파일이나 pip로 설치했을 때만 돼요. 소스 폴더는 직접 git pull 해 주세요.'))),
+      updError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:8px' }, updError) : null
+    ]);
+  }
+  function updSetting(input, key, onMsg, offMsg) {
+    const want = input.checked;
+    updError = '';
+    post('/api/settings', { [key]: want }).then((s) => { applyState(s); toast(want ? onMsg : offMsg); },
+      (err) => { input.checked = !want; updError = err.message; render(); });
+  }
+  function checkUpdate() {
+    if (updBusy) return;
+    updBusy = 'check';
+    updError = '';
+    render();
+    post('/api/update/check', {}).then((s) => {
+      updBusy = '';
+      applyState(s);
+      const u = upd();
+      if (!u) return;
+      toast(u.error ? '새 버전을 확인하지 못했어요' : u.available ? '새 버전 ' + verI(u.latest) + ' 있어요' : '최신 버전을 쓰고 있어요');
+    }, (err) => { updBusy = ''; updError = err.message; render(); });
+  }
+  function applyUpdate() {
+    const u = upd();
+    if (!u || updBusy) return;
+    updBusy = 'apply';
+    updError = '';
+    render();
+    post('/api/update/apply', {}).then((s) => {
+      updBusy = '';
+      applyState(s);
+      toast(u.how === 'exe' ? '새 버전을 받는 중이에요. 다 되면 저절로 다시 켜져요' : '새 버전을 받는 중이에요. 기록은 먼저 백업해요');
+    }, (err) => { updBusy = ''; updError = err.message; render(); toast(err.message); });
+  }
+  function restartApp() {
+    if (updBusy) return;
+    updBusy = 'restart';
+    render();
+    post('/api/update/restart', {}).then((s) => { updBusy = ''; applyState(s); }, (err) => { updBusy = ''; toast(err.message); render(); });
+  }
+  function dismissUpdate() {
+    post('/api/update/dismiss', {}).then(applyState, (err) => toast(err.message));
+  }
+  // 다시 켜지면 서버가 새 세션 값을 넣은 화면을 준다 → 그 값이 바뀐 것을 보고 새로 고친다(옛 서버가 아직 답하면 기다림)
+  function waitForRestart() {
+    if (restartWait) return;
+    restartWait = Date.now();
+    render();
+    const tick = () => {
+      if (Date.now() - restartWait > 120000) {
+        restartWait = 0;
+        render();
+        banner('새 버전이 아직 켜지지 않았어요. 앱을 직접 다시 켜 주세요.', true);
+        return;
+      }
+      fetch('/', { cache: 'no-store', credentials: 'same-origin' }).then((r) => (r.ok ? r.text() : ''), () => '').then((html) => {
+        if (html && html.indexOf('lms-agent-token') >= 0 && html.indexOf(TOKEN) < 0) location.reload();
+        else setTimeout(tick, 1000);
+      });
+    };
+    setTimeout(tick, 1500);
   }
 
   // ---------------------------------------------------------------- 백그라운드 동기화
@@ -5842,6 +6007,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       const v = state.configured && !setupPhase ? view : 'settings';
       if (bannerView && bannerView !== v) hideBanner();
       renderChrome(v);
+      renderUpdateBanner();
       for (const name of VIEWS) {
         $('scr-' + name).hidden = name !== v;
         if (name !== v) for (const id of DYN[name]) $(id).replaceChildren();

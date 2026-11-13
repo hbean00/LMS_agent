@@ -184,6 +184,7 @@ def start_server(app: App, port: int = 8765) -> ThreadingHTTPServer:
             httpd = ThreadingHTTPServer(("127.0.0.1", p), make_handler(app))
             httpd.daemon_threads = True
             app.port = httpd.server_address[1]
+            app.httpd = httpd         # 업데이트 뒤 다시 켤 때 포트를 비우려고(features/update.py)
             return httpd
         except OSError as e:
             last = e

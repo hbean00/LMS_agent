@@ -1,4 +1,4 @@
-# 테스트(모든 push) + 태그 v* 를 올리면 wheel과 OS별 실행 파일을 GitHub Release에 올린다.
+# 테스트(모든 push) + 태그 v* 를 올리면 wheel과 OS별 실행 파일, 그 SHA256SUMS.txt를 GitHub Release에 올린다.
 name: test-and-release
 
 on:
@@ -78,6 +78,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # 앱 안 업데이트(updater.py)는 이 파일의 SHA-256과 맞을 때만 새 실행 파일·wheel을 쓴다
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
