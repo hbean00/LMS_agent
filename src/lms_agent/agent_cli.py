@@ -5,7 +5,8 @@
   JSON 스키마(형식·범위 검사), 사후 검사(비중 합 ~100, 근거 문장이 보낸 글에 그대로 있는지, 날짜가 근거와 맞는지 …),
   재시도(검사 오류를 그대로 인용해 고쳐 달라고 한 번 더), 시간 제한.
   작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
-  map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장).
+  map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장),
+  assist(에이전트에게 묻기 — 계약 20장).
 - 실행(run_task): `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·세션 저장 안 함 — 옛 버전이
   모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
@@ -893,6 +894,138 @@ register(AiTask(
         "evidence": {"type": "string", "maxLength": 600}}},
     build_input=_text_builder(_DIST_FOCUS),
     post_validate=_dist_validate,
+))
+
+
+# ---- assist: 에이전트에게 묻기(계약 20-3)
+
+ASSIST_MAX_PROPOSALS = 6
+ASSIST_STATE_BUDGET = 4_000
+ASSIST_TYPES = ["add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note"]
+
+
+def _assist_build(inputs: dict) -> tuple[str, list]:
+    """사용자 요청 + 과목 목록 + 지금 상태 요약 + 찾은 글(source_key마다 한 덩어리), 모두 가려서 12,000자 안에.
+    보낸 글 덩어리는 inputs["_sent_snippets"]에 남는다(화면의 '보낸 글')."""
+    names = inputs.get("names")
+    notes, red = [], 0
+    msg, n = redact(_flat(str(inputs.get("message") or ""))[:500], names)
+    red += bool(n)
+    head = ["사용자 요청 / user request:", msg, "", "과목 / courses (course_id: 이름):"]
+    for c in list(inputs.get("courses") or [])[:40]:
+        head.append(f"- {c.get('id')}: {redact(_flat(str(c.get('short') or '')), names)[0][:80]}")
+    state, n = redact(str(inputs.get("state_text") or ""), names)
+    red += bool(n)
+    state, cut = cap_text(state, ASSIST_STATE_BUDGET)
+    if cut:
+        notes.append(f"상태 요약이 길어 {ASSIST_STATE_BUDGET:,}자만 보냄")
+    out = ("\n".join(head) + "\n\n지금 상태 / current state:\n" + (state or "(없음 / none)")
+           + "\n\n찾은 글 / found texts (근거는 여기서 그대로 인용 / quote evidence verbatim from here):\n")
+    budget = MAX_TEXT - len(out)
+    sent = []
+    for sn in inputs.get("snippets") or []:
+        text, n = redact(str(sn.get("text") or ""), names)
+        title, n2 = redact(_flat(str(sn.get("title") or ""))[:120], names)
+        red += bool(n or n2)
+        block = (f"\n### source_key: {sn.get('source_key')}\n"
+                 f"course_id: {sn.get('course_id') or '-'} | 종류/type: {sn.get('type')} | "
+                 f"게시/posted: {str(sn.get('posted_at') or '')[:10]} | 제목/title: {title}\n{text}\n")
+        if len(block) > budget:
+            notes.append(f"글자 수 예산({MAX_TEXT:,}자)을 넘어 일부 글은 보내지 않음")
+            break
+        budget -= len(block)
+        out += block
+        sent.append(sn)
+    if not sent:
+        out += "(찾은 글 없음 / no matching texts)\n"
+    if red:
+        notes.append("보내기 전에 이메일·학번·이름 등을 가림")
+    inputs["_sent_snippets"] = sent
+    return out, notes
+
+
+def _assist_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    """답(answer)과 제안들. 근거가 보낸 글에 그대로 없으면 거절 — 나머지 검사(과목·항목·후보·날짜 ±1일·중복·비중 합·학점 비율)는
+    inputs["check"](제안, 이유)가 이 PC의 지금 상태로 한다(agent.check_proposal). 마지막 시도가 아니면 오류를 인용해 다시 묻고,
+    마지막 시도면 통과 못 한 제안도 rejected_reason과 함께 돌려준다(화면에 단추 없이 보임)."""
+    answer = unplace(_flat(str(obj.get("answer") or "")))[:1200]
+    if len(answer) < 2:
+        raise _Invalid("answer가 비어 있습니다 / answer is empty")
+    check = inputs.get("check")
+    out, errors = [], []
+    for i, p in enumerate((obj.get("proposals") or [])[:ASSIST_MAX_PROPOSALS]):
+        if not isinstance(p, dict):
+            continue
+        ev = _flat(str(p.get("evidence") or ""))
+        why = None
+        if (p.get("type") != "note" or ev) and not _quoted(ev, sent):
+            why = "근거(evidence)가 보낸 글에 그대로 없어요 / evidence is not verbatim in the input"
+        q = check(p, why) if check else {**p, "rejected_reason": why}
+        if q.get("rejected_reason"):
+            errors.append(f"proposals[{i}] {p.get('type')}: {q['rejected_reason']}")
+        out.append(q)
+    if errors and not final:
+        raise _Invalid("; ".join(errors[:6]))
+    return {"answer": answer, "proposals": out}
+
+
+register(AiTask(
+    name="assist",
+    purpose="사용자가 채팅으로 짚은 문제(안 보이는 마감·시험 날짜, 안 들어오는 성적 등)를 이 PC의 글에서 찾아 근거와 함께 제안한다",
+    instructions=(
+        "작업: 학생이 LMS Agent 앱에 물었습니다(아래 '사용자 요청'). 앱의 규칙이 놓친 것을 아래 '찾은 글'과 '지금 상태'에서만 찾아 "
+        "한국어로 답하고, 근거가 있으면 앱에 반영할 제안을 주세요. 글에 없는 것은 지어내지 마세요. 읽지 않은 글을 읽었다고 하지 마세요.\n"
+        "Task: a student asked the LMS Agent app the 'user request' below. Using ONLY the 'found texts' and 'current state' "
+        "below, answer in Korean and propose fixes the app can apply, each backed by evidence. Never invent anything and "
+        "never claim to have read anything that is not below.\n"
+        "- answer: 한국어 2~6문장 — 무엇을 찾았는지(어느 글), 왜 규칙이 못 찾았을 것 같은지, 확인할 점 / 2-6 Korean sentences.\n"
+        "- proposals[].type: add_deadline(새 마감·시험: title, due, kind 과제|시험, method?), fix_due(item_id, due), "
+        "link_score(key = 점수 후보 key, component = 평가 항목 이름), set_count(component, n = 학기 전체 개수), "
+        "set_weights(components = [{name, weight}], 합 100), set_dist(groups = [{grades, pct 또는 low·high, cumulative}] "
+        "또는 dist_kind 'absolute' + cutoffs = [{grade, min_score}]), note(반영할 것 없이 설명만).\n"
+        "- course_id·item_id·key·component는 '지금 상태'에 적힌 값 그대로 / copy ids and names exactly from the state.\n"
+        "- due: ISO 8601(예: 2026-12-17T10:30:00+09:00), 근거 문장에 적힌 날짜 그대로. 연도가 없으면 게시일 뒤 가장 가까운 날, "
+        "시간이 없으면 23:59 / due must match a date written in the evidence.\n"
+        "- '다음 주 금요일'·'next Friday' 같은 상대 날짜는 게시일 기준으로 계산했다고 reason에 밝히고 '분명히 적혀 있다'·'명시'라고 "
+        "쓰지 마세요 / for relative dates say you computed them; never claim the date is explicitly stated.\n"
+        "- evidence: 근거 문장을 '찾은 글'(또는 '지금 상태')에서 한 글자도 바꾸지 말고 그대로 복사, source_key는 그 글의 값 "
+        "/ copy evidence verbatim and give that text's source_key.\n"
+        "- 이미 '지금 상태'에 같은 마감이 있으면 add_deadline을 내지 마세요 / do not propose a deadline that already exists.\n"
+        "- 확실하지 않으면 제안 없이 answer로 설명하거나 note만 / if unsure, explain in the answer or use note.\n"
+        "- reason: 한국어 한 줄(120자 이내) / one Korean line. 다른 정보(이름, 학번, 연락처)는 넣지 마세요."),
+    schema={"type": "object", "required": ["answer", "proposals"], "properties": {
+        "answer": {"type": "string", "minLength": 2, "maxLength": 1500},
+        "proposals": {"type": "array", "maxItems": ASSIST_MAX_PROPOSALS, "items": {
+            "type": "object", "required": ["type", "reason"], "properties": {
+                "type": {"type": "string", "enum": ASSIST_TYPES},
+                "evidence": {"type": "string", "maxLength": 800},
+                "source_key": {"type": "string", "maxLength": 200},
+                "reason": {"type": "string", "maxLength": 400},
+                "title": {"type": "string", "maxLength": 200},
+                "due": {"type": "string", "maxLength": 40},
+                "kind": {"type": "string", "enum": ["과제", "시험"]},
+                "method": {"type": "string", "enum": ["lms", "email", "paper", "unknown"]},
+                "key": {"type": "string", "maxLength": 300},
+                "component": {"type": "string", "maxLength": 80},
+                "n": {"type": "integer", "minimum": 1, "maximum": 30},
+                "components": {"type": "array", "maxItems": 20, "items": {
+                    "type": "object", "required": ["name", "weight"], "properties": {
+                        "name": {"type": "string", "minLength": 1, "maxLength": 60},
+                        "weight": {"type": "number", "minimum": 0, "maximum": 100}}}},
+                "dist_kind": {"type": "string", "enum": ["relative", "absolute"]},
+                "groups": {"type": "array", "maxItems": 9, "items": {
+                    "type": "object", "required": ["grades"], "properties": {
+                        "grades": {"type": "array", "maxItems": 9, "items": {"type": "string", "enum": list(GRADES)}},
+                        "pct": {"type": "number", "minimum": 0, "maximum": 100},
+                        "low": {"type": "number", "minimum": 0, "maximum": 100},
+                        "high": {"type": "number", "minimum": 0, "maximum": 100},
+                        "cumulative": {"type": "boolean"}}}},
+                "cutoffs": {"type": "array", "maxItems": 9, "items": {
+                    "type": "object", "required": ["grade", "min_score"], "properties": {
+                        "grade": {"type": "string", "enum": list(GRADES)},
+                        "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}}}}}}},
+    build_input=_assist_build,
+    post_validate=_assist_validate,
 ))
 
 

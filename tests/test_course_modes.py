@@ -98,7 +98,7 @@ def test_demo_courses_modes_suggestions_and_read_counts(demo):
     assert cs["104"]["mode_suggest"]["mode"] == "pass_fail" and "P/NP" in cs["104"]["mode_suggest"]["evidence"]
     assert cs["105"]["mode_suggest"]["mode"] == "hidden" and cs["105"]["short_name"] == "연구실 안전 교육"
     assert cs["101"]["mode_suggest"] is None and cs["102"]["mode_suggest"] is None
-    assert cs["101"]["read_counts"] == {"announcements": 4, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 4}
+    assert cs["101"]["read_counts"] == {"announcements": 5, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 4}
     assert cs["105"]["read_counts"] == {"announcements": 0, "board_posts": 0, "messages": 0, "pdfs": 0, "attachments": 0}
     # 사용자가 [맞아요]로 정한다 — 한 번 정하면 다시 제안하지 않는다(normal로 정해도)
     code, st = call(app, "POST", "/api/course/104/mode", {"mode": "normal"})

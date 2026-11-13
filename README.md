@@ -22,7 +22,7 @@ LMS Agent는 그 글들을 읽어 마감을 찾고, **근거 문장과 함께** 
 
 ## 화면 둘러보기
 
-아래 화면은 모두 **데모 데이터**(가짜 Canvas·가짜 과목·가짜 학번)입니다. `lms-agent demo`로 똑같이 볼 수 있습니다.
+아래 화면은 모두 **데모 데이터**(가짜 Canvas·가짜 과목·가짜 학번)입니다. `python -m lms_agent demo`로 똑같이 볼 수 있습니다.
 
 ### 1. 처음 켜면: 학기 지도를 한 번에
 
@@ -68,16 +68,24 @@ LMS Agent는 그 글들을 읽어 마감을 찾고, **근거 문장과 함께** 
 
 Canvas 계정 없이 가짜 데이터로 화면을 볼 수 있습니다(가짜 Canvas·가짜 구글·가짜 AI — 실제 서비스에 접속하지 않음).
 
+**설치 방법은 둘 중 하나**입니다.
+
+- **실행 파일(파이썬 필요 없음, 추천)**: [릴리스](https://github.com/hbean00/LMS_agent/releases)에서 `lms-agent-windows.exe`(맥은 macOS 파일)를 받아 더블클릭. 데모는 명령 창에서 `lms-agent-windows.exe demo`.
+- **파이썬(3.9 이상)으로 설치**: 아래처럼 `python -m …` 꼴로 실행하면 PATH 설정과 상관없이 됩니다(Windows는 `python` 대신 `py`도 됨).
+
 ```bash
-pip install git+https://github.com/hbean00/LMS_agent
-lms-agent demo
+python -m pip install git+https://github.com/hbean00/LMS_agent
 ```
 
-Windows 실행 파일을 받았다면 명령 창에서 `lms-agent.exe demo`를 실행하세요.
+```bash
+python -m lms_agent demo
+```
+
+`lms-agent` 명령으로도 실행할 수 있지만, 파이썬의 Scripts 폴더가 PATH에 있을 때만 됩니다(파이썬 설치 때 "Add python.exe to PATH"를 켰으면 됨). "'lms-agent'은(는) 내부 또는 외부 명령… 아닙니다"가 나오면 `python -m lms_agent`를 쓰세요. 아래 명령표의 `lms-agent`도 모두 `python -m lms_agent`로 바꿔 쓸 수 있습니다.
 
 ## 내 Canvas에 연결하기
 
-1. `lms-agent`를 실행합니다(exe면 더블클릭). 브라우저에 화면이 열립니다.
+1. 앱을 켭니다(exe면 더블클릭, 파이썬이면 `python -m lms_agent`). 브라우저에 화면이 열립니다.
 2. 화면의 **토큰 발급 페이지 열기**를 누르면 Canvas 설정이 열립니다 → **새 액세스 토큰** → 용도에 "LMS Agent" → 발급 → 토큰 복사.
    (토큰은 한 번만 보입니다. 학교가 토큰 발급을 막아 둔 경우 버튼이 없습니다.)
 3. 토큰을 붙여 넣으면 Canvas에 실제로 연결되는지 확인하고("OO님으로 연결됨") 바로 첫 동기화를 합니다. 튜토리얼이 화면을 하나씩 짚어 줍니다.
@@ -88,6 +96,14 @@ Windows 실행 파일을 받았다면 명령 창에서 `lms-agent.exe demo`를 �
 ### 구글 캘린더 연결
 
 구글 OAuth 클라이언트(데스크톱 앱)가 필요합니다. `.env.example`을 `.env`로 복사해 `LMS_AGENT_GOOGLE_CLIENT_ID`·`LMS_AGENT_GOOGLE_CLIENT_SECRET`을 넣고 화면의 **구글 캘린더 연결**을 누르세요. 앱은 자기가 만든 "LMS 마감" 캘린더만 만들고 고칩니다(`calendar.app.created` 권한).
+
+### 연결이 안 될 때
+
+- **"보안 인증서를 확인하지 못했어요"**: 앱이 이유와 발급 기관을 함께 알려 줍니다.
+  - 발급 기관이 GlobalSign·DigiCert 같은 공개 기관이면 이 PC의 인증서 목록이 비어 있는 경우입니다. v0.6.1부터는 앱에 넣은 공개 루트 목록(Mozilla)으로 해결됩니다. 그 전 버전이면 Microsoft Edge로 학교 LMS 주소를 한 번 열고 다시 연결하세요.
+  - 처음 보는 이름(백신·학교·회사 장비)이면 그 프로그램이 HTTPS를 검사하는 경우입니다. 그 프로그램의 HTTPS 검사를 끄거나, 그 루트 인증서 파일(.cer/.crt/.pem)을 `%APPDATA%\lms-agent\certs\`(맥·리눅스는 위 설정 폴더 아래 `certs`)에 넣고 다시 연결하세요. 환경 변수 `LMS_AGENT_CA_FILE`로 파일을 알려 줘도 됩니다.
+  - 인증서 검사를 끄는 기능은 없습니다(끄면 토큰이 가로채일 수 있어요).
+- **`lms-agent` 명령을 찾을 수 없음**: `python -m lms_agent`로 실행하세요(위 설치 방법 참고).
 
 ## 업데이트
 

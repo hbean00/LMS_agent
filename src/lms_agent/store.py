@@ -120,6 +120,23 @@ def _apply_groups(out: list[dict], user: dict) -> None:
                                   "newest": b["newest"]} for b in order if b is not v]
 
 
+def _applied_refs(data: dict) -> set:
+    """'에이전트에게 묻기'에서 지금 반영 상태인 (대화 id, 제안 번호)들."""
+    out = set()
+    for t in ((data.get("agent") or {}).get("threads") or []) if isinstance(data.get("agent"), dict) else []:
+        if isinstance(t, dict):
+            for i, p in enumerate(t.get("proposals") or []):
+                if isinstance(p, dict) and p.get("applied"):
+                    out.add((t.get("id"), i))
+    return out
+
+
+def _ref_if(ref, applied: set):
+    if isinstance(ref, dict) and (ref.get("thread"), ref.get("proposal")) in applied:
+        return {"thread": ref["thread"], "proposal": ref["proposal"]}
+    return None
+
+
 def _default() -> dict:
     return {
         "version": 1,
@@ -249,6 +266,8 @@ class Store:
         if changes:
             u["decided_by"] = by
             u["ai_reason"] = (str(reason)[:300] if reason else None) if by == "ai" else None
+            if by == "user":
+                u.pop("agent_ref", None)   # 사용자가 손댔다 — '에이전트에게 묻기' 되돌리기 연결을 끊는다(계약 20-4)
         if "decision" in changes:
             d = changes["decision"]
             if d not in DECISIONS:
@@ -308,6 +327,7 @@ class Store:
         gcal = self.data.get("gcal") or {}
         gcal_events = gcal.get("events") or {}
         hidden = set() if include_hidden else hidden_courses(self.data)
+        applied = _applied_refs(self.data)
         out = []
         for it in self.data["items"]:
             if hidden and str(it.get("course_id")) in hidden:
@@ -342,6 +362,9 @@ class Store:
                 "duplicate_of": it.get("duplicate_of"), "linked_to": it.get("linked_to"),
                 "conflict": it.get("conflict"), "notes": it.get("notes") or [],
                 "evidence": it.get("evidence") or [], "url": it.get("url"),
+                "found_by": it.get("found_by"),   # '에이전트에게 묻기'로 반영한 마감이면 "ai" | "rules"(계약 20-4)
+                # 그 반영을 되돌릴 대화·제안({"thread", "proposal"}) — 대화 기록이 남아 있고 아직 반영 상태일 때만
+                "agent_ref": _ref_if(u.get("agent_ref") or it.get("agent_ref"), applied),
                 "edited": bool(u.get("title") or u.get("due")),
                 # 직접 고쳤으면 원래 값(근거 사슬의 "직접 고침 (원문 11/25)")
                 "orig_due": it.get("due") if u.get("due") else None,

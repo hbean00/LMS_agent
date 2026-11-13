@@ -302,10 +302,11 @@ def _canvas_item(a: dict, course_name: str) -> dict:
 
 def build_items(cache: dict | None, manual: list[dict], now: datetime | None = None,
                 lookback_days: int = 120, extracted: dict | None = None,
-                reason_all: str | None = None) -> tuple[list[dict], dict, dict]:
+                reason_all: str | None = None, agent_items: list | None = None) -> tuple[list[dict], dict, dict]:
     """extracted: 지난 실행에서 글마다 찾은 결과 {글 key: {hash, rules, found}}.
     내용 해시가 같은 글은 다시 읽지 않고 그 결과를 쓴다(탐색 목표 = 바뀐 글만).
-    None이면 모든 글을 읽고, 이유는 reason_all(처음 실행/전체 다시 확인/규칙 업데이트)."""
+    None이면 모든 글을 읽고, 이유는 reason_all(처음 실행/전체 다시 확인/규칙 업데이트).
+    agent_items: '에이전트에게 묻기'로 반영한 마감(store.data["agent_items"], 계약 20-4) — 함께 합친다(merge_agent_items)."""
     now = now or now_local()
     oldest = now - timedelta(days=lookback_days)
     names = {c["id"]: c["name"] for c in (cache or {}).get("courses", [])}
@@ -422,6 +423,8 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
     for it in out:
         it.pop("_name", None)
         it.pop("_label", None)
+    if agent_items:
+        out = merge_agent_items(out, agent_items, names)
 
     found = [it for it in out if it["origin"] == "found"]
     report = {
@@ -442,6 +445,69 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
         "conversations_fetched": len(((cache or {}).get("probe") or {}).get("conversations_fetched", [])),
     }
     return out, report, new_extracted
+
+
+def agent_item(rec: dict, names: dict | None = None) -> dict:
+    """agent_items 기록 하나 → 항목(origin "found", found_by "ai"|"rules"). id는 기록의 id 그대로(사용자 결정이 이어지게)."""
+    return {"id": rec["id"], "origin": "found", "course_id": rec.get("course_id"),
+            "course_name": (names or {}).get(rec.get("course_id")) or rec.get("course_name") or "과목 미상",
+            "title": rec.get("title") or "마감", "due": rec.get("due"), "kind": rec.get("kind") or "과제",
+            "method": rec.get("method") or "unknown", "email_to": rec.get("email_to"),
+            "confidence": rec.get("confidence") or "medium", "notes": list(rec.get("notes") or []),
+            "evidence": [dict(e) for e in rec.get("evidence") or []], "url": None, "canvas_submitted": None,
+            "duplicate_of": None, "linked_to": None, "conflict": None, "default_decision": "pending",
+            "found_by": rec.get("found_by") or "ai", "agent_ref": rec.get("ref")}
+
+
+def merge_agent_items(out: list[dict], agent_items: list, names: dict | None = None) -> list[dict]:
+    """build_items 결과(Canvas + 찾은 항목)에 '에이전트에게 묻기'로 반영한 마감을 합친다(계약 20-4).
+    규칙이 같은 마감(같은 과목·같은 날·같은 과제, agent.same_deadline)을 찾았으면 하나로: 에이전트 항목의 id·제목을 남기고
+    (사용자가 [반영]한 결정이 그 id에 있다) 규칙 항목의 근거를 더한다. 마감 없는 Canvas 과제와 같은 과제면 연결(linked_to)."""
+    from .agent import same_deadline
+    from .extract import same_task
+    out = list(out)
+    for rec in agent_items or []:
+        if not isinstance(rec, dict) or not rec.get("id") or not rec.get("due"):
+            continue
+        a = agent_item(rec, names)
+        out = [it for it in out if it["id"] != a["id"]]
+        same = [it for it in out if it.get("origin") == "found" and not it.get("found_by") and same_deadline(a, it)]
+        for it in same:
+            texts = {e.get("text") for e in a["evidence"]}
+            a["evidence"] += [e for e in it.get("evidence") or [] if e.get("text") not in texts]
+            a["notes"] = list(dict.fromkeys(a["notes"] + ["규칙도 같은 마감을 찾음"]))
+            a["linked_to"] = a["linked_to"] or it.get("linked_to")
+            a["duplicate_of"] = a["duplicate_of"] or it.get("duplicate_of")
+            if a["method"] == "unknown":
+                a["method"], a["email_to"] = it.get("method") or "unknown", it.get("email_to")
+        if same:
+            ids = {it["id"] for it in same}
+            out = [it for it in out if it["id"] not in ids]
+        if not a["linked_to"]:
+            nodue = next((it for it in out if it.get("origin") == "canvas" and not it.get("due")
+                          and it.get("course_id") == a["course_id"] and same_task(a["title"], it.get("title"))), None)
+            if nodue is not None:
+                a["linked_to"] = nodue["id"]
+                a["notes"].append(f"Canvas 과제 '{nodue['title']}'(마감 없음)의 마감으로 보입니다")
+        if a["linked_to"]:
+            out = [it for it in out if not (it["id"] == a["linked_to"] and not it.get("due"))]
+        a["evidence"].sort(key=lambda e: e.get("posted_at") or "")
+        out.append(a)
+    return out
+
+
+def refresh_items(store) -> None:
+    """저장된 원본으로 항목만 다시 만든다(실행 기록·report는 그대로) — '에이전트에게 묻기'의 반영·되돌리기가 부른다.
+    바뀐 글이 없으면 글을 다시 읽지 않는다(extracted 해시)."""
+    items, _, new_extracted = build_items(
+        store.data.get("cache"), store.data.get("manual", []),
+        lookback_days=store.data["settings"].get("lookback_days", 120),
+        extracted=store.data.get("extracted"), agent_items=store.data.get("agent_items"))
+    seen = store.data.setdefault("seen", {})
+    stamp = iso(now_local())
+    for it in items:
+        seen.setdefault(it["id"], stamp)
+    store.data.update(items=items, extracted=new_extracted)
 
 
 # ================================================================ 한 번에
@@ -468,7 +534,7 @@ def rebuild(store, mode: str = "incremental", reason: str | None = None, by: str
     items, report, new_extracted = build_items(
         store.data.get("cache"), store.data.get("manual", []),
         lookback_days=store.data["settings"].get("lookback_days", 120),
-        extracted=extracted, reason_all=reason)
+        extracted=extracted, reason_all=reason, agent_items=store.data.get("agent_items"))
     seen = store.data.setdefault("seen", {})
     stamp = iso(now_local())
     new_ids = [it["id"] for it in items if it["id"] not in seen]

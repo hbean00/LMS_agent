@@ -1,6 +1,9 @@
 """모든 외부 HTTPS 연결(Canvas·LearningX·구글·첨부 다운로드·업데이트 확인)이 같이 쓰는 보안 설정 — 계약 17장.
 
 - 운영체제가 믿는 인증서를 쓴다: Windows 인증서 저장소(파이썬 기본), macOS 키체인(`security`로 내보내 더함), 리눅스 기본 경로.
+- 앱에 넣어 둔 공개 루트 목록(Mozilla, `data/cacert.pem`)도 함께 믿는다. Windows는 루트 인증서를 필요할 때 받아 오는데
+  크롬은 자기 목록을 써서, 크롬만 쓰는 PC에는 학교 서버의 정상 루트(예: GlobalSign Root R3)가 Windows에 없을 수 있다
+  (베타테스터: 'self-signed certificate in certificate chain' — 서버가 보낸 루트를 이 PC가 몰랐음).
 - 백신의 'HTTPS 검사'나 학교·회사·기숙사 네트워크 장비가 연결을 가로채 자기 루트 인증서로 다시 서명하는 경우가 있다.
   그 루트 인증서 파일(.cer/.crt/.pem)을 `<데이터 폴더>/certs/`에 넣거나 환경 변수 `LMS_AGENT_CA_FILE`로 알려 주면 함께 믿는다.
 - 인증서 검사를 끄는 선택지는 두지 않는다(끄면 Canvas 토큰이 가로채일 수 있다).
@@ -64,6 +67,17 @@ def _macos_keychain_pem() -> str:
     return "\n".join(out)
 
 
+def _bundled_roots() -> str | None:
+    """앱에 넣어 둔 공개 루트 목록 파일 경로(없으면 None). PyInstaller exe·pip 설치·소스 폴더 모두."""
+    try:
+        from importlib import resources
+        p = resources.files("lms_agent").joinpath("data/cacert.pem")
+        with resources.as_file(p) as f:
+            return str(f) if Path(f).is_file() else None
+    except (FileNotFoundError, ModuleNotFoundError, OSError, TypeError):
+        return None
+
+
 def ssl_context() -> ssl.SSLContext:
     """검증을 켠 기본 설정 + 운영체제 인증서 + 사용자가 넣은 루트 인증서. 한 번 만들어 같이 쓴다(reset()으로 다시)."""
     global _ctx
@@ -71,6 +85,12 @@ def ssl_context() -> ssl.SSLContext:
         if _ctx is not None:
             return _ctx
         ctx = ssl.create_default_context()
+        bundle = _bundled_roots()
+        if bundle:
+            try:
+                ctx.load_verify_locations(cafile=bundle)
+            except (OSError, ssl.SSLError):
+                pass
         if sys.platform == "darwin":
             pem = _macos_keychain_pem()
             if "BEGIN CERTIFICATE" in pem:
@@ -169,16 +189,37 @@ def peer_issuer(host: str, port: int = 443, timeout: float = 4.0) -> str | None:
         return None
 
 
+# 공개 인증 기관(브라우저·운영체제가 기본으로 믿는 곳). 발급자가 이쪽이면 가로채기가 아니라 '이 PC가 루트를 모름'
+_PUBLIC_CA = ("globalsign", "digicert", "sectigo", "comodo", "usertrust", "let's encrypt", "isrg", "google trust",
+              "gts ", "amazon", "microsoft", "entrust", "godaddy", "go daddy", "starfield", "thawte", "geotrust",
+              "rapidssl", "baltimore", "certum", "buypass", "harica", "ssl.com", "actalis", "secom", "identrust",
+              "quovadis", "swisssign", "t-systems", "telia", "zerossl", "certigna", "emudhra", "trustwave",
+              "network solutions", "verisign", "symantec", "kisa", "koscom", "crosscert", "signkorea", "yessign")
+
+
+def is_public_ca(name: str | None) -> bool:
+    low = (name or "").lower()
+    return any(k in low for k in _PUBLIC_CA)
+
+
 def cert_help(host: str, reason=None, service: str = "Canvas", port: int = 443) -> str:
-    """인증서 검증 실패를 사람이 고칠 수 있는 말로(토큰·개인 정보 없음)."""
+    """인증서 검증 실패를 사람이 고칠 수 있는 말로(토큰·개인 정보 없음).
+    발급자가 공개 인증 기관이면 '이 PC의 인증서 목록에 그 루트가 없음', 아니면 'HTTPS를 가로채는 프로그램·장비'로 안내한다."""
     who = peer_issuer(host, port) if host else None
     where = str(certs_dir())
     head = f"{service}({host})의 보안 인증서를 확인하지 못했어요"
     if who:
         head += f" — 인증서를 '{who}'이(가) 발급했어요"
-    msg = (f"{head}. 백신의 'HTTPS 검사'(웹 보호)나 학교·회사·기숙사 네트워크 보안 장비가 연결을 검사할 때 생겨요. "
-           f"① 그 프로그램에서 HTTPS 검사를 끄거나, ② 그 루트 인증서 파일(.cer/.crt/.pem)을 '{where}' 폴더에 넣고 "
-           f"다시 연결해 주세요. 안전을 위해 인증서 검사를 끄는 기능은 없어요.")
+    if is_public_ca(who):
+        msg = (f"{head}. 정상적인 공개 인증서인데 이 PC의 인증서 목록에 그 발급 기관의 루트 인증서가 없어서 생겨요"
+               f"(Windows는 루트를 필요할 때 받아 오는데, 크롬만 쓰면 받지 않았을 수 있어요). "
+               f"① Microsoft Edge로 https://{host} 를 한 번 열고(Windows가 루트를 받아 와요) 다시 연결하거나, "
+               f"② 앱을 최신 버전으로 업데이트하거나, ③ 그 루트 인증서 파일을 '{where}' 폴더에 넣어 주세요. "
+               f"안전을 위해 인증서 검사를 끄는 기능은 없어요.")
+    else:
+        msg = (f"{head}. 백신의 'HTTPS 검사'(웹 보호)나 학교·회사·기숙사 네트워크 보안 장비가 연결을 검사할 때 생겨요. "
+               f"① 그 프로그램에서 HTTPS 검사를 끄거나, ② 그 루트 인증서 파일(.cer/.crt/.pem)을 '{where}' 폴더에 넣고 "
+               f"다시 연결해 주세요. 안전을 위해 인증서 검사를 끄는 기능은 없어요.")
     if problems:
         msg += f" (넣어 둔 인증서 중 읽지 못한 파일: {', '.join(problems[:3])})"
     return msg

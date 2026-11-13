@@ -156,3 +156,22 @@ def test_env_var_ca_file(intercepted, monkeypatch):
 def test_verification_is_never_switched_off():
     ctx = net.ssl_context()
     assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
+
+
+# ------------------------------------------------------------ 운영체제 목록에 없는 정상 루트(베타테스터 2차 제보)
+
+def test_bundled_public_roots_are_trusted():
+    """Windows가 아직 받지 않은 정상 루트(실제: 고려대 LMS의 GlobalSign Root R3)도 앱에 넣은 목록으로 확인한다."""
+    assert net._bundled_roots()
+    subjects = [dict(x[0] for x in c["subject"]) for c in net.ssl_context().get_ca_certs()]
+    assert any(s.get("organizationalUnitName") == "GlobalSign Root CA - R3" for s in subjects)
+
+
+def test_public_ca_issuer_gets_missing_root_advice_not_interception(monkeypatch):
+    monkeypatch.setattr(net, "peer_issuer",
+                        lambda host, port=443, timeout=4.0: "GlobalSign nv-sa · GlobalSign GCC R3 DV TLS CA 2020")
+    msg = net.cert_help("mylms.korea.ac.kr")
+    assert "루트 인증서가 없어서" in msg and "Edge" in msg and "https://mylms.korea.ac.kr" in msg
+    assert "HTTPS 검사'(웹 보호)" not in msg                 # 가로채기라고 잘못 말하지 않는다
+    assert net.is_public_ca("DigiCert Global G2") and net.is_public_ca("R11 · Let's Encrypt")
+    assert not net.is_public_ca("Test Interceptor · Test Interceptor Root") and not net.is_public_ca(None)

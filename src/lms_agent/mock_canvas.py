@@ -139,6 +139,12 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     midterm_week = ("<p>As I have mentioned in the last lecture, we will have a short quiz session (+ explanation on "
                     f"midterm project) in the regular class hour on {MONTHS[quiz_day.month - 1]}. {quiz_day.day}, "
                     f"{quiz_day.year} .</p><p>The quiz covers the lecture materials so far.</p>")
+    # 계약 20장(에이전트에게 묻기) 데모: 'final'만 적힌 시험 일정 — 규칙은 'final' 혼자를 시험으로 보지 않아(기말 프로젝트일 수도
+    # 있어서) 놓친다. 대시보드에 'Final quiz 날짜 미공지'로 남고, "기말고사 날짜가 안 보여요"라고 물으면 이 문장을 찾아 제안한다.
+    final_day = day(32)
+    final_week = ("<p>Dear All,</p><p>The final will be held on "
+                  f"{MONTHS[final_day.month - 1]}. {final_day.day} at 10:30 in the regular class hour "
+                  "(closed book, 30 minutes).</p><p>Please review the lecture slides from week 9.</p>")
     scores_post = (f'<p>Lab0 and Lab1 scores are uploaded. Please find your row by your student ID.</p>'
                    f'<p><a href="{base_url}/courses/101/files/{SCORE_FILES[0]}/download">Lab0_score.pdf</a> '
                    f'<a href="/courses/101/files/{SCORE_FILES[1]}/download?wrap=1">Lab1_score.pdf</a></p>')
@@ -154,10 +160,11 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         announcement(104, 9005, at(-4, 11), "Final report",
                      f"<p>Please email your final report to capstone@example.ac.kr by "
                      f"{MONTHS[cap.month - 1]} {cap.day}, 11:59 PM.</p>"),
-        # 아래 셋은 at(-7)~at(0) 밖에 올려 공지 필터 시험(test_canvas)의 기대값을 그대로 둔다
+        # 아래 넷은 at(-7)~at(0) 밖에 올려 공지 필터 시험(test_canvas)의 기대값을 그대로 둔다
         announcement(101, 9006, at(-36, 14), "Updated Grading Policy", policy),
         announcement(101, 9007, at(-20, 10), "Lab0, Lab1 Score Announcement", scores_post),
         announcement(101, 9008, at(-9, 11), "Announcement about Midterm Week", midterm_week),
+        announcement(101, 9009, at(-12, 15), "Final week schedule", final_week),
     ]
     conversations = [
         conversation(7001, "LAB4 보고서 마감 연장", "course_101", "ASIC설계", at(-1, 20),

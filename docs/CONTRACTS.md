@@ -637,6 +637,9 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 인증서 검증을 끄는 선택지는 없다(끄면 토큰이 가로채일 수 있다).
 - 검증 실패는 `net.cert_help(host, reason, service, port)`로 고칠 수 있는 말이 된다: 어느 서버인지, 인증서 발급자(`net.peer_issuer` — 검증 없이 TLS 인사만 하고 끊어 발급자 이름만 읽음, 아무 데이터도 보내지 않음), 원인(HTTPS 검사), 방법(① 그 프로그램의 HTTPS 검사 끄기 ② 루트 인증서를 certs 폴더에 넣고 다시 연결), 읽지 못한 인증서 파일 이름. 토큰·개인 정보는 넣지 않는다.
 - `POST /api/account/login`은 연결 전에 `net.reset()` — certs 폴더에 넣고 다시 [연결]하면 바로 읽는다.
+- **2차 제보(발급자 'GlobalSign … GCC R3 DV TLS CA 2020' — 학교 서버의 정상 인증서)**: 가로채기가 아니라 이 PC 운영체제 목록에 서버가 보낸 루트(GlobalSign Root R3)가 없던 것(Windows는 루트를 필요할 때 받아 오는데 크롬은 자기 목록을 써서 받지 않았을 수 있음). 그래서 앱에 공개 루트 목록 `src/lms_agent/data/cacert.pem`(Mozilla, certifi 2024.08.30, MPL-2.0 — `data/NOTICE.md`)을 넣고 운영체제 목록에 더해 믿는다(패키지 데이터·exe에 포함). 루트가 하나도 없을 때의 오류가 제보와 같은 'self-signed certificate in certificate chain'이고, 앱 목록만으로 고려대 LMS가 확인됨을 실제로 확인했다.
+- 안내 문구는 발급자로 갈린다: `net.is_public_ca(issuer)`(GlobalSign·DigiCert·Sectigo·Let's Encrypt 등)면 "정상 공개 인증서인데 이 PC 목록에 루트가 없음 → Edge로 한 번 열기 / 업데이트 / certs 폴더", 아니면 "HTTPS를 검사하는 프로그램·장비 → 검사 끄기 / 루트를 certs 폴더에".
+- 백그라운드 동기화 실행 스크립트(`<데이터 폴더>/background-sync.vbs`)는 켠 적이 있으면 앱을 켤 때마다 지금의 파이썬·exe 경로로 다시 쓴다(파이썬을 다시 설치하거나 exe로 바꿔도 멈추지 않게).
 - 시험: `tests/test_net.py` — openssl로 만든 가짜 '검사 장비' 루트 CA와 그 CA가 서명한 127.0.0.1 서버로 실패(발급자 이름이 담긴 안내) → certs 폴더에 .cer을 넣으면 성공까지(openssl이 없으면 건너뜀).
 
 ## 18. 열마다 다른 평가인 점수표 (베타테스터 제보 2026-11-13: "성적 자동 입력이 안 된다")
@@ -724,3 +727,44 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 `settings.auto_update`(기본 false, exe·pip만, `update_check`가 켜져 있어야 함). 켜 두면 `lms-agent serve`가 화면을 열기 전에 확인(하루 한 번 규칙)하고
 새 버전이 있으면 19-3과 같은 확인·백업을 거쳐 바꾼 뒤 원래 인자로 다시 켠다. 지난번에 같은 버전으로 바꿨는데 아직 옛 버전이 돌면(`applied.version == latest`)
 되풀이하지 않고 `error`로 알린다. 터미널: `lms-agent update [--check] [-y]`.
+
+## 20. 에이전트에게 묻기(채팅) — v0.6.1 (사용자 요청 2026-11-13)
+
+사용자: "AI와 채팅을 할 수 있어서 직접적인 요청을 CLI를 통해 할 수 있도록 … 코너케이스를 모두 못 잡을 수 있는데 '성적이 안 들어오는 문제가 있습니다', '기말고사 날짜가 안 보이네요' 이런 것들을 요청해서 사후적으로 찾을 수 있게".
+원칙: 규칙이 놓친 것을 **사용자가 말로 짚으면** 에이전트가 이 PC에 모아 둔 글(공지·게시판·메시지·강의계획서·첨부 PDF 글)에서 찾아 **근거와 함께 제안**한다. 하네스가 검증한 제안만 [반영] 단추가 붙고, 반영한 것은 `decided_by: "ai"`·이유·되돌리기(12장과 같음). AI가 꺼져 있어도 같은 창이 **규칙 검색**으로 동작한다.
+
+### 20-1. 흐름과 요청
+- `POST /api/agent/ask {"message": str(1~500자), "course_id"?: str}` → `{"job": id}` 바로 반환(AI는 수십 초 걸릴 수 있어 백그라운드). 진행은 `state.agent`.
+- `state.agent = {"enabled": bool(AI 켜짐), "busy": bool, "threads": [{"id", "at", "message", "course_id", "status": "running"|"done"|"error", "answer", "proposals": [...], "searched": n, "error", "by": "ai"|"rules"}] (최근 20개), "calls_today", "limits"}`.
+- `POST /api/agent/apply {"thread": id, "proposal": idx}` → 그 제안을 반영(다시 검증한 뒤) → 새 state. `POST /api/agent/undo {"thread", "proposal"}` → 되돌림. `POST /api/agent/clear` → 대화 기록 지우기.
+- CLI: `lms-agent ask "기말고사 날짜가 안 보여요" [--course ID]` — 같은 작업을 터미널에서(제안 목록 출력, `--apply N`으로 반영).
+
+### 20-2. 찾을 글 고르기(검색, AI 없이도)
+- `agent.search(store, message, course_id=None, limit=…)`: 과목 이름(짧은 이름·별칭), 평가 낱말(기말·final·quiz·과제·LAB…), 날짜 낱말, 점수 낱말(점수·성적·score·평균)로 이 PC의 글(`core._sources` 전체 + `pdf_texts`)을 점수 매겨 가장 관련 있는 문단을 고른다. 결과 `[{"source_key", "type", "title", "posted_at", "course_id", "snippet", "dates": [...]}]`.
+- AI가 꺼져 있으면 이 검색 결과를 그대로 답으로: "이런 글을 찾았어요" + 문단 + 날짜가 있으면 [마감 후보로 넣기](사용자가 날짜를 확인하고 넣는 직접 붙여넣기와 같은 길).
+
+### 20-3. AI 작업 `assist` (agent_cli 하네스)
+- 입력: 사용자 메시지(가리기), 과목 목록(짧은 이름·id), 지금 상태 요약(그 과목의 항목 제목·마감·상태, 평가 항목·비중, 점수 후보와 연결 상태, 학점 비율 출처), 20-2 검색 결과 문단(가리기, 12,000자 예산 안에서). 출력 스키마:
+  `{"answer": 한국어 2~6문장, "proposals": [{"type", "course_id", "evidence": 보낸 글 그대로 인용, "source_key", "reason", …type별 칸}]}`
+  type: `add_deadline`(title, due, kind 과제|시험, method?), `fix_due`(item_id, due), `link_score`(candidate key, component), `set_count`(component, n), `set_weights`(components[{name, weight}]), `set_dist`(groups 16장 모양), `note`(반영할 것 없이 설명만).
+- 검증(통과한 것만 [반영] 가능, 아니면 `rejected_reason`과 함께 보여 주되 단추 없음): evidence가 보낸 글에 그대로 있음 · course_id가 실제 과목 · due가 파싱되고 evidence의 날짜(`extract.find_dates`, 게시일 기준)와 ±1일 · item_id·candidate key·component가 실제로 있음 · 비중 합 100±1 · 학점 비율은 `distribution.from_groups` 검사 · 같은 마감이 이미 있으면 `add_deadline` 거절("이미 있어요: …").
+- 한도: 하루 30회(12장 `AiSession` 하루 한도를 같이 씀), 한 번에 2회 시도·90초. 기록은 `ai_runs`(내용 없음).
+
+### 20-4. 반영
+- `add_deadline` → 찾은 항목처럼 `origin: "found"` 새 항목(근거 = 그 글의 인용·출처·게시일, `found_by: "ai"`), 사용자가 [반영]을 눌렀으므로 `decision: "approved"`, `decided_by: "ai"`, `ai_reason` = 이유 + 근거. 다음 동기화가 다시 만들어도 사라지지 않게 `store.data["agent_items"]`에 남기고 `build_items`가 함께 합친다(같은 마감을 규칙이 찾으면 하나로).
+- `fix_due` → `update_user(id, {"due"}, by="ai", reason)`. `link_score` → `grade_links_ai`(사용자 연결이 이김). `set_count` → `grade_counts_ai`. `set_weights`/`set_dist` → 자동 칸(`auto`/`dist_auto`)으로, 사용자가 정한 값은 덮지 않음.
+- 되돌리기: 반영 전 값으로(항목은 지움, 연결·개수·비중은 이전 값).
+
+### 20-5. 규칙이 놓친 사례 기록(규칙 개선용, 선택)
+- AI 제안이 반영되면 `store.data["missed_cases"]`에 `{at, type, source_type, evidence(가린 문장), rule_version}`를 남긴다(이름·이메일·학번은 가림). 설정 → AI에 "놓친 사례 N개 · [파일로 저장]"(JSON) — 사용자가 원할 때만 개발자에게 보내 규칙을 일반화하는 데 쓴다. 자동으로 보내지 않는다.
+
+### 20-6. 구현 결과 (서버·화면, v0.6.1)
+- 파일: `agent.py`(검색·작업 연결·검증·반영/되돌리기·놓친 사례·대화 기록), `features/agent.py`(요청·state), 화면은 `index.html`의 사이드바 "에이전트에게 묻기" + 오른쪽 창.
+- `POST /api/agent/ask` → `{"job", "agent"}`(400: 빈 글·500자 넘음·모르는/숨긴 과목, 409: 다른 질문이 도는 중). `GET /api/agent/missed-cases`(세션 값 필요, JSON 첨부).
+- `state.agent` 추가: `available`(AI CLI 있음), `missed_cases`(개수), `limits = {per_day, per_ask, timeout, max_chars, max_message}`. 대화: `results`(검색 결과 — `dates: [{date, phrase, relative}]`, `score`, `url`), `finished_at`, `attempts`, `notes`. AI가 실패하거나 하루 한도면 `status: "done"`, `by: "rules"`, 이유는 `error`.
+- 제안 공통 칸: `type, by, course_id, course_short, evidence(가리지 않은 원문), source_key, source_type, source_title, posted_at, url, reason, summary, rejected_reason, can_apply, applied, applied_at, undone_at, result({item_id} 또는 {}), notes, date_basis`. 종류별: add_deadline `title, kind, method, due` · fix_due `item_id, due, item_title` · link_score `key, component, score_label` · set_count `component, n` · set_weights `components` · set_dist `dist_kind, groups, cutoffs, dist`.
+- Item 추가: `found_by: "ai"|"rules"|null`, `agent_ref: {thread, proposal} | null`(항목 카드의 [되돌리기]가 `/api/agent/undo`를 부름). 되돌리기는 반영 뒤 사용자가 그 항목을 바꿨으면 409(사용자 쪽이 이김 — 마감 추가·고치기 모두).
+- 규칙 모드의 [마감 후보로 넣기]는 확인함의 확인 필요 후보(`found_by: "rules"`), AI 제안만 승인 상태로. 놓친 사례는 규칙 모드 반영도 기록(`by`).
+- 제목은 근거 문장에서만 정한다(질문 낱말로 정하지 않음 — "기말고사 날짜가 안 보여요"에 LAB4 문장이면 'LAB 4').
+- 검색 점수: 질문 주제(기말·퀴즈·LAB…)가 글의 제목이나 본문에 있으면 같은 무게, 주제가 있는 질문에서는 그 주제가 있거나 마감·시험 문장인 문단만 날짜 가산(강의 슬라이드 첫 장 날짜가 위로 오지 않게), 점수 질문은 제목의 점수 낱말도 가산. 실제 데이터: '로봇공학개론 기말고사 날짜' → '기말고사 공지', 'ASIC 퀴즈 일정' → 'Announcement about Midterm Week'.
+- CLI: `lms-agent ask "<질문>" [--course ID] [--apply N]`(N은 출력된 1부터 번호). 데모: ASIC 공지 'Final week schedule'("The final will be held on … at 10:30") — 규칙은 맨 'final'을 시험으로 읽지 않아 날짜 미공지로 남고, 묻기로 찾는다.

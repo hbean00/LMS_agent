@@ -78,10 +78,179 @@ def _decide(text: str) -> dict:
     return {"decisions": decisions, "skipped": []}
 
 
+# ---------------------------------------------------------------- assist(에이전트에게 묻기, 계약 20장)
+# 보낸 글(찾은 글·지금 상태)만 읽고 규칙으로 답한다. 근거는 보낸 글에서 그대로 잘라 쓴다(하네스 검증을 통과해야 하므로).
+# 이유는 정직하게: 무엇을 보고 그렇게 봤는지만 말하고, 상대 날짜는 계산했다고 한다.
+
+ASSIST_MARK = "사용자 요청 / user request:"
+_ITEM = re.compile(r"^- item_id (\S+) \| (.*?) \| (\S+) \| due (\S+) \| (\S+)")
+_COMP = re.compile(r"^- (.+?) ([\d.]+)% \| 일정/dates: (\w+)")
+_CAND = re.compile(r"^- key (\S+) \| 라벨/label: (.*?) \| 출처/source: (.*?) \| 연결/linked: (.*?)(?: \| 글/text: (.*))?$")
+_WEEK = re.compile(r"\(주차/week (\d+)\)")
+_TERM = re.compile(r"^학기 / term: (\d+)주차 / (\d+)주")
+
+
+def _parse_assist(text: str) -> dict:
+    msg = text.split(ASSIST_MARK, 1)[1].split("\n", 2)[1].strip()
+    state_part = text.split("지금 상태 / current state:", 1)[-1].split("찾은 글 / found texts", 1)[0]
+    found_part = text.split("찾은 글 / found texts", 1)[-1].split("=== 입력 글 끝", 1)[0]
+    courses: dict = {}
+    total, cur, sect = None, None, None
+    for line in state_part.splitlines():
+        m = _TERM.match(line)
+        if m:
+            total = int(m.group(2))
+        if line.startswith("## course_id "):
+            cid, _, short = line[len("## course_id "):].partition(" · ")
+            cur = courses.setdefault(cid.strip(), {"short": short.strip(), "items": [], "comps": [], "cands": []})
+            sect = None
+        elif cur is not None and line.startswith("평가 항목 / grading components"):
+            sect = "comps"
+        elif cur is not None and line.startswith("점수 후보"):
+            sect = "cands"
+        elif cur is not None and line.startswith("- item_id "):
+            m = _ITEM.match(line)
+            if m:
+                cur["items"].append({"id": m.group(1), "title": m.group(2), "kind": m.group(3), "due": m.group(4),
+                                     "status": m.group(5)})
+        elif cur is not None and sect == "comps" and _COMP.match(line):
+            m = _COMP.match(line)
+            cur["comps"].append({"name": m.group(1), "weight": float(m.group(2)), "dates": m.group(3)})
+        elif cur is not None and sect == "cands" and _CAND.match(line):
+            m = _CAND.match(line)
+            wk = _WEEK.search(m.group(3))
+            cur["cands"].append({"key": m.group(1), "label": m.group(2), "source": m.group(3),
+                                 "linked": not m.group(4).startswith("없음"), "text": m.group(5),
+                                 "week": int(wk.group(1)) if wk else None})
+    snippets = []
+    for block in found_part.split("\n### source_key: ")[1:]:
+        head, _, body = block.partition("\n")
+        meta, _, rest = body.partition("\n")
+        f = dict(x.split(": ", 1) for x in meta.split(" | ") if ": " in x)
+        snippets.append({"key": head.strip(), "course_id": f.get("course_id"), "posted": f.get("게시/posted", ""),
+                         "title": f.get("제목/title", ""), "text": rest.strip()})
+    return {"message": msg, "courses": courses, "snippets": snippets, "weeks_total": total}
+
+
+def _assist_deadlines(p: dict, fam_q: set) -> tuple[list, list]:
+    from . import links as lk
+    from .extract import find_time, split_sentences, title_hint
+    props, said = [], []
+    for sn in p["snippets"]:
+        st = p["courses"].get(sn["course_id"] or "")
+        if st is None:
+            continue
+        try:
+            ref = date.fromisoformat(sn["posted"][:10])
+        except ValueError:
+            continue
+        for sentence in split_sentences(sn["text"]):
+            hits = [h for h in find_dates(sentence, ref) if not h.relative] or find_dates(sentence, ref)
+            fam_s = lk.families(sentence) | lk.families(sn["title"])
+            if not hits or (fam_q and not fam_q & fam_s):
+                continue
+            h = hits[0]
+            if any(it["due"][:10] == h.day.isoformat() for it in st["items"]):
+                said.append(f"{st['short']}의 {h.day.month}/{h.day.day} 일정은 이미 앱에 있어요.")
+                break
+            t, _ = find_time(sentence[h.end:])
+            exam = bool(fam_s & {"quiz", "exam", "midterm", "final"}) and not fam_s & {"project", "report", "hw", "lab"}
+            kind = "시험" if exam else "과제"
+            fam_line = lk.families(sentence)
+            comp = [c["name"] for c in st["comps"] if c["dates"] == "not_announced" and lk.families(c["name"]) & fam_line
+                    and lk.families(c["name"]) & set(lk.TERM) <= fam_line and lk.is_exam_component(c["name"]) == exam]
+            # 제목은 근거 문장에서만(질문의 낱말을 제목으로 쓰지 않는다)
+            title = comp[0] if len(comp) == 1 else (title_hint(sentence, kind) or ("시험" if exam else "마감 후보"))
+            hm = f"T{t:%H:%M}:00" if t else "T23:59:00"
+            if h.relative:
+                reason = "상대 날짜라 게시일 기준으로 계산한 날짜예요 — 맞는지 확인해 주세요"
+            elif exam and not fam_s & {"quiz", "exam"}:
+                m = next((re.search(lk.FAMILY_RX[f], sentence, re.I) for f in ("final", "midterm")
+                          if re.search(lk.FAMILY_RX[f], sentence, re.I)), None)
+                word = m.group(0) if m else "시험"
+                reason = (f"글에 '{word}'만 적혀 있어 규칙이 시험 일정으로 읽지 못한 것 같아요(날짜는 글에 적힌 그대로)")
+            else:
+                reason = "글에 날짜가 적혀 있지만 마감 낱말이 없어 규칙이 놓친 것 같아요(날짜는 글에 적힌 그대로)"
+            props.append({"type": "add_deadline", "course_id": sn["course_id"], "source_key": sn["key"],
+                          "evidence": sentence.strip()[:300], "title": title, "kind": kind,
+                          "due": h.day.isoformat() + hm, "reason": reason})
+            said.append(f"{st['short']} '{sn['title']}' 글의 \"{sentence.strip()[:60]}\"에 날짜가 있어요 — {reason}.")
+            break
+        if len(props) >= 2:
+            break
+    return props, said
+
+
+def _assist_scores(p: dict) -> tuple[list, list]:
+    from . import links as lk
+    from .extract import split_sentences
+    props, said = [], []
+    half = (p["weeks_total"] or 16) / 2
+    for cid, st in p["courses"].items():
+        loose = [c for c in st["cands"] if not c["linked"]]
+        if st["cands"] and not st["comps"]:
+            said.append(f"'{st['short']}'에는 평가 항목(비중)이 없어서 점수를 성적 계산에 넣을 곳이 없어요 — "
+                        "강의 글에서 비중을 못 찾았어요. 비중이 적힌 글이 있으면 붙여 넣거나 성적 화면에서 직접 넣어 주세요.")
+            continue
+        for c in loose[:2]:
+            fam = lk.families(c["label"]) | lk.families(c["source"])
+            comps = [x["name"] for x in st["comps"] if lk.families(x["name"]) & fam - set(lk.TERM)]
+            # 점수 문장이 든 찾은 글(같은 메시지·공지)의 다른 문장이 학기 시점을 말해 주는지
+            sn = next((x for x in p["snippets"] if c["text"] and c["text"][:40] in x["text"]), None)
+            term_line = next((ln for ln in split_sentences(sn["text"]) if lk.families(ln) & set(lk.TERM)), None)                 if sn else None
+            said_term = lk.families(term_line or "") & set(lk.TERM)
+            quote = None
+            if len(comps) > 1 and len(said_term) == 1:
+                term = next(iter(said_term))
+                comps = [x for x in comps if term in lk.families(x)] or comps
+                why = "같은 글에 학기 시점 낱말이 있어서"
+                quote = term_line.strip()[:200]
+            elif len(comps) > 1 and c["week"]:
+                term = "midterm" if c["week"] <= half else "final"
+                comps = [x for x in comps if term in lk.families(x)] or comps
+                why = f"점수 글이 학기 {'앞' if term == 'midterm' else '뒤'}쪽({c['week']}주차)에 올라와 짐작하건대"
+            else:
+                why = "라벨의 낱말이 이 항목과 같아서"
+            if len(comps) != 1:
+                said.append(f"'{st['short']}'의 점수 '{c['label']}'은(는) 어느 평가 항목인지 글만으로는 모르겠어요.")
+                continue
+            quote = quote or (c["text"] or "")[:80].strip() or c["label"]
+            props.append({"type": "link_score", "course_id": cid, "key": c["key"], "component": comps[0],
+                          "evidence": quote, "reason": f"{why} '{comps[0]}'로 보여요 — 확인해 주세요"})
+            said.append(f"'{st['short']}'의 점수 '{c['label']}'이(가) 평가 항목에 연결되지 않아 성적에 안 들어갔어요. "
+                        f"{why} '{comps[0]}'에 연결하는 제안을 드려요.")
+    return props, said
+
+
+def _assist(text: str) -> dict:
+    from . import links as lk
+    from .agent import DATE_WORDS, SCORE_WORDS
+    p = _parse_assist(text)
+    fam_q = lk.families(p["message"])
+    props, said = [], []
+    if DATE_WORDS.search(p["message"]) or fam_q:
+        a, b = _assist_deadlines(p, fam_q)
+        props += a
+        said += b
+    if SCORE_WORDS.search(p["message"]):
+        a, b = _assist_scores(p)
+        props += a
+        said += b
+    if not said:
+        said = ["보내 준 글에서 질문과 맞는 날짜나 점수 문장을 찾지 못했어요.",
+                "과목 이름이나 다른 낱말(예: final, quiz, 과제 이름)로 다시 물어봐 주세요."]
+    n = len(p["snippets"])
+    head = f"찾은 글 {n}개를 읽었어요." if n else "이 질문과 관련된 글이 보내지지 않았어요."
+    tail = ["[반영]을 누르기 전에 날짜와 항목이 맞는지 확인해 주세요."] if props else []
+    return {"answer": " ".join([head] + said[:3] + tail), "proposals": props[:6]}
+
+
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """triage_review만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지 못함'으로 답한다
+    """triage_review·assist만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지 못함'으로 답한다
     (데모는 규칙이 찾는다)."""
-    if "### id: " in (input or ""):
+    if ASSIST_MARK in (input or ""):   # assist(에이전트에게 묻기)
+        model = json.dumps(_assist(input), ensure_ascii=False)
+    elif "### id: " in (input or ""):
         model = json.dumps(_decide(input), ensure_ascii=False)
     elif "### key: " in (input or ""):   # map_score_item: 모르면 null
         keys = re.findall(r"^### key: (.+)$", input, re.M)

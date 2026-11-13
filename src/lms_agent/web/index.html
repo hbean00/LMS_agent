@@ -960,6 +960,109 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 .update-banner { flex-wrap: wrap; align-items: center; }
 .update-banner p { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-top: 0; }
 .update-banner .upd-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* ---------- 에이전트에게 묻기(계약 20장): 사이드바 입구 + 오른쪽 서랍 ---------- */
+.side-ask { margin-top: -12px; display: grid; }
+.ask-btn {
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%; height: 46px; padding: 0 12px;
+  border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--paper); color: var(--ink);
+  font: inherit; font-size: 15.5px; font-weight: 600; text-align: left; cursor: pointer; white-space: nowrap;
+}
+.ask-btn:hover { background: var(--desk); border-color: var(--control); }
+.ask-btn .ico { width: 20px; height: 20px; color: var(--burgundy); stroke-width: 1.9; }
+.ask-btn .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ask-state { margin-left: auto; flex: none; }
+.ask-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--burgundy); box-shadow: 0 0 0 2px var(--paper); }
+.ag-spin { display: inline-block; width: 16px; height: 16px; flex: none; border: 2px solid var(--rule-strong); border-top-color: var(--burgundy); border-radius: 50%; animation: spin 1.6s linear infinite; }
+.ask-state.ag-spin { width: 14px; height: 14px; }
+.drawer {
+  position: fixed; inset: 0 0 0 auto; width: min(520px, calc(100vw - 24px)); max-width: none; height: 100%; max-height: none;
+  margin: 0; padding: 0; border: 0; border-left: 1px solid var(--panel-line); border-radius: 0;
+  background: var(--paper); color: var(--ink); box-shadow: -12px 0 32px rgba(31, 26, 28, .16); overflow: hidden;
+}
+.drawer[open] { display: flex; flex-direction: column; animation: drawer-in .2s ease-out; }
+.drawer::backdrop { background: rgba(31, 26, 28, .3); }
+@keyframes drawer-in { from { transform: translateX(28px); opacity: 0; } }
+.ag-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 64px; padding: 10px 12px 10px 22px; border-bottom: 1px solid var(--rule); }
+.ag-title { font-size: 19px; font-weight: 800; letter-spacing: -.015em; }
+.ag-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-right: auto; font-size: 13.5px; color: var(--graphite); }
+.ag-compose { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 22px; border-bottom: 1px solid var(--rule); }
+.ag-compose > .help { font-size: 14px; }
+.ag-row { display: flex; align-items: center; gap: 10px; }
+.ag-lbl { font-size: 14.5px; font-weight: 700; }
+.ag-course { width: auto; min-width: 0; max-width: 100%; height: 36px; padding: 0 8px; font-size: 15px; }
+textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding: 9px 12px; border-radius: 10px; resize: vertical; font-size: 16px; line-height: 1.55; }
+.ag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-chip {
+  height: 30px; padding: 0 12px; border: 1px solid var(--rule-strong); border-radius: 15px; background: var(--paper);
+  color: var(--graphite); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.ag-chip:hover { border-color: var(--burgundy); color: var(--burgundy); }
+.ag-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ag-keys { font-size: 13px; color: var(--graphite); }
+.ag-count { margin-left: auto; font-size: 13.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.ag-count.is-near { color: var(--burgundy); font-weight: 700; }
+.ag-note { font-size: 13.5px; }
+.ag-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 22px; padding: 16px 22px 32px; }
+.ag-list:focus { outline: none; }
+.ag-list:focus-visible { outline: 2px solid var(--burgundy); outline-offset: -2px; }
+.ag-lhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; color: var(--graphite); }
+.ag-lhead > span:first-child { margin-right: auto; }
+.ag-lhead .linkish { font-size: 13.5px; }
+.ag-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.ag-thread + .ag-thread { padding-top: 22px; border-top: 1px solid var(--rule); }
+.ag-qbox { display: grid; justify-items: end; gap: 4px; }
+.ag-q { max-width: 88%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: var(--desk); font-size: 15.5px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+.ag-qmeta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 13px; color: var(--graphite); }
+.ag-run { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 15px; }
+.ag-run .help { flex-basis: 100%; padding-left: 26px; font-size: 13.5px; }
+.ag-since { font-size: 13.5px; color: var(--graphite); }
+.ag-a { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.ag-ahead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13.5px; color: var(--graphite); }
+.ag-rules { font-size: 14.5px; color: var(--graphite); }
+.ag-rules .linkish { font-size: 14.5px; }
+.ag-answer { font-size: 15.5px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+.ag-props, .ag-snips { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.ag-snips { list-style: none; margin: 0; padding: 0; }
+.ag-prop, .ag-snip { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--paper); }
+.ag-prop.is-ok { border-left: 4px solid var(--burgundy); padding-left: 12px; }
+.ag-prop.is-done { background: var(--desk); }
+.ag-prop.is-rej { border-style: dashed; }
+.ag-prop.is-rej .ag-vals, .ag-prop.is-rej .ag-quote { color: var(--graphite); }
+.ag-ptop { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.ag-pcourse { font-size: 14px; font-weight: 700; color: var(--graphite); }
+.ag-vals { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: 15.5px; }
+.ag-vt { font-size: 16.5px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; word-break: normal; }
+.ag-vrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-variant-numeric: tabular-nums; }
+.ag-vrow b { font-weight: 700; }
+.ag-cur { font-size: 14px; color: var(--graphite); }
+.ag-wlist { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.ag-quote { margin: 0; padding-left: 10px; border-left: 2px solid var(--rule-strong); font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; max-height: 10em; overflow: auto; }
+.ag-prop .src-line, .ag-snip .src-line { font-size: 14px; }
+.ag-why { font-size: 14.5px; color: var(--graphite); }
+.ag-why b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+.ag-rej { font-size: 14.5px; color: var(--muted); }
+.ag-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ag-done { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 14.5px; }
+.ag-done > b { display: inline-flex; align-items: center; gap: 4px; color: var(--burgundy); font-weight: 700; }
+.ag-done .linkish { font-size: 14.5px; }
+.ag-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13.5px; color: var(--graphite); }
+.ag-empty { display: flex; align-items: flex-start; gap: 14px; padding: 4px 0; }
+.ag-empty-t { font-size: 16.5px; font-weight: 800; letter-spacing: -.01em; }
+.ag-empty .help { margin-top: 4px; }
+.ag-ask { font-size: 14.5px; }
+.miss-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 15.5px; }
+.miss-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (max-width: 1023px) {
+  .side-ask { margin-top: -6px; justify-items: center; }
+  .ask-btn { width: 46px; padding: 0; justify-content: center; }
+  .ask-btn .ico { width: 21px; height: 21px; }
+  .ask-state { position: absolute; top: 4px; right: 4px; margin: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-spin { animation: none; border-right-color: var(--burgundy); }
+  .drawer[open] { animation: none; }
+}
 </style>
 </head>
 <body>
@@ -979,6 +1082,9 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       <a href="#inbox" data-view="inbox" title="확인함"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13l2.5-7h11L20 13"/><path d="M4 13v6h16v-6"/><path d="M4 13h4.5a3.5 3.5 0 0 0 7 0H20"/></svg><span class="nav-label">확인함</span><span id="nav-count" class="nav-count" hidden>0</span></a>
       <a href="#settings" data-view="settings" title="설정"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9"/><path d="M17 7h3"/><path d="M15 5v4"/><path d="M4 17h3"/><path d="M11 17h9"/><path d="M9 15v4"/></svg><span class="nav-label">설정</span></a>
     </nav>
+    <div id="side-ask" class="side-ask" hidden>
+      <button id="ask-btn" class="ask-btn" type="button" aria-haspopup="dialog" title="에이전트에게 묻기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-8l-4.5 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M8 9h8"/><path d="M8 12h5"/></svg><span class="nav-label">에이전트에게 묻기</span><span id="ask-state" class="ask-state" aria-hidden="true" hidden></span></button>
+    </div>
     <div class="side-foot">
       <div id="side-account" class="side-line" hidden></div>
       <div id="side-google" class="side-line"></div>
@@ -1227,6 +1333,34 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 
 <dialog id="cele-dlg" class="dlg cele" aria-labelledby="cele-title" aria-describedby="cele-desc"></dialog>
 <dialog id="pick-dlg" class="dlg pickbox" aria-labelledby="pick-title" aria-describedby="pick-desc"></dialog>
+
+<!-- 에이전트에게 묻기(계약 20장): 규칙이 놓친 것을 말로 짚으면 모아 둔 글에서 근거와 함께 제안 -->
+<dialog id="agent-dlg" class="drawer" aria-labelledby="agent-title" aria-describedby="agent-desc">
+  <div class="ag-head">
+    <h2 id="agent-title" class="ag-title">에이전트에게 묻기</h2>
+    <span id="agent-mode" class="ag-mode"></span>
+    <button id="agent-close" class="icon-btn" type="button" aria-label="닫기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+  </div>
+  <form id="agent-form" class="ag-compose" novalidate>
+    <p id="agent-desc" class="help">규칙이 놓친 마감·점수·평가 비중을 말로 짚어 주세요. 이 PC에 모아 둔 공지·게시판·메시지·강의계획서에서 근거를 찾아 제안해요.</p>
+    <div class="ag-row">
+      <label class="ag-lbl" for="agent-course">과목</label>
+      <select id="agent-course" class="input ag-course"></select>
+    </div>
+    <label class="sr-only" for="agent-text">에이전트에게 물을 내용</label>
+    <textarea id="agent-text" class="input ag-input" rows="3" maxlength="500" placeholder="예) 기말고사 날짜가 안 보여요" autocomplete="off" aria-describedby="agent-keys agent-count"></textarea>
+    <div id="agent-chips" class="ag-chips" role="group" aria-label="예시 질문(누르면 칸에 채워져요)"></div>
+    <div class="ag-bar">
+      <span id="agent-keys" class="ag-keys"><kbd>Enter</kbd> 보내기 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈</span>
+      <span id="agent-count" class="ag-count">0/500</span>
+      <button id="agent-send" class="btn btn-primary btn-sm" type="submit">묻기</button>
+    </div>
+    <p id="agent-note" class="help ag-note"></p>
+    <p id="agent-error" class="inline-error" role="alert" hidden></p>
+  </form>
+  <div id="agent-list" class="ag-list" role="region" aria-label="대화 기록" tabindex="0"></div>
+  <div id="agent-live" class="sr-only" role="status" aria-live="polite"></div>
+</dialog>
 
 <div id="tour" class="tour" hidden>
   <div class="tour-block"></div>
@@ -1640,7 +1774,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     return fetch(path, opts).then((res) => res.text().then((text) => {
       let data = null;
       if (text) { try { data = JSON.parse(text); } catch (e) { data = null; } }
-      if (!res.ok) throw new Error((data && typeof data.error === 'string' && data.error) || '요청이 실패했어요 (' + res.status + ')');
+      if (!res.ok) { const e = new Error((data && typeof data.error === 'string' && data.error) || '요청이 실패했어요 (' + res.status + ')'); e.status = res.status; throw e; }
       if (data === null) throw new Error('서버 응답을 읽지 못했어요.');
       return data;
     }), () => { throw new Error('LMS Agent에 연결하지 못했어요. 프로그램이 켜져 있는지 확인해 주세요.'); });
@@ -1677,7 +1811,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   const refresh = () => api('GET', '/api/state').then(applyState, () => {});
   // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking()));
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking() || agRunning()));
   function pollWhileBusy() {
     if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
@@ -1702,7 +1836,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       requestAnimationFrame(() => requestAnimationFrame(() => fg.setAttribute('stroke-dashoffset', c * (1 - opts.done / opts.total))));
     }
     t.appendChild(h('span', null, msg));
-    if (undo) t.appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => { hideToast(); undo(); } } }, '되돌리기'));
+    if (undo) t.appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-undo': '', on: { click: () => { hideToast(); undo(); } } }, '되돌리기'));
     toastMs = undo ? 10000 : opts.win ? 6000 : 4000;
     armToast();
   }
@@ -2390,7 +2524,8 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     return num(n.count) > 0 || (Array.isArray(n.items) && n.items.length > 0);
   }
   function maybePopups() {
-    if (cele.open || !state || !state.configured || setupPhase || syncing || state.syncing || tour.open) return;
+    // 에이전트 서랍이 열려 있으면 소식은 닫은 뒤에(창은 한 번에 하나)
+    if (cele.open || !state || !state.configured || setupPhase || syncing || state.syncing || tour.open || $('agent-dlg').open) return;
     const c = cel();
     if (!c) return;
     const key = String(state.last_sync || '');
@@ -3076,10 +3211,17 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       up.length > shownUp.length ? h('p', { class: 'help', style: 'margin-top:6px' }, '그 뒤 ' + (up.length - shownUp.length) + '개는 ', h('a', { href: '#semester' }, '학기'), '에서 볼 수 있어요.') : null,
       na.length === 1 ? h('p', { class: 'help', style: shownUp.length ? 'margin-top:12px' : null },
         h('b', { style: 'color:var(--ink);font-weight:600' }, [na[0].course_short, compName(na[0].course_id, na[0].component, na[0].weight)].filter(Boolean).join(' ')),
-        ' — 아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.') : null,
+        ' — 아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.', examAsk(na[0], true)) : null,
       na.length > 1 ? h('div', { class: 'ex-na' }, h('h3', { class: 'sub-h' }, '날짜 미공지 ' + na.length + '개'),
-        h('ul', null, na.slice(0, 6).map((x) => h('li', null, [x.course_short, compName(x.course_id, x.component, x.weight)].filter(Boolean).join(' ')))),
-        h('p', { class: 'help', style: 'margin-top:4px' }, '아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.')) : null);
+        h('ul', null, na.slice(0, 6).map((x) => h('li', null, [x.course_short, compName(x.course_id, x.component, x.weight)].filter(Boolean).join(' '), examAsk(x, false)))),
+        h('p', { class: 'help', style: 'margin-top:4px' }, '아직 날짜 공지가 없어요. 올라오면 알려 드릴게요.' + (agState() ? ' 공지가 있었는데 못 찾은 것 같으면 에이전트에게 물어보세요.' : ''))) : null);
+  }
+  // 날짜 미공지 시험: 공지를 놓친 것 같으면 에이전트에게 바로 묻기(과목·항목을 채운 채로 서랍을 연다)
+  function examAsk(x, long) {
+    if (!agState() || !x || !x.component) return null;
+    const label = [x.course_short, x.component].filter(Boolean).join(' ');
+    return [' ', h('button', { type: 'button', class: 'linkish ag-ask', 'data-key': 'exask-' + x.course_id + '-' + x.component, 'aria-label': label + ' 날짜를 에이전트에게 묻기',
+      on: { click: () => openAgent({ text: x.component + ' 날짜가 안 보여요', course_id: x.course_id }) } }, long ? '못 찾은 것 같으면 묻기' : '묻기')];
   }
   function resultText(r) {
     return '추가 ' + num(r.created) + ' · 수정 ' + num(r.updated) + ' · 유지 ' + num(r.unchanged) + ' · 삭제 ' + num(r.deleted);
@@ -4528,7 +4670,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         h('span', { class: 'rc-course' }, courseLabel(it)),
         cg && it.newest ? tag('최근 글', 'accent', '같은 과제의 후보 중 가장 최근 글에서 찾은 날짜예요') : null,
         isNew(it) ? tag('New', 'new', '마지막 확인에서 처음 찾은 마감이에요') : null,
-        aiChip(it), examTag(it), confTag(it.confidence)),
+        aiChip(it), agentTag(it), examTag(it), confTag(it.confidence)),
       titleIn,
       h('div', { class: 'rc-due' }, dueIn, dday, when, methodTag(it, true),
         it.edited ? tag(od ? '직접 고침 (원문 ' + fmtMD(od) + ')' : '직접 고침', 'quiet', od ? '원래 글의 마감: ' + fmtShortDT(od) : null) : null,
@@ -4679,10 +4821,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
           }
           return h('li', { class: 'done-row', id: 'item-' + it.id, 'data-item': it.id },
             h('div', null, h('div', { class: 'side-title' }, it.title || ''),
-              h('div', { class: 'side-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null, methodTag(it, false), aiChip(it)),
+              h('div', { class: 'side-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null, methodTag(it, false), aiChip(it), agentTag(it)),
               aiNote(it, false), compLine(it)),
-            h('div', null, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'undo-' + it.id,
-              on: { click: () => itemPost(it, { decision: 'pending' }, (it.decided_by === 'ai' ? 'AI가 한 결정을 되돌렸어요 · ' : '확인함으로 되돌렸어요 · ') + (it.title || '')) } }, it.decided_by === 'ai' ? '되돌리기' : '확인 전으로')),
+            // 에이전트로 넣거나 고친 마감은 반영 전으로(agent_ref), 그 밖에는 결정만 확인 전으로
+            h('div', null, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'undo-' + it.id, title: agentRef(it) ? '반영 전으로 되돌려요' : null,
+              on: { click: () => (agentRef(it) ? undoAgentItem(it) : itemPost(it, { decision: 'pending' }, (it.decided_by === 'ai' ? 'AI가 한 결정을 되돌렸어요 · ' : '확인함으로 되돌렸어요 · ') + (it.title || ''))) } },
+              it.decided_by === 'ai' || agentRef(it) ? '되돌리기' : '확인 전으로')),
             miniChain(it),
             repBox,
             errLine(it));
@@ -4947,6 +5091,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
         (lt.ok === false ? String(lt.error || '실패') : triageText(lt)) + (lt.note ? ' ' + lt.note : '')) : null,
       A.last_error ? h('p', { class: 'inline-error', style: 'margin-top:6px' }, String(A.last_error)) : null,
       aiError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:6px' }, aiError) : null,
+      missedBlock(),
       runs.length ? [h('h3', { class: 'sub-h', style: 'margin-top:12px' }, 'AI 실행 기록'),
         h('ul', { class: 'ai-runs' }, runs.slice(0, 5).map((r) => {
           const d = parseDate(r.at || r.finished_at || r.started_at);
@@ -5007,10 +5152,49 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   function aiChip(it) {
     return it.decided_by === 'ai' ? tag('AI', 'ai', it.ai_reason ? 'AI가 정리함: ' + it.ai_reason : 'AI가 정리함') : null;
   }
+  // 에이전트에게 묻기로 넣거나 고친 항목(계약 20-4): 서버가 agent_ref {thread, proposal}을 주면 되돌리기는 반영 전 값으로(추가는 지움, 고침은 원래 마감)
+  const agentRef = (it) => (it && it.agent_ref && typeof it.agent_ref === 'object' && it.agent_ref.thread !== undefined && it.agent_ref.thread !== null
+    && it.agent_ref.proposal !== undefined && it.agent_ref.proposal !== null ? it.agent_ref : null);
+  const agentTag = (it) => (it.found_by === 'ai' ? tag('에이전트가 찾음', 'quiet', '‘에이전트에게 묻기’에서 근거와 함께 찾은 마감이에요') : null);
+  function agentRefType(ref) {
+    const A = agState();
+    const t = A && Array.isArray(A.threads) ? A.threads.find((x) => x && String(x.id) === String(ref.thread)) : null;
+    const p = t && Array.isArray(t.proposals) ? t.proposals[ref.proposal] : null;
+    return p ? p.type : null;
+  }
+  function undoAgentItem(it) {
+    const ref = agentRef(it);
+    if (!ref || busyItems.has(it.id)) return;
+    const type = agentRefType(ref);
+    busyItems.add(it.id);
+    cardErrors.delete(it.id);
+    markBusy(it.id, true);
+    post('/api/agent/undo', { thread: ref.thread, proposal: ref.proposal }).then((s) => {
+      busyItems.delete(it.id);
+      applyState(s);
+      toast(type === 'fix_due' ? '마감을 원래 날짜로 되돌렸어요 · ' + (it.title || '')
+        : type === 'add_deadline' ? '에이전트가 넣은 마감을 지웠어요 · ' + (it.title || '') : '되돌렸어요 · ' + (it.title || ''));
+    }, (err) => {
+      busyItems.delete(it.id);
+      if (err.status === 409) {
+        render();
+        toast('그 사이 직접 고친 항목이라 되돌리지 않았어요. 카드에서 직접 고쳐 주세요.');
+        refresh();
+        return;
+      }
+      cardErrors.set(it.id, '되돌리지 못했어요. ' + err.message);
+      render();
+    });
+  }
   function aiNote(it, withUndo) {
-    if (it.decided_by !== 'ai') return null;
-    return h('p', { class: 'ai-note' }, h('span', null, 'AI ' + (it.decision === 'approved' ? '승인' : it.decision === 'rejected' ? '제외' : '정리') + (it.ai_reason ? ': ' + it.ai_reason : '')),
-      withUndo && it.decision !== 'pending' ? h('button', { type: 'button', class: 'linkish', 'data-key': 'aiundo-' + it.id, on: { click: () => itemPost(it, { decision: 'pending' }, 'AI가 한 결정을 되돌렸어요: ' + (it.title || '')) } }, '되돌리기') : null);
+    const ref = agentRef(it);
+    if (it.decided_by !== 'ai' && !ref) return null;
+    const what = it.decided_by === 'ai' ? 'AI ' + (it.decision === 'approved' ? '승인' : it.decision === 'rejected' ? '제외' : '정리') + (it.ai_reason ? ': ' + it.ai_reason : '')
+      : '‘에이전트에게 묻기’로 넣은 후보예요';
+    const undo = !withUndo ? null : ref ? () => undoAgentItem(it)
+      : it.decision !== 'pending' ? () => itemPost(it, { decision: 'pending' }, 'AI가 한 결정을 되돌렸어요: ' + (it.title || '')) : null;
+    return h('p', { class: 'ai-note' }, h('span', null, what),
+      undo ? h('button', { type: 'button', class: 'linkish', 'data-key': 'aiundo-' + it.id, title: ref ? '반영 전으로 되돌려요' : null, on: { click: undo } }, '되돌리기') : null);
   }
   function renderAiBar(reviewN) {
     const bar = $('ai-bar');
@@ -5036,6 +5220,548 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
       if (s) applyState(s); else { render(); refresh(); }
       toast(triageText(res));
     }, (err) => { aiBusy = false; render(); toast(err.message); });
+  }
+
+  // ---------------------------------------------------------------- 에이전트에게 묻기(채팅, 계약 20장)
+  // 서버가 state.agent를 주지 않으면(예전 서버) 입구와 서랍을 숨기고 아무것도 하지 않는다
+  const agState = () => (state && state.agent && typeof state.agent === 'object' ? state.agent : null);
+  const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', note: '설명' };
+  const AG_EXAMPLES = ['기말고사 날짜가 안 보여요', 'LAB 점수가 성적에 안 들어가요', '이 과목 평가 비중이 이상해요', '마감 하나가 빠진 것 같아요'];
+  const AG_MAX = 500;
+  const ag = { opener: null, noRestore: false, sending: false, pending: null, job: null, busy: new Set(), errs: new Map(), applied: new Map(),
+    seen: new Map(), unread: false, confirmClear: false, clearing: false, clearErr: '', sig: '', courseSig: '', timer: 0, downOut: false };
+  const agentOpen = () => $('agent-dlg').open;
+  function agThreads() {
+    const A = agState();
+    const list = A && Array.isArray(A.threads) ? A.threads.filter((t) => t && t.id !== undefined && t.id !== null) : [];
+    return list.map((t, i) => ({ t, i })).sort((a, b) => (Date.parse(b.t.at) || 0) - (Date.parse(a.t.at) || 0) || b.i - a.i).map((x) => x.t);
+  }
+  const agRunning = () => { const A = agState(); return !!A && (!!A.busy || agThreads().some((t) => t.status === 'running')); };
+  const agKey = (t, i) => String(t.id) + ':' + i;
+  function agErr(text) { showMsg($('agent-error'), text); }
+  function agSay(text) { const l = $('agent-live'); l.textContent = ''; setTimeout(() => { l.textContent = text; }, 80); }
+  function openAgent(pre) {
+    if (!agState() || agentOpen() || !state.configured || setupPhase) return;
+    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open) return;   // 창은 한 번에 하나
+    pre = pre || {};
+    const ta = $('agent-text'), sel = $('agent-course');
+    ag.opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    ag.noRestore = false;
+    ag.unread = false;
+    agCourseOptions();
+    if (typeof pre.text === 'string') ta.value = pre.text.slice(0, AG_MAX);
+    // 과목: 넘겨받은 과목 > (새 질문이면) 지금 보는 과목(성적·과목 화면) > 그대로
+    let cid;
+    if (pre.course_id !== undefined) cid = pre.course_id;
+    else if (!ta.value.trim()) cid = view === 'grades' ? selGrade : view === 'courses' ? selCourse : null;
+    if (cid !== undefined) sel.value = cid !== null && Array.prototype.some.call(sel.options, (o) => o.value === String(cid)) ? String(cid) : '';
+    agErr('');
+    agCount();
+    ag.sig = '';
+    $('agent-dlg').showModal();
+    renderAgent();
+    ta.focus();
+    try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { /* 무시 */ }
+    agEntry();
+  }
+  function closeAgent() { const d = $('agent-dlg'); if (d.open) d.close(); }
+  // 다른 화면으로 가면서 닫기: 입구로 포커스를 돌려보내지 않는다(옮긴 화면이 포커스를 가져감)
+  function agLeave() { ag.noRestore = true; closeAgent(); }
+  $('agent-dlg').addEventListener('close', () => {
+    agTick();
+    ag.confirmClear = false;
+    const o = ag.opener;
+    ag.opener = null;
+    if (!ag.noRestore && o && document.contains(o) && o.getClientRects().length) o.focus({ preventScroll: true });
+    ag.noRestore = false;
+    agEntry();
+    setTimeout(() => { maybePopups(); maybeOfferTour(); maybeHandoff(); }, 0);
+  });
+  $('agent-dlg').addEventListener('cancel', (e) => {
+    if (ag.confirmClear) { e.preventDefault(); ag.confirmClear = false; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear"]'); if (b) b.focus(); }
+  });
+  // 바깥(어두운 곳)을 눌렀다 떼면 닫는다. 안에서 글을 고르다 밖에서 떼면 닫지 않는다
+  const agOutside = (e) => { const r = $('agent-dlg').getBoundingClientRect(); return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom; };
+  $('agent-dlg').addEventListener('mousedown', (e) => { ag.downOut = e.target === e.currentTarget && agOutside(e); });
+  $('agent-dlg').addEventListener('click', (e) => { if (ag.downOut && e.target === e.currentTarget && agOutside(e)) closeAgent(); ag.downOut = false; });
+  $('agent-close').addEventListener('click', closeAgent);
+  $('ask-btn').addEventListener('click', () => openAgent());
+  // 사이드바 입구: 답을 찾는 중이면 작은 고리, 닫힌 사이 답이 왔으면 점
+  function agEntry() {
+    const show = !!agState() && !!state && !!state.configured && !setupPhase;
+    $('side-ask').hidden = !show;
+    if (!show) return;
+    const run = agRunning();
+    const st = $('ask-state');
+    st.className = 'ask-state' + (run ? ' ag-spin' : ag.unread ? ' ask-dot' : '');
+    st.hidden = !run && !ag.unread;
+    $('ask-btn').setAttribute('aria-label', '에이전트에게 묻기' + (run ? ' (답을 찾는 중)' : ag.unread ? ' (확인 안 한 답 있음)' : ''));
+  }
+  function agCourseOptions() {
+    const list = (state.courses || []).filter((c) => c && c.id !== undefined && c.id !== null && c.mode !== 'hidden');
+    const sig = list.map((c) => c.id + '\u0001' + courseShort(c)).join('\n');
+    if (sig === ag.courseSig) return;
+    ag.courseSig = sig;
+    const sel = $('agent-course');
+    const prev = sel.value;
+    sel.replaceChildren(h('option', { value: '' }, '전체 과목'), ...list.map((c) => h('option', { value: String(c.id) }, courseShort(c))));
+    sel.value = prev && list.some((c) => String(c.id) === prev) ? prev : '';
+  }
+  function agCount() {
+    const n = $('agent-text').value.length;
+    const c = $('agent-count');
+    c.textContent = n + '/' + AG_MAX;
+    c.classList.toggle('is-near', n >= AG_MAX - 50);
+  }
+  const needsCourse = (text) => /이\s*과목/.test(text) && !$('agent-course').value;
+  for (const ex of AG_EXAMPLES) {
+    $('agent-chips').appendChild(h('button', { type: 'button', class: 'ag-chip', on: { click: () => {
+      const ta = $('agent-text');
+      ta.value = ex;
+      agCount();
+      agErr('');
+      if (needsCourse(ex)) { agErr('‘이 과목’이 어느 과목인지 위에서 골라 주세요.'); $('agent-course').focus(); return; }
+      ta.focus();
+      try { ta.setSelectionRange(ex.length, ex.length); } catch (e) { /* 무시 */ }
+    } } }, ex));
+  }
+  $('agent-text').addEventListener('input', () => { agCount(); if ($('agent-text').value.trim()) agErr(''); });
+  $('agent-course').addEventListener('change', () => agErr(''));
+  // Enter = 보내기, Shift+Enter = 줄바꿈. 한글 조합 중의 Enter는 글자를 확정할 뿐 보내지 않는다
+  $('agent-text').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    agSend();
+  });
+  $('agent-form').addEventListener('submit', (e) => { e.preventDefault(); agSend(); });
+  function agSend() {
+    if (!agState()) return;
+    const ta = $('agent-text');
+    const text = ta.value.trim();
+    const cid = $('agent-course').value || null;
+    if (!text) { agErr('물어볼 내용을 적어 주세요. 아래 예시를 눌러도 돼요.'); ta.focus(); return; }
+    if (text.length > AG_MAX) { agErr(AG_MAX + '자까지 적을 수 있어요. 조금만 줄여 주세요.'); ta.focus(); return; }
+    if (needsCourse(text)) { agErr('‘이 과목’이 어느 과목인지 위에서 골라 주세요.'); $('agent-course').focus(); return; }
+    if (ag.sending || agRunning()) { agErr('앞 질문의 답을 찾는 중이에요. 끝나면 이어서 물어봐 주세요.'); return; }
+    agErr('');
+    ag.sending = true;
+    ag.job = null;
+    ag.pending = { id: '__pending', at: new Date(nowMs()).toISOString(), message: text, course_id: cid, status: 'running' };
+    renderAgent();
+    agSay('질문을 보냈어요. 모아 둔 글에서 찾아보는 중이에요.');
+    const body = { message: text };
+    if (cid) body.course_id = cid;
+    post('/api/agent/ask', body).then((r) => {
+      ag.sending = false;
+      ag.job = r && r.job !== undefined && r.job !== null ? String(r.job) : null;
+      if (ag.job) ag.seen.set(ag.job, 'running');
+      ta.value = '';
+      agCount();
+      return refresh().then(() => {
+        if (!ag.job || agThreads().some((t) => String(t.id) === ag.job) || !agRunning()) ag.pending = null;
+        renderAgent();
+      });
+    }, (err) => {
+      ag.sending = false;
+      ag.pending = null;
+      agErr('묻지 못했어요. ' + err.message);
+      renderAgent();
+      ta.focus();
+    });
+  }
+  function agHead(A) {
+    const m = $('agent-mode');
+    m.replaceChildren();
+    const lim = A.limits && typeof A.limits === 'object' ? A.limits : null;
+    if (A.enabled) add(m, [tag('AI 켜짐', 'ai', 'AI가 모아 둔 글을 읽고 제안해요. 하네스가 원문 인용을 확인한 것만 반영할 수 있어요'),
+      lim && num(lim.per_day) ? h('span', { class: 'tnum' }, '오늘 ' + num(A.calls_today) + '/' + num(lim.per_day) + '번') : null]);
+    else m.appendChild(tag('규칙으로 찾기', 'quiet', 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요'));
+  }
+  function agBar(A) {
+    const wait = ag.sending || agRunning();
+    const send = $('agent-send');
+    send.setAttribute('aria-disabled', wait ? 'true' : 'false');
+    send.replaceChildren();
+    add(send, wait ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '찾는 중…'] : ['묻기']);
+    $('agent-note').textContent = wait ? '앞 질문의 답을 찾는 중이에요. 끝나면 이어서 물을 수 있어요.'
+      : A.enabled ? '보내면 질문과 관련 글 일부가 AI 서비스로 가요. 이메일·전화·학번·이름은 가린 뒤 보내요.'
+        : 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요. 밖으로 보내는 것은 없어요.';
+  }
+  // 답이 오면 알린다: 서랍이 열려 있으면 화면 낭독기로, 닫혀 있으면 입구에 점 + 알림
+  function agAnnounce(t) {
+    const props = Array.isArray(t.proposals) ? t.proposals : [];
+    const ok = props.filter((p) => p && p.type !== 'note' && !p.rejected_reason && p.ok !== false).length;
+    const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (ok ? ' 반영할 수 있는 제안 ' + ok + '개.' : '');
+    if (agentOpen()) { agSay(head + (t.status !== 'error' && t.answer ? ' ' + String(t.answer).slice(0, 160) : '')); return; }
+    ag.unread = true;
+    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open) return;   // 모서리 카드는 알림이 비켜 감(has-corner)
+    toast('에이전트가 ' + (t.status === 'error' ? '답을 못 찾았어요' : '답했어요') + (ok ? ' · 제안 ' + ok + '개' : ''));
+    $('toast').appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => { hideToast(); openAgent(); } } }, '보기'));
+    toastMs = 8000;
+    armToast();
+  }
+  // 찾는 중인 질문의 걸린 시간(1초마다, 열려 있을 때만)
+  function agTick() {
+    const need = agentOpen() && (agRunning() || !!ag.pending);
+    if (!need) { clearInterval(ag.timer); ag.timer = 0; return; }
+    const upd = () => document.querySelectorAll('#agent-list [data-ag-since]').forEach((el) => {
+      const t0 = Date.parse(el.getAttribute('data-ag-since'));
+      if (!t0) { el.textContent = ''; return; }
+      el.textContent = Math.max(0, Math.round((nowMs() - t0) / 1000)) + '초째';
+    });
+    upd();
+    if (!ag.timer) ag.timer = setInterval(() => { if (!agentOpen()) { agTick(); return; } upd(); }, 1000);
+  }
+  function renderAgent() {
+    agEntry();
+    const A = agState();
+    if (!A || !state.configured || setupPhase) { if (agentOpen()) closeAgent(); return; }
+    const threads = agThreads();
+    for (const t of threads) {
+      const id = String(t.id);
+      if (ag.seen.get(id) === 'running' && t.status !== 'running') agAnnounce(t);
+      ag.seen.set(id, t.status);
+    }
+    if (ag.pending && ag.job && threads.some((t) => String(t.id) === ag.job)) ag.pending = null;
+    agEntry();
+    if (!agentOpen()) { agTick(); return; }
+    agHead(A);
+    agBar(A);
+    agCourseOptions();
+    const sig = JSON.stringify([threads, ag.pending, A.enabled, [...ag.busy], [...ag.errs], [...ag.applied], ag.confirmClear, ag.clearing, ag.clearErr,
+      state.last_sync, state.items.length, ag.courseSig]);
+    if (sig !== ag.sig) {
+      ag.sig = sig;
+      const list = $('agent-list');
+      const a = document.activeElement;
+      const fk = a && list.contains(a) ? a.getAttribute('data-ak') : null;
+      const top = list.scrollTop;
+      list.replaceChildren();
+      add(list, [agListBody(A, threads)]);
+      list.scrollTop = top;
+      if (fk) {
+        const el = list.querySelector('[data-ak="' + CSS.escape(fk) + '"]');
+        (el || list).focus({ preventScroll: true });
+      }
+    }
+    agTick();
+  }
+  function agListBody(A, threads) {
+    const all = ag.pending ? [ag.pending].concat(threads) : threads;
+    if (!all.length) {
+      return h('div', { class: 'ag-empty' }, mascot('start', 64, { slot: 'agent' }),
+        h('div', null, h('p', { class: 'ag-empty-t' }, '놓친 구간이 있으면 말로 짚어 주세요'),
+          h('p', { class: 'help' }, '‘기말고사 날짜가 안 보여요’처럼 적으면 지나온 코스(이 PC에 모아 둔 공지·게시판·메시지·강의계획서)를 다시 달려 근거를 찾아 올게요. 일정이나 성적에 넣는 건 [반영]을 직접 눌러야만 해요.')));
+    }
+    const head = threads.length ? h('div', { class: 'ag-lhead' },
+      h('span', null, '최근 질문 ' + threads.length + '개'),
+      ag.confirmClear ? [h('span', null, '대화 기록만 지워요. 반영한 것은 그대로예요.'),
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-clear-no', on: { click: () => { ag.confirmClear = false; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear"]'); if (b) b.focus(); } } }, '취소'),
+        h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-ak': 'ag-clear-yes', 'aria-disabled': ag.clearing ? 'true' : null, on: { click: agClear } },
+          ag.clearing ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '지우는 중…'] : '지우기')]
+        : h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-clear', 'aria-disabled': agRunning() ? 'true' : null,
+          on: { click: () => { if (agRunning()) return; ag.confirmClear = true; ag.clearErr = ''; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear-no"]'); if (b) b.focus(); } } }, '대화 지우기'),
+      ag.clearErr ? h('p', { class: 'inline-error', role: 'alert', style: 'flex-basis:100%' }, ag.clearErr) : null) : null;
+    return [head, all.map((t) => agThread(A, t))];
+  }
+  function agThread(A, t) {
+    const c = t.course_id ? courseById(t.course_id) : null;
+    const running = t.status === 'running' || t === ag.pending;
+    let body;
+    if (running) {
+      body = h('div', { class: 'ag-run' }, h('span', { class: 'ag-spin', 'aria-hidden': 'true' }), h('span', null, '모아 둔 글에서 찾아보는 중이에요…'),
+        h('span', { class: 'ag-since', 'data-ag-since': t.at || '', 'aria-hidden': 'true' }),
+        h('p', { class: 'help' }, A.enabled ? '보통 몇십 초 걸려요. 창을 닫아도 계속 찾고, 답이 오면 메뉴에 점을 찍어 둘게요.' : '규칙으로 찾는 중이라 금방 끝나요.'));
+    } else if (t.status === 'error') {
+      body = h('div', { class: 'ag-a' }, h('p', { class: 'inline-error' }, '답을 찾다가 막혔어요.' + (t.error ? ' ' + String(t.error) : '')),
+        h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-retry-' + t.id, on: { click: () => agRetry(t) } }, '다시 묻기')));
+    } else body = agAnswer(A, t);
+    return h('article', { class: 'ag-thread', 'data-thread': String(t.id), 'aria-label': '질문: ' + String(t.message || '') },
+      h('div', { class: 'ag-qbox' }, h('p', { class: 'ag-q' }, String(t.message || '')),
+        h('p', { class: 'ag-qmeta' }, h('span', null, c ? courseShort(c) : '전체 과목'), parseDate(t.at) ? relEl(t.at) : null)),
+      body);
+  }
+  // 막힌 질문을 다시: 같은 글·과목으로 칸을 채운다(보내는 건 사용자가)
+  function agRetry(t) {
+    const ta = $('agent-text');
+    ta.value = String(t.message || '').slice(0, AG_MAX);
+    const sel = $('agent-course');
+    sel.value = t.course_id && Array.prototype.some.call(sel.options, (o) => o.value === String(t.course_id)) ? String(t.course_id) : '';
+    agCount();
+    ta.focus();
+  }
+  const agSnips = (t) => { const x = t.results || t.snippets || t.sources || t.hits; return Array.isArray(x) ? x.filter((s) => s && typeof s === 'object') : []; };
+  function agAnswer(A, t) {
+    const rules = t.by === 'rules';
+    const props = Array.isArray(t.proposals) ? t.proposals.filter((p) => p && typeof p === 'object') : [];
+    const snips = rules ? agSnips(t) : [];
+    const toAi = h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id, on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기');
+    return h('div', { class: 'ag-a' },
+      h('div', { class: 'ag-ahead' }, rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai'), num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
+      rules ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : 'AI 도움이 꺼져 있어 규칙으로 찾았어요.', ' ', A.enabled ? null : toAi) : null,
+      t.answer ? h('p', { class: 'ag-answer' }, String(t.answer))
+        : !props.length && !snips.length ? h('p', { class: 'ag-answer' }, '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.') : null,
+      props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null,
+      snips.length ? h('ul', { class: 'ag-snips', 'aria-label': '찾은 글' }, snips.map((s, i) => agSnip(t, s, i, props.some((p) => p.type === 'add_deadline' && p.source_key && p.source_key === s.source_key)))) : null);
+  }
+  // 서버의 applied(bool)가 기준. 다시 반영하면 undone_at이 남아 있어도 applied가 이긴다
+  function agApplied(t, p, i) {
+    if (typeof p.applied === 'boolean') return p.applied;
+    if (p.undone || p.undone_at) return false;
+    if (p.applied_at || p.status === 'applied') return true;
+    return ag.applied.get(agKey(t, i)) === true;
+  }
+  const agUndone = (t, p, i) => !agApplied(t, p, i) && (!!p.undone_at || ag.applied.get(agKey(t, i)) === false);
+  function agProp(t, p, i) {
+    const key = agKey(t, i);
+    const type = AG_TYPE[p.type] ? p.type : 'note';
+    const rej = p.rejected_reason ? String(p.rejected_reason) : '';
+    const applied = !rej && agApplied(t, p, i);
+    const can = type !== 'note' && !rej && p.ok !== false && (typeof p.can_apply === 'boolean' ? p.can_apply || applied : true);
+    const busy = ag.busy.has(key);
+    const err = ag.errs.get(key);
+    const c = p.course_id ? courseById(p.course_id) : null;
+    const src = agSource(t, p);
+    const ak = 'ag-act-' + key;
+    const rulesAdd = type === 'add_deadline' && (p.by === 'rules' || (!p.by && t.by === 'rules'));
+    let acts = null;
+    // 규칙이 찾은 날짜(AI 꺼짐)는 서버가 확인함의 '확인 필요' 후보로 넣는다(20-2: 사용자가 날짜·제목을 확인하고 넣는 길)
+    if (applied) {
+      acts = h('p', { class: 'ag-done' }, h('b', null, icon('check'), rulesAdd ? '확인함에 후보로 넣었어요' : '반영했어요'),
+        h('button', { type: 'button', class: 'linkish', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agApply(t, i, true) } }, busy ? '되돌리는 중…' : '되돌리기'),
+        agGoto(p) ? h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-go-' + key, on: { click: agGoto(p) } }, rulesAdd ? '확인함에서 보기' : '보러 가기') : null);
+    } else if (can) {
+      acts = h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn ' + (rulesAdd ? 'btn-line' : 'btn-primary') + ' btn-sm', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agApply(t, i, false) } },
+        busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), rulesAdd ? '넣는 중…' : '반영하는 중…'] : rulesAdd ? '마감 후보로 넣기' : '반영'),
+        rulesAdd ? h('span', { class: 'help' }, '확인함에서 날짜·제목을 확인하고 일정에 넣어요') : null,
+        agUndone(t, p, i) ? h('span', { class: 'help' }, '되돌렸어요') : null);
+    }
+    // 규칙 검색의 제목은 추정이라 날짜를 앞세우고 제목은 '추정'으로 밝힌다(확인함에서 고칠 수 있음)
+    const vals = rulesAdd ? h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vrow' }, agDue(p.due), p.kind === '시험' ? tag('시험', 'accent') : null),
+      p.title ? h('span', { class: 'ag-cur' }, '제목 추정: ' + String(p.title) + ' (확인함에서 고칠 수 있어요)') : null, agBasis(p)) : agVals(p, type);
+    const notes = (Array.isArray(p.notes) ? p.notes : []).filter(Boolean).map(String);
+    return h('section', { class: 'ag-prop' + (rej ? ' is-rej' : applied ? ' is-done' : can ? ' is-ok' : ''), 'aria-label': AG_TYPE[type] + ' 제안' },
+      h('div', { class: 'ag-ptop' }, tag(AG_TYPE[type], can || applied ? 'accent' : 'quiet'), c ? h('span', { class: 'ag-pcourse' }, courseShort(c)) : null),
+      vals || (p.summary ? h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vt' }, String(p.summary))) : null),
+      p.evidence ? h('blockquote', { class: 'ag-quote' }, String(p.evidence)) : null,
+      src ? srcLine(src) : null,
+      p.reason ? h('p', { class: 'ag-why' }, h('b', null, (p.by || t.by) === 'rules' ? '이유' : 'AI 이유'), String(p.reason)) : null,
+      notes.length ? h('p', { class: 'ag-why' }, notes.slice(0, 3).join(' · ')) : null,
+      rej ? h('p', { class: 'ag-rej' }, '반영할 수 없어요 · ' + rej) : null,
+      acts,
+      err ? h('p', { class: 'inline-error', role: 'alert' }, err) : null);
+  }
+  function agDue(iso) {
+    const d = parseDate(iso);
+    if (!d) return h('span', { class: 'dday none' }, '날짜 없음');
+    const diff = dayDiff(d);
+    return [h('b', null, fmtShortDT(d)), h('span', { class: 'dday' + (diff < 0 ? ' past' : diff <= 2 ? ' soon' : '') }, ddayText(diff))];
+  }
+  const agComp = (cid, name) => (name ? compName(cid, name) : '어느 항목도 아님');
+  // 상대 날짜로 계산한 마감(13-3과 같은 말): ‘다음 주 금요일’ → 공지 올린 날 11/12(목) 기준 11/20(금)로 계산
+  function agBasis(p) {
+    const b = p.date_basis;
+    const due = parseDate(p.due);
+    if (!b || !b.relative || !b.phrase || !due) return null;
+    const base = parseDate(b.posted_at);
+    return h('span', { class: 'ag-cur' }, '‘' + b.phrase + '’ → ' + (base ? (SOURCE[b.source_type] || '글') + ' 올린 날 ' + dayMD(base) + ' 기준 ' : '') + dayMD(due) + '로 계산');
+  }
+  function agCand(p) {
+    const k = p.key || p.candidate_key || p.candidate;
+    const G = state.grades;
+    if (!k || !G) return null;
+    const c = Array.isArray(G.candidates) ? G.candidates.find((x) => x && x.key === k) : null;
+    if (c) return c;
+    for (const L of courseComps(p.course_id)) for (const m of (Array.isArray(L.members) ? L.members : [])) if (m && m.key === k) return Object.assign({ component: L.name }, m);
+    return null;
+  }
+  // 학점 비율(16장 distribution.from_groups 모양): groups [{grades, low?, high?, pct?, cumulative?}], cutoffs [{grade, min_score}]
+  function agGroups(p) {
+    const out = [];
+    for (const x of (Array.isArray(p.groups) ? p.groups : [])) {
+      if (!x || typeof x !== 'object') continue;
+      const gs = Array.isArray(x.grades) ? x.grades.map(String) : [];
+      const nm = gs.length > 2 ? gs[0] + '~' + gs[gs.length - 1] : gs.length ? gs.join('·') : String(x.label || '');
+      const v = isNum(x.low) && isNum(x.high) ? (Number(x.low) === Number(x.high) ? pct(x.low) : fmtNum(x.low) + '~' + fmtNum(x.high) + '%')
+        : isNum(x.high) && !isNum(x.pct) ? pct(x.high) + ' 이하' : isNum(x.pct) ? pct(x.pct) : '';
+      out.push((nm + (x.cumulative ? ' 이상' : '') + ' ' + v).trim());
+    }
+    for (const c of (Array.isArray(p.cutoffs) ? p.cutoffs : [])) if (c && c.grade && isNum(c.min_score)) out.push(c.grade + ' ' + fmtNum(c.min_score) + '점 이상');
+    return out.filter(Boolean);
+  }
+  function agVals(p, type) {
+    const cid = p.course_id;
+    const row = (...kids) => h('span', { class: 'ag-vrow' }, kids);
+    if (type === 'add_deadline') {
+      return h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vt' }, String(p.title || '제목 없는 마감')),
+        row(agDue(p.due), p.kind === '시험' ? tag('시험', 'accent') : null, p.method && METHOD[p.method] && p.method !== 'unknown' ? tag(METHOD[p.method], 'quiet') : null), agBasis(p));
+    }
+    if (type === 'fix_due') {
+      const it = p.item_id ? findItem(p.item_id) : null;
+      const cur = it ? parseDate(it.due) : null;
+      return h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vt' }, String((it && it.title) || p.item_title || p.title || '마감 항목')),
+        row(h('span', { class: 'ag-cur' }, '지금 ' + (cur ? fmtShortDT(cur) : '마감 없음') + ' →'), agDue(p.due)), agBasis(p));
+    }
+    if (type === 'link_score') {
+      const c = agCand(p);
+      const label = (c && c.label) || p.score_label || p.label || '점수';
+      const sc = c && c.score !== null && c.score !== undefined ? fmtNum(c.score) + (c.max_score ? '/' + fmtNum(c.max_score) : '') + '점' : '';
+      const cur = c ? (c.component ? '지금: ' + c.component + (BY_WORD[c.link_by] ? ' (' + BY_WORD[c.link_by] + ')' : '') : '지금: 어느 항목에도 안 들어감') : '';
+      return h('div', { class: 'ag-vals' }, row(h('b', null, '‘' + label + '’'), sc ? h('span', null, sc) : null, '→', h('b', null, agComp(cid, p.component))),
+        cur ? h('span', { class: 'ag-cur' }, cur) : null);
+    }
+    if (type === 'set_count') {
+      const L = courseComps(cid).find((x) => x.name === p.component);
+      const cnt = L && L.count && typeof L.count === 'object' ? L.count : null;
+      const cur = cnt && cnt.n ? '지금 ' + cnt.n + '개' : cnt && cnt.low ? '지금은 본 것만 ' + cnt.low + '개 이상' : '지금은 몇 개인지 몰라요';
+      return h('div', { class: 'ag-vals' }, row(h('b', null, agComp(cid, p.component)), '총', h('b', null, num(p.n) + '개')), h('span', { class: 'ag-cur' }, cur));
+    }
+    if (type === 'set_weights') {
+      const list = (Array.isArray(p.components) ? p.components : []).filter((x) => x && x.name);
+      const sum = list.reduce((a, x) => a + num(x.weight), 0);
+      const now = courseComps(cid).filter((x) => x.weight !== null && x.weight !== undefined);
+      return h('div', { class: 'ag-vals' }, h('span', { class: 'ag-wlist' }, list.map((x) => tag(x.name + ' ' + pct(x.weight)))),
+        h('span', { class: 'ag-cur tnum' }, '합 ' + pct(sum) + (now.length ? ' · 지금: ' + now.map((x) => x.name + ' ' + pct(x.weight)).join(', ') : ' · 지금은 비중이 없어요')));
+    }
+    if (type === 'set_dist') {
+      const g = agGroups(p);
+      return g.length ? h('div', { class: 'ag-vals' }, h('span', { class: 'ag-wlist' }, g.map((x) => tag(x)))) : null;
+    }
+    return null;
+  }
+  // 근거 글: 제안에 출처 칸이 있으면 그것, 없으면 같은 질문의 검색 결과에서 source_key로
+  function agSource(t, p) {
+    const s = p.source_key ? agSnips(t).find((x) => x.source_key === p.source_key) : null;
+    const pre = p.source_key ? String(p.source_key).split(':')[0] : '';
+    const type = p.source_type || (s && (s.type || s.source_type)) || (SOURCE[pre] ? pre : null);
+    const title = p.source_title || (s && (s.title || s.source_title)) || null;
+    const at = p.posted_at || (s && s.posted_at) || null;
+    if (!type && !title && !at) return null;
+    return { source_type: type, source_title: title, posted_at: at, url: p.url || (s && s.url) || null };
+  }
+  function agDate(x) {
+    // 서버 모양 {date, phrase, relative}: 상대 날짜면 글에 적힌 말을 함께(‘다음 주 금요일’)
+    const iso = typeof x === 'string' ? x : x && typeof x === 'object' ? (x.date || x.iso || x.due || x.at) : null;
+    const txt = x && typeof x === 'object' && (x.phrase || x.text) && (x.relative || !x.date) ? String(x.phrase || x.text) : '';
+    const dayOnly = typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso);
+    const d = dayOnly ? parseDay(iso) : parseDate(iso);
+    if (!d && !txt) return null;
+    return d ? (dayOnly ? fmtShort(d) : fmtShortDT(d)) + (txt ? ' ‘' + txt + '’' : '') : '‘' + txt + '’';
+  }
+  function agSnip(t, s, i, covered) {
+    const c = s.course_id ? courseById(s.course_id) : null;
+    const dates = (Array.isArray(s.dates) ? s.dates : []).map(agDate).filter(Boolean);
+    return h('li', { class: 'ag-snip' },
+      c ? h('span', { class: 'ag-pcourse' }, courseShort(c)) : null,
+      srcLine({ source_type: s.type || s.source_type, source_title: s.title || s.source_title, posted_at: s.posted_at, url: s.url }),
+      s.snippet ? h('blockquote', { class: 'ag-quote' }, String(s.snippet)) : null,
+      dates.length ? h('p', { class: 'ag-dates' }, '글 속 날짜', dates.slice(0, 4).map((d) => tag(d, 'quiet'))) : null,
+      dates.length && s.snippet && !covered ? h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-man-' + t.id + '-' + i, on: { click: () => agToManual(s) } }, '마감 후보로 넣기'),
+        h('span', { class: 'help' }, '확인함의 직접 붙여넣기 칸에 채워 드려요')) : null);
+  }
+  // 반영한 것 보러 가기: 마감은 확인함(일정에 넣은 마감)의 그 줄, 점수·개수·비중·학점 비율은 그 과목 성적
+  function agGoto(p) {
+    if (p.type === 'add_deadline' || p.type === 'fix_due') {
+      const id = (p.result && p.result.item_id) || p.item_id || null;
+      return () => { agLeave(); if (id && findItem(id)) goInbox(id); else go('#inbox')(); };
+    }
+    if (['link_score', 'set_count', 'set_weights', 'set_dist'].indexOf(p.type) >= 0 && p.course_id) {
+      return () => { selGrade = String(p.course_id); agLeave(); go('#grades')(); };
+    }
+    return null;
+  }
+  function agApply(t, i, undo) {
+    const key = agKey(t, i);
+    if (ag.busy.has(key)) return;
+    ag.busy.add(key);
+    ag.errs.delete(key);
+    renderAgent();
+    post(undo ? '/api/agent/undo' : '/api/agent/apply', { thread: t.id, proposal: i }).then((s) => {
+      ag.busy.delete(key);
+      ag.applied.set(key, !undo);
+      applyState(s);
+      const p = Array.isArray(t.proposals) ? t.proposals[i] : null;
+      const rules = !!p && p.type === 'add_deadline' && (p.by || t.by) === 'rules';
+      agSay(undo ? '되돌렸어요. 반영 전 값으로 돌아갔어요.' : rules ? '확인함에 후보로 넣었어요. 날짜·제목을 확인하고 일정에 넣어 주세요.' : '반영했어요. 표시가 남고 되돌릴 수 있어요.');
+    }, (err) => {
+      ag.busy.delete(key);
+      ag.errs.set(key, (undo ? '되돌리지 못했어요. ' : '반영하지 못했어요. ') + err.message);
+      renderAgent();
+    });
+  }
+  function agClear() {
+    if (ag.clearing) return;
+    ag.clearing = true;
+    ag.clearErr = '';
+    renderAgent();
+    post('/api/agent/clear', {}).then((s) => {
+      ag.clearing = false;
+      ag.confirmClear = false;
+      ag.applied.clear();
+      ag.errs.clear();
+      applyState(s);
+      agSay('대화 기록을 지웠어요.');
+      $('agent-text').focus();
+    }, (err) => {
+      ag.clearing = false;
+      ag.clearErr = '지우지 못했어요. ' + err.message;
+      renderAgent();
+    });
+  }
+  // 규칙 검색 결과 → 직접 붙여넣기(사용자가 날짜를 확인하고 [마감 찾기]를 누르는 길과 같음)
+  function agToManual(s) {
+    const c = s.course_id ? courseById(s.course_id) : null;
+    const fill = () => {
+      renderCourseOptions();
+      const sel = $('m-course'), free = $('m-course-free');
+      const name = c && c.name ? String(c.name) : '';
+      if (name && Array.prototype.some.call(sel.options, (o) => o.value === name)) { sel.value = name; free.hidden = true; }
+      else if (c) { sel.value = '__free__'; free.hidden = false; free.value = courseShort(c); }
+      const pd = parseDate(s.posted_at);
+      if (pd) $('m-date').value = dayKey(pd);
+      $('m-text').value = String(s.snippet || '');
+      $('manual-msg').replaceChildren(h('p', { class: 'ok-msg' }, '에이전트가 찾은 문단을 넣었어요. 받은 날짜와 내용을 확인하고 ‘마감 찾기’를 눌러 주세요.'));
+      const sec = $('manual-form').closest('section') || $('manual-form');
+      sec.scrollIntoView({ block: 'center' });
+      flashEl(sec);
+      $('m-text').focus({ preventScroll: true });
+    };
+    agLeave();
+    if (view === 'inbox') { render(); fill(); return; }
+    pendingAfterNav = () => setTimeout(fill, 0);
+    location.hash = '#inbox';
+  }
+  // 설정 → AI: 규칙이 놓친 사례(20-5). 사용자가 원할 때만 파일로 저장해 개발자에게 보낸다
+  function missedBlock() {
+    const G = agState();
+    if (!G) return null;
+    // state.agent.missed_cases는 수(서버), 목록이면 그대로. 파일 내용은 GET /api/agent/missed-cases(세션 값이 필요해 fetch 뒤 Blob으로 저장)
+    const raw = Array.isArray(G.missed_cases) ? G.missed_cases : null;
+    const n = raw ? raw.length : num(G.missed_cases);
+    const download = (data) => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+      const a = h('a', { href: url, download: 'lms-agent-missed-cases-' + dayKey(new Date(nowMs())).replace(/-/g, '') + '.json' });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const save = (e) => {
+      const b = e.currentTarget;
+      if (b.getAttribute('aria-disabled') === 'true') return;
+      b.setAttribute('aria-disabled', 'true');
+      const got = raw ? Promise.resolve({ app: 'lms-agent', missed_cases: raw }) : api('GET', '/api/agent/missed-cases');
+      got.then((data) => {
+        b.removeAttribute('aria-disabled');
+        download(data);
+        const k = data && Array.isArray(data.missed_cases) ? data.missed_cases.length : n;
+        toast('놓친 사례 ' + k + '개를 파일로 저장했어요. 보낼지는 직접 정해요');
+      }, (err) => { b.removeAttribute('aria-disabled'); toast('파일로 저장하지 못했어요. ' + err.message); });
+    };
+    return h('div', { class: 'miss-row' },
+      h('span', null, '놓친 사례 ', h('b', null, n + '개')),
+      n > 0 ? h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'ai-missed', on: { click: save } }, icon('download'), '파일로 저장') : null,
+      h('p', { class: 'help', style: 'flex-basis:100%' }, '에이전트 제안을 반영하면 규칙이 놓친 문장을 이 PC에 모아 둬요(이름·이메일·학번은 가림). 파일을 개발자에게 보내 주시면 규칙이 좋아져요. 저절로 보내지 않아요.'));
   }
 
   // ---------------------------------------------------------------- 설정
@@ -5654,7 +6380,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     post('/api/settings', { tutorial_done: true }).then(applyState, () => {});
   }
   // 지금 다른 창(소식 카드·고르기·튜토리얼·제안)이 떠 있는지: 창은 한 번에 하나만
-  const overlayOpen = () => cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || !$('tour-offer').hidden;
+  const overlayOpen = () => cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('agent-dlg').open || !$('tour-offer').hidden;
   // 이번 동기화의 소식 카드가 아직 남았는지(제안은 소식을 다 본 뒤에)
   function newsPending() {
     const c = cel();
@@ -6200,6 +6926,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     fitAllTitles();
     restoreFocus(snap);
     if (tour.open) tourFollow();   // 다시 그리면 대상 요소가 새로 생기므로 강조 상자를 다시 맞춘다
+    renderAgent();   // 서랍은 따로: 대화가 바뀌었을 때만 다시 그린다
   }
 
   function viewFromHash() {
@@ -6433,7 +7160,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     if (tour.open || e.code !== 'KeyZ' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
     const t = e.target;
     if (t && t.closest && t.closest('input, textarea, select, dialog')) return;
-    const undo = $('toast').querySelector('button');
+    const undo = $('toast').querySelector('button[data-undo]');
     if (undo) { e.preventDefault(); undo.click(); }
   });
   // 확인함에서 아무것도 고르지 않은 채 J·K·A·R을 누르면 카드를 먼저 고른다(J·A·R 첫 카드, K 마지막 카드). 다음 키부터 그 카드에 적용

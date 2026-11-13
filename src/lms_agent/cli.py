@@ -1,4 +1,4 @@
-"""명령어: lms-agent [serve|demo|setup|sync|list|update|export]. 인자 없이 실행하면 화면을 연다."""
+"""명령어: lms-agent [serve|demo|setup|sync|list|ask|update|export]. 인자 없이 실행하면 화면을 연다."""
 from __future__ import annotations
 
 import argparse
@@ -215,6 +215,78 @@ def cmd_ai_eval(args) -> None:
     sys.exit(0 if r["passed"] == r["total"] else 1)
 
 
+def _print_thread(th: dict, message: str) -> None:
+    by = {"ai": "AI", "rules": "규칙 검색"}.get(th.get("by"), "?")
+    _out(f"질문: {message}")
+    if th.get("status") == "error":
+        _out(f"답을 만들지 못했어요: {th.get('error')}")
+        return
+    _out(f"답({by}): {th.get('answer')}")
+    if th.get("results"):
+        _out("찾은 글:")
+        for r in th["results"][:5]:
+            when = (r.get("posted_at") or "")[:10]
+            _out(f"  · [{r.get('course_short') or '과목 미상'}] {r.get('title') or ''} ({when}) — "
+                 f"{' '.join(str(r.get('snippet') or '').split())[:90]}")
+    props = th.get("proposals") or []
+    if not props:
+        return
+    _out("제안:")
+    for i, p in enumerate(props, 1):
+        state = ("반영함" if p.get("applied") else "설명" if p.get("type") == "note"
+                 else "반영 가능" if not p.get("rejected_reason") else f"반영 안 됨: {p['rejected_reason']}")
+        _out(f"  {i}. [{state}] {p.get('summary') or p.get('type')}")
+        if p.get("evidence"):
+            src = f" ({p.get('source_title')})" if p.get("source_title") else ""
+            _out(f"     근거: \"{' '.join(str(p['evidence']).split())[:150]}\"{src}")
+        if p.get("reason"):
+            _out(f"     이유: {p['reason']}")
+
+
+def cmd_ask(args) -> None:
+    """에이전트에게 묻기(계약 20장)를 터미널에서. 같은 질문의 답이 이미 있으면 --apply N은 다시 묻지 않고 그 제안을 반영한다."""
+    from . import agent, agent_cli
+
+    home = data_dir()
+    store = _store(home)
+    try:
+        msg, cid = agent.check_message(args.message, args.course, store)
+    except ValueError as e:
+        _out(str(e))
+        sys.exit(2)
+    names = [n for n in [load_config(home).get("user_name")] if n]
+    th = None
+    if args.apply:
+        th = next((t for t in reversed(agent.threads(store)) if t.get("message") == msg and t.get("course_id") == cid
+                   and t.get("status") == "done"), None)
+    if th is None:
+        with store.locked():
+            store.reload_if_changed()
+            th = agent.new_thread(store, msg, cid)
+            store.write()
+        ai_on = bool(store.data["settings"].get("ai_cli"))
+        if ai_on:
+            _out("AI에게 묻는 중이에요(수십 초 걸릴 수 있어요)…")
+        agent.run_job(store, th["id"], msg, cid, ai_enabled=ai_on, command=agent_cli.detect(), names=names)
+        th = agent.find_thread(store, th["id"]) or th
+    _print_thread(th, msg)
+    if not args.apply:
+        if any(not p.get("rejected_reason") and p.get("type") != "note" and not p.get("applied")
+               for p in th.get("proposals") or []):
+            _out(f"반영하려면: lms-agent ask \"{msg}\"" + (f" --course {cid}" if cid else "") + " --apply 번호")
+        return
+    try:
+        with store.locked():
+            store.reload_if_changed()
+            p = agent.apply(store, th["id"], args.apply - 1, names=names)
+            store.write()
+    except (LookupError, ValueError, agent.AgentConflict) as e:
+        _out(f"반영하지 못했어요: {e}")
+        sys.exit(1)
+    _out(f"반영했어요: {p.get('summary')}" + (" — 확인함에 후보로 넣었어요(승인해 주세요)" if p.get("by") == "rules"
+                                              and p.get("type") == "add_deadline" else ""))
+
+
 def cmd_list(args) -> None:
     store = _store(data_dir())
     groups = {"review": "검토 필요", "scheduled": "일정", "no_deadline": "마감 근거 없음"}
@@ -266,6 +338,11 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--background", action="store_true", help="작업 스케줄러가 실행할 때(실행 기록에 표시)")
     sp.set_defaults(fn=cmd_sync)
     sub.add_parser("list", help="찾은 마감 보기").set_defaults(fn=cmd_list)
+    sp = sub.add_parser("ask", help="에이전트에게 묻기(예: \"기말고사 날짜가 안 보여요\")")
+    sp.add_argument("message", help="물어볼 내용(500자 이하)")
+    sp.add_argument("--course", help="과목 id(이 과목 글만 찾기)")
+    sp.add_argument("--apply", type=int, metavar="N", help="N번 제안을 반영(같은 질문의 답이 있으면 다시 묻지 않음)")
+    sp.set_defaults(fn=cmd_ask)
     sp = sub.add_parser("google-test", help="구글 캘린더 연결 시험(데모 일정으로)")
     sp.add_argument("--mine", action="store_true", help="데모 대신 내 승인된 일정으로 시험")
     sp.set_defaults(fn=lambda a: sys.exit(__import__("lms_agent.gtest", fromlist=["run"]).run(mine=a.mine, out=_out)))

@@ -323,6 +323,8 @@ def auto_fill(store, sources: list[dict], ai_enabled: bool, runner=None,
             if wf and _course_level(s, wf):
                 found.append((wf, s))
         highs = [x for x in found if x[0].confidence == "high"]
+        if not highs and cfg and cfg.get("auto_chat"):
+            continue   # '에이전트에게 묻기'로 반영한 비중(계약 20-4)은 규칙이 확신(high)으로 찾은 글이 없으면 그대로 둔다
         chosen, by = None, "rules"
         if highs:
             chosen = max(highs, key=lambda x: (_when(x[1]), bool(_UPDATE_TITLE.search(x[1].get("title") or "")),
@@ -512,6 +514,10 @@ def auto_dist(store, sources: list[dict], ai_enabled: bool, runner=None,
             if xs:
                 chosen = newest(xs)
                 break
+        cfg = grades_cfg.get(cid)
+        old = (cfg or {}).get("dist_auto")
+        if chosen is None and isinstance(old, dict) and old.get("chat"):
+            continue   # '에이전트에게 묻기'로 반영한 학점 비율(계약 20-4)은 규칙이 새로 찾기 전까지 그대로 둔다
         if chosen is None:
             target = _dist_target(srcs)
             if target is not None:
@@ -1271,8 +1277,8 @@ def ai_links(store, session) -> dict:
                 continue
             h = hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:16]
             prev = ((store.data.get("grade_counts_ai") or {}).get(cid) or {}).get(lk.norm(lc.name))
-            if isinstance(prev, dict) and prev.get("hash") == h and not _ask_again(prev):
-                continue
+            if isinstance(prev, dict) and (prev.get("chat") or (prev.get("hash") == h and not _ask_again(prev))):
+                continue   # 같은 줄이면 다시 묻지 않는다. '에이전트에게 묻기'로 반영한 개수(chat)는 덮지 않는다
             res = session.run("count_items", {"component": lc.name, "family": cnt["family"], "lines": lines,
                                               "low": cnt.get("low")})
             if res.attempts == 0 and not res.ok:

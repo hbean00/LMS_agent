@@ -13,6 +13,14 @@ from ..api import ApiError, router
 def attach(app, options):
     app.scheduler = options.get("scheduler") or schedule.Scheduler(app.home)
     app.background_supported = (options.get("scheduler") is not None) or (schedule.supported() and not app.demo)
+    # 백그라운드 동기화를 켠 적이 있으면 실행 스크립트를 지금의 파이썬·exe 경로로 다시 쓴다
+    # (파이썬을 다시 설치·옮기거나 exe로 바꾸면 예전 경로가 남아 백그라운드 동기화가 조용히 멈추던 문제)
+    if app.background_supported and options.get("scheduler") is None:
+        try:
+            if (app.home / "background-sync.vbs").exists():
+                schedule.write_launcher(app.home)
+        except OSError:
+            pass
 
 
 @router.state_section("background")

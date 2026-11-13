@@ -180,3 +180,27 @@ def test_review_reminder_event(tmp_path, mock):
             store.update_user(v["id"], {"decision": "rejected"})
     _, summaries = core.calendar_payload(store)
     assert not [s for s in summaries if s["uid"].startswith("review-")]
+
+
+def test_launcher_is_refreshed_on_start(tmp_path, monkeypatch):
+    """백그라운드 동기화를 켠 뒤 파이썬을 다시 설치·옮겨도 앱을 켜면 실행 스크립트가 지금 경로로 바뀐다."""
+    import sys
+    from lms_agent import schedule
+    from lms_agent.server import App
+    from lms_agent.store import Store
+    monkeypatch.setattr(schedule, "supported", lambda: True)
+    vbs = tmp_path / "background-sync.vbs"
+    vbs.write_text('sh.Run "C:\old\python.exe -m lms_agent sync", 0, False', encoding="utf-16")
+    App(Store(tmp_path / "state.json"), tmp_path, cfg={})
+    text = vbs.read_text(encoding="utf-16")
+    assert "C:\old\python.exe" not in text and "lms_agent" in text
+    assert str(__import__("pathlib").Path(sys.executable).parent) in text
+
+
+def test_launcher_not_created_when_never_enabled(tmp_path, monkeypatch):
+    from lms_agent import schedule
+    from lms_agent.server import App
+    from lms_agent.store import Store
+    monkeypatch.setattr(schedule, "supported", lambda: True)
+    App(Store(tmp_path / "state.json"), tmp_path, cfg={})
+    assert not (tmp_path / "background-sync.vbs").exists()
