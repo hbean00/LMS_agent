@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 # 마감 찾기 규칙이 바뀌면 올린다. 저장된 값과 다르면 다음 동기화 때 모든 글을 다시 읽는다.
-RULES_VERSION = "2026.11.13-1"  # -1: "Oct. 22" 줄임말에서 문장을 끊지 않음, "Midterm Project"는 과제(시험 아님)
+RULES_VERSION = "2026.11.13-3"  # -3: 제목이 종류·이름을(결과 제목 제외), 다음 줄 "시간:", 통계 소수는 날짜 아님
 
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -111,6 +111,17 @@ def deadline_kind(sentence: str) -> str | None:
         return "과제"
     return None
 
+
+# 점수 통계 낱말 바로 뒤의 점 숫자('표준편차 12.1')는 날짜가 아니다
+_STAT_BEFORE = re.compile(r"(?i)(?:평균|표준\s*편차|편차|중앙값|점수|최고점?|최저점?|만점|mean|avg|average|sd|std|stdev|"
+                          r"median|score|max|min)\s*[:：=]?\s*\(?\s*$")
+# 결과·성적을 알리는 제목
+_RESULT_TITLE = re.compile(r"(?i)성적|점수|결과|채점|score|result|grade|graded|feedback")
+
+# '날짜: 12월 15일' / '시간: 10:30am' 같은 칸 줄(제목이 종류를 말해 줄 때 쓴다)
+_FIELD_DATE = re.compile(r"(?i)^\s*[\[(<]?\s*(?:날짜|일시|일자|시험\s*(?:일|일시|일자|날짜)|일정|date|when|"
+                         r"exam\s*date|time\s*(?:&|and)\s*date)\s*[\])>]?\s*[:：]")
+_FIELD_TIME = re.compile(r"(?i)^\s*[\[(<]?\s*(?:시간|시각|time)\s*[\])>]?\s*[:：]")
 
 # 'Midterm Project'처럼 학기 시점 낱말 바로 뒤의 종류 낱말(title_hint가 이어 붙인다)
 _TERM_WORD = re.compile(r"(?i)midterm|final|중간|기말")
@@ -296,6 +307,9 @@ def find_dates(s: str, ref: date) -> list[_DateHit]:
     for m in RX_MD_NUM.finditer(s):
         if not free(m.start(), m.end()):
             continue
+        if not (m["wd"] or m["wd2"]) and "." in s[m.start():m.end("d")] \
+                and _STAT_BEFORE.search(s[max(0, m.start() - 16):m.start()]):
+            continue   # '표준편차 12.1'·'mean: 10.3'은 소수(점수 통계)지 12월 1일이 아니다
         if not (m["wd"] or m["wd2"] or _NUM_OK_AFTER.match(s[m.end():])
                 or _NUM_OK_BEFORE.search(s[:m.start()])):
             continue
@@ -422,8 +436,10 @@ def find_time(s: str) -> tuple[time | None, list[str]]:
 _CONF_ORDER = {"high": 3, "medium": 2, "low": 1}
 
 
-def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[Found]:
-    """text에서 마감을 찾는다. ref는 글이 게시된 시각(로컬 시간대가 붙은 datetime)."""
+def find_deadlines(text: str, ref: datetime, *, is_html: bool = False, title: str | None = None) -> list[Found]:
+    """text에서 마감을 찾는다. ref는 글이 게시된 시각(로컬 시간대가 붙은 datetime).
+    title(글 제목)이 '기말고사 공지'처럼 무엇인지 말해 주면, 본문의 '날짜: 12월 15일' 같은 칸 줄(또는 날짜가 하나뿐인 본문)에
+    그 종류·이름을 쓴다 — 실제 공지는 '기말고사'가 제목에만 있고 본문은 날짜·시간·장소 칸뿐인 경우가 많다."""
     plain = html_to_text(text) if is_html else (text or "")
     lines = split_sentences(plain)
     msg_method, msg_email = detect_method(plain)
@@ -432,9 +448,14 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
     # 자기 날짜가 있는 줄(표의 다른 행, 다른 마감)은 옆 마감의 제출 방법 근거로 쓰지 않는다.
     dated = [bool(find_dates(ln, ref_day)) for ln in lines]
     deadline_lines = sum(1 for ln, d in zip(lines, dated) if d and deadline_kind(ln))
+    # 결과를 알리는 제목('중간고사 성적 안내', 'Quiz 1 grade released')은 일정이 아니므로 종류를 빌려주지 않는다
+    title_kind = deadline_kind(title) if title and not _RESULT_TITLE.search(title) else None
 
     for i, s in enumerate(lines):
         kind = deadline_kind(s)
+        from_title = False
+        if not kind and title_kind and dated[i] and (_FIELD_DATE.match(s) or sum(dated) == 1):
+            kind, from_title = title_kind, True
         if not kind:
             continue
         hits = find_dates(s, ref_day)
@@ -445,7 +466,16 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
         t, tnotes = find_time(s[h.end:nxt])
         if t is None and len(hits) == 1:
             t, tnotes = find_time(s[:h.start])
+        if t is None:   # '날짜: 12월 15일' 다음 줄의 '시간: 10:30am - 11:30am'
+            for ln in lines[i + 1:i + 3]:
+                if _FIELD_TIME.match(ln) and not find_dates(ln, ref_day):
+                    t, tnotes = find_time(ln)
+                    if t is not None:
+                        tnotes = tnotes + ["시간은 다음 줄의 '시간' 칸에서 읽음"]
+                    break
         notes = list(h.notes) + tnotes
+        if from_title:
+            notes.append(f"제목 '{title.strip()[:40]}'을(를) 보고 {kind}(으)로 봄")
         has_time = t is not None
         if t is None:
             t = time(23, 59)
@@ -464,6 +494,8 @@ def find_deadlines(text: str, ref: datetime, *, is_html: bool = False) -> list[F
             email_to = addr.group(0) if addr else None
 
         hint = title_hint(s) or title_hint(" ".join(lines[max(0, i - 2):i]))
+        if from_title:
+            hint = title_hint(title) or hint   # 이 줄의 종류를 제목에서 가져왔으면 이름도 제목에서
         if kind == "과제" and hint and EXAM.search(hint) and not TASK.search(hint):
             kind = "시험"
         elif kind == "시험" and hint and TASK.search(hint) and not _EXAM_ONLY.search(hint) \

@@ -324,7 +324,7 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
         if old and old.get("hash") == h and old.get("rules") == RULES_VERSION:
             founds = [_found_from(d) for d in old["found"]]
         else:
-            founds = find_deadlines(s["text"], s["posted_at"], is_html=s["is_html"])
+            founds = find_deadlines(s["text"], s["posted_at"], is_html=s["is_html"], title=s.get("title"))
             if extracted is None:
                 reason = reason_all or "처음 실행"
             elif old is None:

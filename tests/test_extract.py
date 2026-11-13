@@ -269,3 +269,51 @@ def test_midterm_project_is_a_task_not_an_exam():
     assert f.kind == "과제" and f.due == at(2026, 11, 5)
     assert title_hint("Midterm quiz") == "Midterm Quiz"
     assert one("Midterm quiz on Nov. 26 in class.").kind == "시험"
+
+
+# ---- 실제 고려대 로봇공학개론 공지(2026-11-13 사용자 제보: "기말고사 일정 나왔는데 반영 안 됨")
+FINAL_NOTICE = ("날짜: 12월 15일\n시간: 10:30am - 11:30am\n장소: 강의실\n허용물품: 필기구, 학생증\n"
+                "불가: 계산기를 포함한 모든 전자기기 (적발시 F)")
+
+
+def test_title_gives_kind_to_field_style_body():
+    """'기말고사'는 제목에만 있고 본문은 '날짜: …' / '시간: …' 칸으로 나뉜 공지."""
+    found = find_deadlines(FINAL_NOTICE, datetime(2026, 11, 4, 11, 25, tzinfo=KST), title="기말고사 공지")
+    assert len(found) == 1
+    f = found[0]
+    assert f.due == at(2026, 12, 15, 10, 30) and f.kind == "시험" and f.title_hint == "기말고사"
+    assert any("제목" in n for n in f.notes)
+
+
+def test_title_without_kind_does_not_make_a_deadline():
+    found = find_deadlines(FINAL_NOTICE, datetime(2026, 11, 4, 11, 25, tzinfo=KST), title="강의실 안내")
+    assert found == []
+
+
+def test_title_kind_needs_field_line_or_single_date():
+    """제목이 '기말고사 안내'여도 본문에 날짜가 여럿이고 칸 모양이 아니면 아무 날짜나 시험으로 보지 않는다."""
+    body = "11월 20일에 보강이 있습니다.\n12월 1일까지 질문을 받습니다."
+    assert find_deadlines(body, REF, title="기말고사 안내") == []
+    # 날짜가 하나뿐이면 제목을 따른다
+    one = find_deadlines("12월 16일 오후 2시, 공학관 101호", REF, title="Final Exam")
+    assert [(f.due, f.kind) for f in one] == [(at(2026, 12, 16, 14, 0), "시험")]
+
+
+def test_result_titles_do_not_give_a_kind():
+    """'중간고사 성적 안내'처럼 결과를 알리는 제목은 시험 일정이 아니다(실제 데모 메시지에서 거짓 시험이 생김)."""
+    body = "본인 점수 78점 (평균 65.3, 표준편차 12.1)입니다."
+    for title in ("중간고사 성적 안내", "Midterm exam scores", "기말고사 결과 공지", "Quiz 1 grade released"):
+        assert find_deadlines(body, REF, title=title) == [], title
+
+
+@pytest.mark.parametrize("s", ["표준편차 12.1", "평균 11.5, 표준편차 3.2", "sd 12.1", "mean: 10.3", "12.1점", "3.5%",
+                               "점수 9.5 / 10"])
+def test_decimal_statistics_are_not_dates(s):
+    from lms_agent.extract import find_dates
+    assert find_dates(s, REF.date()) == [], s
+
+
+@pytest.mark.parametrize("s", ["제출: 12.1(화)", "마감 12.1 23:59", "due 12/1"])
+def test_dotted_dates_still_parse(s):
+    from lms_agent.extract import find_dates
+    assert len(find_dates(s, REF.date())) == 1, s
