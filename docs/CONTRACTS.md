@@ -768,3 +768,34 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 제목은 근거 문장에서만 정한다(질문 낱말로 정하지 않음 — "기말고사 날짜가 안 보여요"에 LAB4 문장이면 'LAB 4').
 - 검색 점수: 질문 주제(기말·퀴즈·LAB…)가 글의 제목이나 본문에 있으면 같은 무게, 주제가 있는 질문에서는 그 주제가 있거나 마감·시험 문장인 문단만 날짜 가산(강의 슬라이드 첫 장 날짜가 위로 오지 않게), 점수 질문은 제목의 점수 낱말도 가산. 실제 데이터: '로봇공학개론 기말고사 날짜' → '기말고사 공지', 'ASIC 퀴즈 일정' → 'Announcement about Midterm Week'.
 - CLI: `lms-agent ask "<질문>" [--course ID] [--apply N]`(N은 출력된 1부터 번호). 데모: ASIC 공지 'Final week schedule'("The final will be held on … at 10:30") — 규칙은 맨 'final'을 시험으로 읽지 않아 날짜 미공지로 남고, 묻기로 찾는다.
+
+## 21. 여러 에이전트 CLI 연결 — v0.6.2 (사용자 요청 2026-11-13: "다른 CLI들 연결하는 것들도 지원해봅시다 MunderDifflin 이런 거처럼 범용 에이전트들 연결")
+
+참고: Munder Difflin은 Claude Code·OpenAI Codex·Gemini·OpenCode·Crush·GitHub Copilot CLI·로컬 모델 같은 코딩 에이전트 CLI를 그대로 띄워 묶는 다중 에이전트 하네스다. 우리 앱도 같은 생각으로 **하네스는 하나, 실행기(CLI)는 갈아 끼우기**로 만든다. 작업 정의·가리기·검증·한도·기록(10·12·20장)은 어느 CLI든 같다.
+
+### 21-1. 실행기(adapter)
+- `agent_cli.ADAPTERS`: `{id, name, exe_names[], args(prompt_mode), output: "claude-json"|"json-lines"|"text", no_tools_flags[], notes}`. 기본 목록:
+  `claude`(Claude Code, `-p --output-format json --tools ""`, stdin) · `codex`(OpenAI Codex CLI, 읽기 전용 샌드박스·승인 끔으로 비대화 실행) · `gemini`(Gemini CLI, 비대화 모드) · `opencode` · `copilot`(GitHub Copilot CLI, 도구 허용 없이) · `ollama`(로컬 모델 — `ollama run <모델>`, stdin, 인터넷으로 글이 나가지 않음) · `custom`(사용자 지정).
+  각 CLI의 정확한 비대화 옵션은 설치된 버전의 `--help`를 읽어 고른다(`probe`). 모르는 옵션이면 그 실행기는 "확인 필요"로 표시하고 쓰지 않는다 — 옵션을 짐작해 실행하지 않는다.
+- 사용자 지정(`custom`): 실행 파일 경로 + 인자 목록(문자열 하나가 아니라 목록, 셸 없음) + 글을 stdin으로 보낼지 + 출력 형식. 글은 **항상 stdin**(명령줄에 강의 글을 넣지 않는다 — 프로세스 목록에 보이고 셸 해석 위험).
+- 출력 읽기: claude-json(`result` 칸), json-lines(마지막 메시지의 글), text(전체) — 어느 쪽이든 그 글 안의 첫 JSON 객체를 꺼내 작업 스키마로 검증(지금과 같음).
+
+### 21-2. 안전
+- 에이전트 CLI는 원래 파일을 읽고 명령을 실행할 수 있다. 강의 글에 "이 명령을 실행해" 같은 글이 섞여 들어올 수 있으므로(프롬프트 주입): 도구·셸 실행을 끄는 옵션이 확인된 실행기만 "안전" 표시로 기본 선택 가능, 빈 임시 폴더를 작업 폴더로, 환경 변수에서 우리 토큰류(LMS_AGENT_*, GOOGLE 등)는 빼고 실행, 시간 제한·`taskkill /T`(지금과 같음). `custom`은 "도구를 끄는 옵션을 직접 넣어 주세요" 경고와 함께.
+- 어느 실행기의 답이든 하네스 검증(원문 인용·날짜·합·존재)을 통과해야 반영된다.
+
+### 21-3. 설정과 상태
+- `settings.ai_provider`("auto" = 찾은 것 중 안전한 첫 번째, 기본) · `settings.ai_custom = {path, args[], stdin: true, output}` · `settings.ai_model`(ollama 등 모델 이름, 선택).
+- `state.ai.providers = [{id, name, found: bool, path_hint(이름만, 경로 없음), safe: bool, status: "ready"|"needs_check"|"missing", version?}]`, `state.ai.provider`(지금 쓰는 id), `state.ai.command`(이름만).
+- `POST /api/ai/provider {"provider", "custom"?, "model"?}`, `POST /api/ai/test {"provider"?}` → 데모 문장 평가(`run_evals`, 강의 글 아님)를 그 실행기로 돌려 `{passed, total, cases, duration_ms}` — 화면의 [연결 시험].
+- CLI: `lms-agent ai-eval --provider <id>`, `lms-agent ai-providers`(찾은 실행기와 상태).
+
+### 21-4. 구현 결과 (v0.6.2)
+- `agent_cli.ADAPTERS`: claude(그대로 — `-p <고정 한 줄> --output-format json --tools "" --no-session-persistence`, 안전) · codex(`exec`, `--sandbox read-only`가 도움말에 있어야 안전 — 이 PC의 codex-cli 0.162.1에서 확인) · gemini(stdin, `--approval-mode default`, `-o json`이 있으면) · opencode(도구를 끄는 옵션이 없어 늘 '확인 필요') · copilot(`--prompt`·`--deny-tool shell/write`가 도움말에 있어야, `--allow-*`는 절대 넣지 않음) · ollama(`run <모델>`, 받아 둔 모델만, `-cloud` 모델·원격 OLLAMA_HOST는 '이 PC 밖') · custom(경로 + 인자 목록 + 출력 형식, 늘 '안전 아님', 자동 선택 안 함).
+- 출력 형식 넷: claude-json · json-lines · text · json(한 객체 — gemini의 `response` 감싸기 포함).
+- 도움말 읽기(probe): `<exe> --help`·`--version`, stdin 닫음, 10초, 경로·수정 시각·크기별 10분 기억. **사용자가 [다시 찾기]를 눌렀을 때만**(창을 열었다고 다른 프로그램을 실행하지 않는다 — 같은 이름의 다른 프로그램일 수 있음, 예: VS Code의 copilot 실행기). 확인 전 CLI는 '아직 확인 전'.
+- 자식 프로세스 환경에서 `LMS_AGENT_*`, 우리 `.env`가 넣은 값, `GOOGLE*`(gemini 자기 자격 증명은 우리 .env에서 온 게 아니면 유지)를 뺀다. PATH·HOME 등과 각 CLI의 자기 키는 둔다.
+- 선택: 자동 = claude → codex → gemini → opencode → copilot → ollama 중 '사용 가능·안전'인 첫 번째. 직접 고른 것이 못 쓰는 상태면 오류(다른 서비스로 몰래 바꾸지 않음). 동기화·자동 정리·묻기·`ask` 모두 같은 설정.
+- 요청: `POST /api/ai/provider`(provider 생략 가능, custom 칸은 저장값에 합침, `custom: null` = 지우기, stdin 끄기·.cmd/.bat 인자의 위험 문자·못 쓰는 선택 → 400), `POST /api/ai/rescan`(도움말 다시 읽기), `POST /api/ai/test`(백그라운드, `state.ai.test = {status, provider, name, done, total, passed, cases[{label,…}], duration_ms, error}`, 한도·기록에 안 셈).
+- `state.ai` 추가: `provider_name, selected, local, unavailable_reason, model, custom{set, name, args(홈은 ~), output, stdin}, auto_order, test, test_cases`. 실행기 칸 추가: `probed, auto, flags, missing, note, notes, site, output`, ollama `model/models`, custom `warning/args`.
+- 아직: claude 말고는 실제 실행으로 끝까지 확인하지 않음(출력 모양은 공개 문서 기준 시험). 데모의 [연결 시험]은 가짜 AI가 정리·묻기만 흉내 내서 '8개 중 3개'로 나온다(화면에 그 이유를 적음). 한 번 부르기 90초 제한은 그대로(느린 로컬 모델은 걸릴 수 있음).

@@ -199,20 +199,68 @@ def cmd_sync(args) -> None:
              f"  구글: 새로 {g['created']} · 수정 {g['updated']} · 삭제 {g['deleted']} · 그대로 {g['unchanged']}")
 
 
+def _ai_settings() -> dict:
+    """설정 → AI 도움의 실행기 설정(ai_provider·ai_custom·ai_model)만 읽는다(쓰지 않음)."""
+    path = data_dir() / STATE_FILE
+    if not path.exists():
+        return {}
+    return dict(_store(data_dir()).data.get("settings") or {})
+
+
 def cmd_ai_eval(args) -> None:
-    """AI CLI 하네스 평가 묶음(evals)을 실제 CLI로 돌린다. 데모 문장만 보낸다(내 강의 글은 보내지 않음)."""
+    """AI CLI 하네스 평가 묶음(evals)을 실제 CLI로 돌린다. 데모 문장만 보낸다(내 강의 글은 보내지 않음).
+    --provider로 실행기를 고른다(없으면 설정대로, 기본 auto) — 계약 21-3."""
     from . import agent_cli
 
-    if not agent_cli.detect():
-        _out("AI CLI(claude)를 찾지 못했습니다. 설치했다면 LMS_AGENT_AI_CLI에 전체 경로를 넣어 보세요.")
+    want = args.provider or None
+    if want and want != "auto" and want not in agent_cli.ADAPTERS:
+        _out(f"모르는 실행기예요: {want} (가능: auto, {', '.join(agent_cli.ADAPTERS)})")
         sys.exit(2)
-    r = agent_cli.run_evals()
-    for c in r["cases"]:
+    settings = _ai_settings()
+    plan, why = agent_cli.select(settings, want=want)
+    if plan is None:
+        _out(why + ("" if want and want != "claude" else ". claude를 설치했다면 LMS_AGENT_AI_CLI에 전체 경로를 넣어 보세요."))
+        sys.exit(2)
+    where = "이 PC 안에서" if plan.local else "그 AI 서비스로"
+    _out(f"{plan.name}({plan.cli})로 데모 문장 {len(agent_cli.EVAL_CASES)}개를 시험해요 — 데모 문장만 {where} 보내요.")
+
+    def show(done, total, c):
         mark = "통과" if c["passed"] else "실패"
-        why = "" if c["passed"] else f" — {c.get('problem') or c.get('error')}"
-        _out(f"  [{mark}] {c['name']} ({c['task']}, {c['attempts']}회, {c['duration_ms']}ms){why}")
+        why_ = "" if c["passed"] else f" — {c.get('problem') or c.get('error')}"
+        _out(f"  [{mark}] {c['name']} ({c['task']}, {c['attempts']}회, {c['duration_ms']}ms){why_}")
+
+    r = agent_cli.run_evals(provider=plan, progress=show)
     _out(f"{r['cli']}: {r['passed']}/{r['total']} 통과")
     sys.exit(0 if r["passed"] == r["total"] else 1)
+
+
+def cmd_ai_providers(args) -> None:
+    """찾은 AI CLI와 상태(계약 21-3): 도움말을 읽어 비대화·도구 끄기 옵션을 확인한다(글은 보내지 않음)."""
+    from . import agent_cli
+
+    settings = _ai_settings()
+    ents = agent_cli.providers(settings, probe_now=True)
+    label = {"ready": "사용 가능", "needs_check": "확인 필요", "missing": "없음"}
+    for e in ents:
+        bits = [label.get(e["status"], e["status"])]
+        if e["status"] == "ready":
+            bits.append("안전" if e["safe"] else "도구 확인 안 됨")
+        if e.get("local") and e["status"] == "ready":
+            bits.append("이 PC 안에서만")
+        head = f"[{' · '.join(bits)}] {e['id']:<8} {e['name']}"
+        extra = [x for x in [e.get("path_hint") and f"명령 {e['path_hint']}", e.get("version") and f"v{e['version']}",
+                             e.get("model") and f"모델 {e['model']}"] if x]
+        _out(head + (f" — {', '.join(extra)}" if extra else ""))
+        if e.get("flags") and e["status"] == "ready":
+            _out(f"      옵션: {' · '.join(e['flags'])}")
+        if e["status"] != "ready" and e.get("note"):
+            _out(f"      {e['note']}")
+        if e["id"] == "custom" and e["status"] == "ready":
+            _out(f"      주의: {agent_cli.CUSTOM_WARNING}")
+    cur = agent_cli.pick(ents, settings)
+    want = settings.get("ai_provider") or "auto"
+    _out(f"설정: {want} → 지금 쓰는 것: {cur['id'] if cur else '없음'}"
+         + ("" if cur else f" ({agent_cli.why_not({e['id']: e for e in ents}.get(want), want)})"))
 
 
 def _print_thread(th: dict, message: str) -> None:
@@ -245,7 +293,7 @@ def _print_thread(th: dict, message: str) -> None:
 
 def cmd_ask(args) -> None:
     """에이전트에게 묻기(계약 20장)를 터미널에서. 같은 질문의 답이 이미 있으면 --apply N은 다시 묻지 않고 그 제안을 반영한다."""
-    from . import agent, agent_cli
+    from . import agent
 
     home = data_dir()
     store = _store(home)
@@ -267,7 +315,7 @@ def cmd_ask(args) -> None:
         ai_on = bool(store.data["settings"].get("ai_cli"))
         if ai_on:
             _out("AI에게 묻는 중이에요(수십 초 걸릴 수 있어요)…")
-        agent.run_job(store, th["id"], msg, cid, ai_enabled=ai_on, command=agent_cli.detect(), names=names)
+        agent.run_job(store, th["id"], msg, cid, ai_enabled=ai_on, names=names)   # 실행기는 설정대로(계약 21-3)
         th = agent.find_thread(store, th["id"]) or th
     _print_thread(th, msg)
     if not args.apply:
@@ -346,7 +394,10 @@ def main(argv: list[str] | None = None) -> None:
     sp = sub.add_parser("google-test", help="구글 캘린더 연결 시험(데모 일정으로)")
     sp.add_argument("--mine", action="store_true", help="데모 대신 내 승인된 일정으로 시험")
     sp.set_defaults(fn=lambda a: sys.exit(__import__("lms_agent.gtest", fromlist=["run"]).run(mine=a.mine, out=_out)))
-    sub.add_parser("ai-eval", help="AI CLI 하네스 평가(데모 문장으로 실제 CLI 시험)").set_defaults(fn=cmd_ai_eval)
+    sp = sub.add_parser("ai-eval", help="AI CLI 하네스 평가(데모 문장으로 실제 CLI 시험)")
+    sp.add_argument("--provider", help="실행기: auto, claude, codex, gemini, opencode, copilot, ollama, custom(없으면 설정대로)")
+    sp.set_defaults(fn=cmd_ai_eval)
+    sub.add_parser("ai-providers", help="찾은 AI CLI와 상태(도움말로 옵션 확인)").set_defaults(fn=cmd_ai_providers)
     sp = sub.add_parser("update", help="새 버전 확인·업데이트(데이터를 먼저 백업)")
     sp.add_argument("--check", action="store_true", help="확인만 하고 바꾸지 않음")
     sp.add_argument("-y", "--yes", action="store_true", help="묻지 않고 업데이트")

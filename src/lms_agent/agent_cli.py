@@ -7,8 +7,8 @@
   작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
   map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장),
   assist(에이전트에게 묻기 — 계약 20장).
-- 실행(run_task): `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·세션 저장 안 함 — 옛 버전이
-  모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
+- 실행(run_task): 고른 실행기로. claude는 `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·
+  세션 저장 안 함 — 옛 버전이 모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
   AiResult{ok, data, error, attempts, duration_ms, cli, model}를 돌려준다.
 - 가리기(redact): 보내기 전에 이메일·전화번호·학번(가린 학번 포함)·링크·토큰처럼 보이는 긴 문자열·알려 준 이름·편지 서명을
@@ -17,7 +17,12 @@
 - 정책(AiSession): settings.ai_cli가 true일 때만, 동기화 한 번에 최대 MAX_CALLS_PER_SYNC회, 하루 MAX_CALLS_PER_DAY회.
   AI 결과는 "by": "ai"로 표시되고 근거(검증된 원문 인용)와 함께 보인다. 사용자가 되돌릴 수 있다.
 - 평가(run_evals): 실제 형식의 글로 같은 작업을 돌려 결과를 검사한다(가짜 실행기 또는 실제 CLI).
-- 다른 CLI: 환경 변수 LMS_AGENT_AI_CLI에 실행 파일 전체 경로(같은 인자를 받아야 함).
+- 여러 CLI(계약 21장): 하네스는 하나, 실행기(adapter)는 갈아 끼운다 — ADAPTERS(claude·codex·gemini·opencode·copilot·
+  ollama·custom). claude는 지금까지의 호출 그대로, 다른 CLI는 설치된 버전의 도움말(--help)을 읽어(probe) 실제로 있는
+  비대화·도구 끄기 옵션만 쓴다(없으면 "확인 필요" — 옵션을 짐작해 실행하지 않음). 고르기: settings.ai_provider
+  ("auto" = 찾은 것 중 안전한 첫 번째)·ai_custom·ai_model. 어느 CLI든 글은 stdin으로만, 셸 없이, 빈 임시 폴더에서,
+  우리 환경 변수(LMS_AGENT_*·우리 .env·GOOGLE*)를 뺀 채로 띄운다.
+- claude 경로: 환경 변수 LMS_AGENT_AI_CLI에 실행 파일 전체 경로(claude와 같은 인자를 받아야 함).
   화면·오류·기록에는 명령 이름(예: "claude")만 남기고 사용자 이름이 든 전체 경로는 넣지 않는다.
 """
 from __future__ import annotations
@@ -28,7 +33,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -95,17 +102,46 @@ def _scrub(msg: str, exe: str | None) -> str:
     return re.sub(r"\s+", " ", msg).strip()[:200]
 
 
-def _default_runner(args: list, input: str, timeout: float, cwd: str) -> subprocess.CompletedProcess:
+_OUR_PREFIXES = ("LMS_AGENT_",)   # 우리 앱의 환경 변수(Canvas 토큰·구글 클라이언트·데이터 폴더 …)
+_GOOGLE_PREFIX = "GOOGLE"         # 우리 구글 연결과 섞이지 않게 — 그 CLI가 자기 인증에 쓰는 이름(Adapter.own_env)만 남긴다
+
+
+def child_env(keep=()) -> dict:
+    """AI CLI에 넘길 환경 변수: 지금 환경에서 우리 것만 뺀다(계약 21-2). PATH·HOME·USERPROFILE·APPDATA 같은 것과
+    그 CLI의 자기 인증(예: OPENAI_API_KEY, ~/.codex)은 그대로 둬야 CLI가 로그인 정보를 찾는다.
+    빼는 것: LMS_AGENT_*, 우리 .env가 넣은 이름(config.DOTENV_KEYS — 토큰·시크릿·키), GOOGLE*(keep에 있는 이름은 남김)."""
+    from .config import DOTENV_KEYS
+    ours = {k.upper() for k in DOTENV_KEYS}
+    keep_u = {k.upper() for k in keep or ()}
+    out = {}
+    for k, v in os.environ.items():
+        u = k.upper()
+        if u.startswith(_OUR_PREFIXES) or u in ours:
+            continue
+        if u.startswith(_GOOGLE_PREFIX) and u not in keep_u:
+            continue
+        out[k] = v
+    return out
+
+
+def _kill(p: subprocess.Popen) -> None:
+    """시간 초과: 윈도에서는 claude.cmd → node 같은 자식까지 끝낸다."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    p.kill()
+    p.communicate()
+
+
+def _default_runner(args: list, input: str, timeout: float, cwd: str, env: dict | None = None) -> subprocess.CompletedProcess:
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         cwd=cwd, text=True, encoding="utf-8", errors="replace", creationflags=flags)
+                         cwd=cwd, text=True, encoding="utf-8", errors="replace", creationflags=flags,
+                         env=env if env is not None else child_env())
     try:
         out, err = p.communicate(input, timeout=timeout)
     except subprocess.TimeoutExpired:
-        if os.name == "nt":  # claude.cmd → node 자식까지 끝낸다
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True, creationflags=flags)
-        p.kill()
-        p.communicate()
+        _kill(p)
         raise
     return subprocess.CompletedProcess(args, p.returncode, out, err)
 
@@ -129,6 +165,8 @@ def _first_json_object(s: str) -> dict | None:
     return None
 
 
+# ---------------------------------------------------------------- 출력 읽기(계약 21-1): 어느 형식이든 모델 글 안의 첫 JSON 객체
+
 def _payload(stdout: str) -> tuple[dict | None, dict]:
     """claude --output-format json 출력 → (모델 글 안의 첫 JSON 객체 | None, {"model"}). CLI 자체 오류는 AgentCliError."""
     meta: dict = {}
@@ -150,27 +188,571 @@ def _payload(stdout: str) -> tuple[dict | None, dict]:
     return _first_json_object(stdout or ""), meta
 
 
-def _call(exe: str, prompt: str, stdin: str, timeout: float, runner) -> tuple[dict | None, dict]:
-    """CLI를 한 번 실행. 실패는 AgentCliError. 옛 버전이 모르는 옵션이면 빼고 한 번 더(호출 수에는 1회로 셈)."""
-    run = runner or _default_runner
-    name = command_name(exe)
-    base = [exe, "-p", _safe_prompt(prompt, exe), "--output-format", "json"]
-    variants = [base + ["--tools", "", "--no-session-persistence"], base]
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
+_THINK = re.compile(r"(?is)<think>.*?</think>|^Thinking\.\.\..*?\.\.\.done thinking\.")
+
+
+def _clean(s: str) -> str:
+    """색 코드·생각 과정(<think>…</think>, ollama 'Thinking...') 지우기 — 그 안의 괄호를 답으로 읽지 않게."""
+    return _THINK.sub(" ", _ANSI.sub("", s or ""))
+
+
+def _payload_text(stdout: str) -> tuple[dict | None, dict]:
+    """text: 출력 전체에서 첫 JSON 객체(codex exec·ollama run·copilot -p처럼 마지막 답만 찍는 CLI)."""
+    return _first_json_object(_clean(stdout)), {}
+
+
+def _payload_json(stdout: str) -> tuple[dict | None, dict]:
+    """json: JSON 객체 하나. {"response"|"result": 모델 글, "stats"…}(gemini -o json 등)이면 그 글에서, 아니면 객체 자체가 답.
+    {"error": …}만 있으면 CLI 자체 오류."""
+    text = _clean(stdout).strip()
+    try:
+        outer = json.loads(text)
+    except ValueError:
+        return _first_json_object(text), {}
+    if not isinstance(outer, dict):
+        return None, {}
+    meta: dict = {}
+    stats = outer.get("stats")
+    models = stats.get("models") if isinstance(stats, dict) else None
+    if isinstance(outer.get("model"), str):
+        meta["model"] = outer["model"]
+    elif isinstance(models, dict) and models:
+        meta["model"] = next(iter(models))
+    for key in ("response", "result"):
+        if isinstance(outer.get(key), str):
+            return _first_json_object(_clean(outer[key])), meta
+    err = outer.get("error")
+    if err and len(outer) <= 3:
+        msg = err.get("message") if isinstance(err, dict) else err
+        raise AgentCliError(f"AI CLI가 오류를 돌려줬습니다: {str(msg)[:150]}")
+    return outer, meta
+
+
+_MSG_TYPES = re.compile(r"(?i)agent_message|assistant_message|^message$|^assistant$|^text$|^result$|^response$")
+
+
+def _event_text(ev: dict) -> tuple[str | None, bool]:
+    """JSON 줄 하나 → (모델 글, 답 메시지인지). codex `{"type":"item.completed","item":{"type":"agent_message","text"}}`,
+    옛 codex `{"msg":{"type":"agent_message","message"}}`, opencode `{"type":"text","part":{"text"}}` 같은 모양."""
+    for holder in (ev, ev.get("item"), ev.get("msg"), ev.get("part"), ev.get("data")):
+        if not isinstance(holder, dict):
+            continue
+        kind = str(holder.get("type") or holder.get("item_type") or holder.get("role") or "")
+        for key in ("text", "message", "content", "result", "response"):
+            v = holder.get(key)
+            if isinstance(v, str) and v.strip():
+                return v, bool(_MSG_TYPES.search(kind)) or kind == ""
+    return None, False
+
+
+def _payload_lines(stdout: str) -> tuple[dict | None, dict]:
+    """json-lines: 줄마다 JSON 사건. 마지막 답 메시지의 글에서 첫 JSON 객체(없으면 그 앞 메시지들). 답 없이 오류만이면 CLI 오류."""
+    meta: dict = {}
+    answers, others, errors = [], [], []
+    for line in _clean(stdout).splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if isinstance(ev.get("model"), str):
+            meta["model"] = ev["model"]
+        kind = str(ev.get("type") or "")
+        if kind in ("error", "turn.failed") or (kind.endswith(".failed") and ev.get("error")):
+            e = ev.get("error") if isinstance(ev.get("error"), (dict, str)) else ev
+            errors.append(str((e.get("message") if isinstance(e, dict) else e) or kind))
+            continue
+        text, is_answer = _event_text(ev)
+        if text:
+            (answers if is_answer else others).append(text)
+    for text in reversed(answers + others if not answers else answers):
+        obj = _first_json_object(_clean(text))
+        if obj is not None:
+            return obj, meta
+    if errors and not answers:
+        raise AgentCliError(f"AI CLI가 오류를 돌려줬습니다: {errors[-1][:150]}")
+    return None, meta
+
+
+_PARSERS = {"claude-json": _payload, "json": _payload_json, "json-lines": _payload_lines, "text": _payload_text}
+OUTPUTS = tuple(_PARSERS)
+
+
+def parse_output(fmt: str, stdout: str) -> tuple[dict | None, dict]:
+    """CLI 출력 → (답 JSON 객체 | None, {"model"}). 형식: claude-json·json·json-lines·text."""
+    return _PARSERS.get(fmt, _payload_text)(stdout or "")
+
+
+# ---------------------------------------------------------------- 실행기(adapter) — 계약 21장
+
+@dataclass(frozen=True)
+class Flag:
+    """실행기 옵션 하나. 도움말(probe)에 find의 낱말이 모두 있을 때만 args를 붙인다."""
+    args: tuple = ()            # 붙일 인자("{prompt}" = 고정 지시, "{model}" = 모델 이름). 비면 도움말 확인만
+    find: tuple = ()            # 도움말에 있어야 하는 옵션 이름·값(낱말 단위)
+    role: str = "extra"         # "run"(비대화 실행에 꼭 필요) · "safe"(도구·셸 끄기, 읽기 전용) · "extra"(있으면 씀)
+    output: str | None = None   # 이 옵션을 쓰면 바뀌는 출력 형식
+    what: str = ""              # 무엇을 하는 옵션인지(화면용)
+
+    @property
+    def label(self) -> str:
+        return " ".join(a if a else '""' for a in self.args if a != "{prompt}") or self.what or " ".join(self.find)
+
+
+@dataclass(frozen=True)
+class Adapter:
+    """AI CLI 하나를 띄우는 방법(계약 21-1). 옵션은 공개 문서 기준 후보이고, 실제로 쓸지는 probe가 정한다."""
+    id: str
+    name: str
+    exe_names: tuple = ()
+    output: str = "text"        # 기본 출력 형식(옵션이 바꿀 수 있음)
+    base: tuple = ()            # 실행 파일 바로 뒤 인자(하위 명령 등)
+    flags: tuple = ()
+    help: tuple = ("--help",)   # probe가 읽을 도움말 명령
+    prompt_mode: str = "stdin"  # "stdin": 고정 지시도 stdin 맨 앞에 · "arg": 고정 지시(강의 글 아님)만 인자로
+    trusted: bool = False       # 하네스가 이미 시험한 호출(claude): probe 없이 쓰고, 모르는 옵션이면 빼고 다시
+    no_tools: str = ""          # 원래 도구가 없는 실행기(ollama run) — 안전한 이유
+    local: bool = False         # 글이 이 PC 밖으로 나가지 않음
+    needs_model: bool = False   # settings.ai_model, 없으면 models 명령의 첫 번째
+    models_cmd: tuple = ()
+    own_env: tuple = ()         # 그 CLI가 자기 인증에 쓰는 GOOGLE* 이름(우리 .env가 넣은 것이 아니면 남김)
+    site: str = ""
+    notes: str = ""
+
+    @property
+    def no_tools_flags(self) -> list:
+        return [a for f in self.flags if f.role == "safe" for a in f.args]
+
+    @property
+    def args(self) -> list:
+        """문서 기준 후보 인자 전체(probe 전). 실제 인자는 probe 결과의 args."""
+        return list(self.base) + [a for f in self.flags for a in f.args]
+
+
+ADAPTERS: dict[str, Adapter] = {a.id: a for a in [
+    Adapter("claude", "Claude Code", ("claude",), output="claude-json", prompt_mode="arg", trusted=True,
+            base=("-p", "{prompt}", "--output-format", "json"),
+            flags=(Flag(("--tools", ""), ("--tools",), "safe", what="도구 끄기"),
+                   Flag(("--no-session-persistence",), ("--no-session-persistence",), what="세션 저장 안 함")),
+            site="https://docs.claude.com/en/docs/claude-code/overview",
+            notes="앱이 처음부터 써 온 호출이에요. 도구를 끈 채(--tools \"\") 답만 받아요."),
+    Adapter("codex", "OpenAI Codex CLI", ("codex",), base=("exec",), help=("exec", "--help"),
+            flags=(Flag((), ("stdin",), "run", what="글을 표준 입력으로 받음"),
+                   Flag(("--sandbox", "read-only"), ("--sandbox", "read-only"), "safe",
+                        what="읽기 전용 샌드박스(파일 쓰기·네트워크 막힘)"),
+                   Flag(("--skip-git-repo-check",), ("--skip-git-repo-check",), what="빈 임시 폴더에서 실행"),
+                   Flag(("--ephemeral",), ("--ephemeral",), what="세션 저장 안 함"),
+                   Flag(("--color", "never"), ("--color", "never"), what="색 없이"),
+                   Flag(("--json",), ("--json",), output="json-lines", what="JSON 줄로 출력")),
+            site="https://developers.openai.com/codex/cli",
+            notes="codex exec(비대화)로 실행해요. 승인을 물을 수 없는 모드라 읽기 전용 샌드박스 안에서만 움직여요."),
+    Adapter("gemini", "Gemini CLI", ("gemini",),
+            flags=(Flag((), ("stdin",), "run", what="표준 입력으로 받은 글로 비대화 실행"),
+                   Flag(("--approval-mode", "default"), ("--approval-mode", "default"), "safe",
+                        what="비대화 모드에서 셸·파일 쓰기 도구가 꺼짐(읽기 도구만)"),
+                   Flag(("--output-format", "json"), ("--output-format", "json"), output="json", what="JSON으로 출력")),
+            own_env=("GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GOOGLE_GENAI_USE_VERTEXAI",
+                     "GOOGLE_APPLICATION_CREDENTIALS"),
+            site="https://github.com/google-gemini/gemini-cli",
+            notes="표준 입력이 있으면 비대화로 한 번 답하고 끝나요. 승인이 필요한 셸·쓰기 도구는 이 모드에서 빠져요."),
+    Adapter("opencode", "OpenCode", ("opencode",), base=("run",), help=("run", "--help"),
+            flags=(Flag((), ("stdin",), "run", what="글을 표준 입력으로 받음"),
+                   Flag(("--format", "json"), ("--format", "json"), output="json-lines", what="JSON 줄로 출력")),
+            site="https://opencode.ai/docs/cli/",
+            notes="도구를 끄는 명령줄 옵션이 알려져 있지 않아 쓰지 않아요. opencode.json의 permission으로 도구를 끈 뒤 "
+                  "'직접 지정'으로 연결할 수 있어요."),
+    Adapter("copilot", "GitHub Copilot CLI", ("copilot",), prompt_mode="arg", base=("-p", "{prompt}"),
+            flags=(Flag((), ("--prompt",), "run", what="한 번 묻고 끝내는 비대화 실행(-p)"),
+                   Flag((), ("stdin",), "run", what="글을 표준 입력으로 받음"),
+                   Flag(("--deny-tool", "shell", "--deny-tool", "write"), ("--deny-tool",), "safe",
+                        what="셸·파일 쓰기 도구 거부"),
+                   Flag(("--no-color",), ("--no-color",), what="색 없이"),
+                   Flag(("--silent",), ("--silent",), what="답만 출력"),
+                   Flag(("--no-custom-instructions",), ("--no-custom-instructions",), what="폴더의 지시 파일 무시")),
+            site="https://docs.github.com/copilot/how-tos/copilot-cli",
+            notes="도구 허용 옵션(--allow-*) 없이, 셸·쓰기 도구는 거부한 채 실행해요."),
+    Adapter("ollama", "Ollama(이 PC의 모델)", ("ollama",), base=("run", "{model}"), help=("run", "--help"),
+            flags=(Flag((), ("ollama run",), "run", what="ollama run <모델>(표준 입력의 글로 한 번 답함)"),
+                   Flag(("--hidethinking",), ("--hidethinking",), what="생각 과정 숨김"),
+                   Flag(("--nowordwrap",), ("--nowordwrap",), what="줄바꿈 없이"),
+                   Flag(("--format", "json"), ("--format",), what="JSON으로만 답")),
+            no_tools="모델만 실행해요(도구 없음)", local=True, needs_model=True, models_cmd=("list",),
+            site="https://ollama.com/download",
+            notes="이 PC에서 도는 모델이라 글이 인터넷으로 나가지 않아요(이름이 -cloud로 끝나는 모델은 예외)."),
+    Adapter("custom", "직접 지정", (), notes="실행 파일 경로와 인자를 직접 넣어요. 글은 항상 표준 입력으로 보내요."),
+]}
+AUTO_ORDER = ("claude", "codex", "gemini", "opencode", "copilot", "ollama")   # "auto"가 보는 순서(custom은 자동 선택 안 함)
+PROBE_TIMEOUT = 10.0      # 도움말 한 번
+PROBE_TTL = 600.0         # 같은 실행 파일(경로·수정 시각·크기)의 확인 결과를 다시 쓰는 시간
+CUSTOM_WARNING = ("직접 지정한 CLI는 도구·셸을 끄는지 앱이 확인할 수 없어요. 인자에 도구를 끄는(읽기 전용) 옵션을 꼭 넣어 "
+                  "주세요. 자동으로는 고르지 않아요.")
+NOT_FOUND = ("AI CLI를 찾지 못했습니다(" + "·".join(AUTO_ORDER) + " 중 바로 쓸 수 있는 것이 없음). "
+             "설치하거나 설정 → AI 도움에서 직접 지정하세요")
+
+
+@dataclass(frozen=True)
+class Plan:
+    """실행 준비가 끝난 실행기: 실행 파일과 인자(글 없음). run_task·AiSession이 받는다."""
+    id: str
+    name: str
+    exe: str
+    output: str = "text"
+    variants: tuple = ((),)     # 시도할 인자 목록들(claude: 새 옵션 포함 → 옛 버전이 모르면 뺀 것)
+    prompt_mode: str = "stdin"
+    safe: bool = False
+    local: bool = False
+    own_env: tuple = ()
+    model: str | None = None
+
+    @property
+    def cli(self) -> str | None:
+        return command_name(self.exe)
+
+    def argv(self, prompt: str) -> list[list[str]]:
+        """실제 명령줄들. 고정 지시만 들어갈 수 있다(prompt_mode "arg") — 강의 글·작업 지시는 늘 stdin."""
+        line = _safe_prompt(prompt, self.exe)
+        return [[self.exe] + [line if a == "{prompt}" else a for a in v] for v in self.variants]
+
+
+def claude_plan(exe: str) -> Plan:
+    """claude: 지금까지와 똑같은 호출(-p <고정 지시> --output-format json --tools "" --no-session-persistence, 모르면 뒤 둘 빼고)."""
+    a = ADAPTERS["claude"]
+    extra = tuple(x for f in a.flags for x in f.args)
+    return Plan("claude", a.name, exe, a.output, (a.base + extra, a.base), a.prompt_mode, True)
+
+
+def find_exe(adapter: Adapter) -> str | None:
+    """PATH에서 그 실행기를 찾는다(claude는 detect — LMS_AGENT_AI_CLI 우선)."""
+    if adapter.id == "claude":
+        return detect()
+    for n in adapter.exe_names:
+        p = shutil.which(n)
+        if p:
+            return p
+    return None
+
+
+def _has(text: str, token: str) -> bool:
+    return re.search(r"(?<![\w-])" + re.escape(token) + r"(?![\w-])", text, re.I) is not None
+
+
+def _help_text(args: list, timeout: float = PROBE_TIMEOUT) -> tuple[int, str]:
+    """도움말 읽기: 셸 없이, 표준 입력 없이(묻는 화면이 떠도 바로 끝남), 빈 임시 폴더에서, 우리 환경 변수를 뺀 채로.
+    → (종료 코드, stdout+stderr)."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    with tempfile.TemporaryDirectory(prefix="lms-agent-probe-") as cwd:
+        p = subprocess.Popen(list(args), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             cwd=cwd, text=True, encoding="utf-8", errors="replace", creationflags=flags,
+                             env=child_env())
+        try:
+            out, err = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill(p)
+            raise
+    return p.returncode, (out or "") + "\n" + (err or "")
+
+
+_VERSION = re.compile(r"(?<![\w.])v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.]+)?)")
+_MODEL_NAME = re.compile(r"^[\w.:/@+-]{1,120}$")
+_MODEL_ROW = re.compile(r"^\s*(\S+)\s+[0-9a-f]{12}\b")   # `ollama list`: NAME  ID(16진 12자리)  SIZE  MODIFIED
+
+
+def _models(text: str) -> list[str]:
+    """`ollama list` 표 → 모델 이름들(머리줄·오류 줄은 ID 칸이 없어 빠진다)."""
+    out = []
+    for line in _clean(text).splitlines():
+        m = _MODEL_ROW.match(line)
+        if m and _MODEL_NAME.match(m.group(1)):
+            out.append(m.group(1))
+    return out
+
+
+def _is_local_model(model: str | None) -> bool:
+    """ollama: 이름이 -cloud/:cloud로 끝나는 모델이나 OLLAMA_HOST가 다른 컴퓨터면 글이 이 PC 밖으로 간다."""
+    if model and re.search(r"(?i)[-:]cloud$", model):
+        return False
+    host = re.sub(r"^\w+://", "", (os.environ.get("OLLAMA_HOST") or "").strip().lower()).split("/")[0]
+    if host.startswith("["):
+        host = host[1:].split("]")[0]
+    elif host.count(":") == 1:
+        host = host.split(":")[0]
+    return host in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
+def probe(adapter_id: str, path: str, help_runner=None, model: str | None = None) -> dict:
+    """실행기 하나의 도움말을 읽어 실제로 있는 옵션만 고른다(계약 21-1). 필요한 비대화·도구 끄기 옵션이 없으면 "needs_check".
+    help_runner(args) → (종료 코드, 글) — 테스트는 가짜 도움말을 넣는다. 결과에 전체 경로는 넣지 않는다.
+    → {status, safe, confirmed[], missing[], args[](실행 파일 뒤), output, version, models[], model, local, note, error}"""
+    a = ADAPTERS[adapter_id]
+    run = help_runner or _help_text
+    out = {"status": "needs_check", "safe": False, "confirmed": [], "missing": [], "args": [], "output": a.output,
+           "version": None, "models": [], "model": None, "local": a.local, "note": None, "error": None}
+
+    def read(args) -> str | None:
+        try:
+            _, text = run([path, *args])
+        except subprocess.TimeoutExpired:
+            out["error"] = f"도움말이 {PROBE_TIMEOUT:g}초 안에 나오지 않았어요"
+            return None
+        except OSError as e:
+            out["error"] = f"실행하지 못했어요: {_scrub(str(e), path)}"
+            return None
+        return _clean(text or "")
+
+    text = read(a.help)
+    if text is None:
+        out["note"] = out["error"]
+        return out
+    vtext = read(("--version",))
+    m = _VERSION.search(vtext or "")
+    out["version"] = m.group(1) if m else None
+    out["error"] = None
+    args = [x for x in a.base]
+    run_ok, safe_hits, safe_need = True, 0, 0
+    for f in a.flags:
+        hit = all(_has(text, t) for t in f.find)
+        if f.role == "safe":
+            safe_need += 1
+        if hit:
+            out["confirmed"].append(f.label)
+            args += list(f.args)
+            if f.output:
+                out["output"] = f.output
+            safe_hits += f.role == "safe"
+        elif f.role in ("run", "safe"):
+            out["missing"].append(f.what or f.label)
+            run_ok = run_ok and f.role != "run"
+    safe = bool(a.no_tools) or (safe_need > 0 and safe_hits == safe_need)
+    if not a.no_tools and not safe_need:
+        out["missing"].append("도구를 끄는 옵션(알려진 것이 없음)")
+    out["safe"] = safe
+    if a.needs_model:
+        listing = read(a.models_cmd) if a.models_cmd else None
+        out["models"] = _models(listing or "")[:50]
+        want = (model or "").strip() or None
+        if want and want not in out["models"] and f"{want}:latest" not in out["models"]:   # 'llama3.2' = llama3.2:latest
+            out["missing"].append(f"모델 '{want}'(먼저 받아 두세요: ollama pull {want})")
+            want = None
+            run_ok = False
+        chosen = want or (out["models"][0] if out["models"] else None)
+        if chosen is None and run_ok:
+            out["missing"].append("받아 둔 모델(ollama가 켜져 있는지, ollama pull <모델>로 받았는지 확인)")
+            run_ok = False
+        out["model"] = chosen
+        out["local"] = a.local and _is_local_model(chosen)
+        args = [chosen if x == "{model}" else x for x in args]
+    out["args"] = args
+    if run_ok and safe:
+        out["status"] = "ready"
+        out["note"] = a.no_tools or None
+    else:
+        out["note"] = "도움말에서 확인하지 못한 것: " + ", ".join(out["missing"]) if out["missing"] else None
+    return out
+
+
+_probe_cache: dict = {}
+_probe_lock = threading.Lock()
+
+
+def clear_probe_cache() -> None:
+    with _probe_lock:
+        _probe_cache.clear()
+
+
+def _stamp(path: str):
+    try:
+        st = os.stat(path)
+        return st.st_mtime_ns, st.st_size
+    except OSError:
+        return None
+
+
+def cached_probe(adapter_id: str, path: str, model: str | None = None, help_runner=None, run: bool = True) -> dict | None:
+    """probe 결과를 같은 실행 파일(경로·수정 시각·크기)·모델이면 PROBE_TTL 동안 다시 쓴다. run=False면 저장된 것만(없으면 None).
+    help_runner를 직접 주면(테스트) 저장하지 않는다."""
+    if help_runner is not None:
+        return probe(adapter_id, path, help_runner, model) if run else None
+    key = (adapter_id, path, _stamp(path), model or "")
+    with _probe_lock:
+        hit = _probe_cache.get(key)
+    if hit and time.monotonic() - hit[0] < PROBE_TTL:
+        return hit[1]
+    if not run:
+        return None
+    res = probe(adapter_id, path, None, model)
+    with _probe_lock:
+        _probe_cache[key] = (time.monotonic(), res)
+    return res
+
+
+def _resolve_custom(path: str) -> str | None:
+    """직접 지정한 실행 파일: 경로(구분자가 있으면)는 그 파일이 있어야, 이름만이면 PATH에서."""
+    p = str(path or "").strip().strip('"').strip()
+    if not p:
+        return None
+    if re.search(r"[\\/]", p):
+        return p if os.path.isfile(p) else None
+    return shutil.which(p)
+
+
+def custom_settings(settings: dict) -> dict | None:
+    c = (settings or {}).get("ai_custom")
+    return c if isinstance(c, dict) and str(c.get("path") or "").strip() else None
+
+
+def _entry(aid: str, settings: dict, claude_exe: str | None = None, discover: bool = True, probe_now: bool = False,
+           help_runner=None, finder=None) -> dict:
+    """실행기 하나의 상태(계약 21-3 state.ai.providers의 한 칸). '_'로 시작하는 칸(실행 파일·Plan)은 화면에 내보내지 않는다."""
+    a = ADAPTERS[aid]
+    e = {"id": aid, "name": a.name, "found": False, "path_hint": None, "safe": False, "status": "missing",
+         "version": None, "local": a.local, "probed": False, "auto": aid in AUTO_ORDER, "flags": [], "missing": [],
+         "note": None, "notes": a.notes or None, "site": a.site or None}
+    if aid == "custom":
+        c = custom_settings(settings)
+        e["warning"] = CUSTOM_WARNING
+        if not c:
+            e["note"] = "아직 지정하지 않았어요"
+            return e
+        args = [str(x) for x in c.get("args") or []]
+        out = c.get("output") if c.get("output") in OUTPUTS else "text"
+        e.update(path_hint=command_name(c["path"]), output=out, args=[_scrub(x, None) for x in args])
+        exe = _resolve_custom(c["path"])
+        if not exe:
+            e["note"] = "실행 파일을 찾지 못했어요"
+            return e
+        e.update(found=True, status="ready", note="도구를 끄는지 앱이 확인하지 않은 실행기예요")
+        e["_plan"] = Plan("custom", command_name(exe) or a.name, exe, out, (tuple(args),), "stdin", False, False)
+        return e
+    exe = claude_exe if (aid == "claude" and claude_exe) else ((finder or find_exe)(a) if discover else None)
+    if not exe:
+        e["note"] = "설치되지 않았거나 PATH에서 찾지 못했어요"
+        return e
+    e.update(found=True, path_hint=command_name(exe))
+    if a.trusted:
+        e.update(status="ready", safe=True, flags=[f.label for f in a.flags], note=None)
+        e["_plan"] = claude_plan(exe)
+        return e
+    model = (str(settings.get("ai_model") or "").strip() or None) if a.needs_model else None
+    r = cached_probe(aid, exe, model, help_runner, run=probe_now)
+    if r is None:
+        e.update(status="needs_check", note="아직 확인하지 않았어요 — 도움말을 읽어 쓸 옵션을 확인해요")
+        return e
+    e.update(probed=True, status=r["status"], safe=r["safe"], version=r["version"], flags=r["confirmed"],
+             missing=r["missing"], local=r["local"], note=r["note"] or r["error"], output=r["output"])
+    if a.needs_model:
+        e.update(model=r["model"], models=r["models"][:20])
+    if r["status"] == "ready":
+        e["_plan"] = Plan(aid, a.name, exe, r["output"], (tuple(r["args"]),), a.prompt_mode, r["safe"], r["local"],
+                          a.own_env, r["model"])
+    return e
+
+
+def public(entry: dict) -> dict:
+    return {k: v for k, v in entry.items() if not k.startswith("_")}
+
+
+def providers(settings: dict | None = None, claude_exe: str | None = None, discover: bool = True,
+              probe_now: bool = False, help_runner=None, finder=None) -> list[dict]:
+    """찾은 실행기와 상태(AUTO_ORDER + custom). probe_now면 아직 확인하지 않은 것의 도움말을 함께(동시에) 읽는다.
+    claude_exe: 테스트·데모가 넣은 claude(그때는 discover=False로 PATH를 보지 않는다)."""
+    settings = settings or {}
+    ids = list(AUTO_ORDER) + ["custom"]
+    if not probe_now:
+        return [_entry(i, settings, claude_exe, discover, False, help_runner, finder) for i in ids]
+    with ThreadPoolExecutor(max_workers=len(ids)) as ex:
+        futs = [ex.submit(_entry, i, settings, claude_exe, discover, True, help_runner, finder) for i in ids]
+        return [f.result() for f in futs]
+
+
+def pick(entries: list[dict], settings: dict | None = None, want: str | None = None) -> dict | None:
+    """고른 실행기(state 계산용 — 새로 확인하지 않음). auto: AUTO_ORDER에서 쓸 수 있고 안전한 첫 번째. custom은 직접 고를 때만."""
+    want = want or (settings or {}).get("ai_provider") or "auto"
+    by = {e["id"]: e for e in entries}
+    if want == "auto":
+        return next((by[i] for i in AUTO_ORDER if i in by and by[i]["status"] == "ready" and by[i]["safe"]
+                     and by[i].get("_plan")), None)
+    e = by.get(want)
+    return e if e and e["status"] == "ready" and e.get("_plan") else None
+
+
+def why_not(entry: dict | None, want: str) -> str:
+    """고른 실행기를 못 쓰는 이유(한국어, 경로 없음)."""
+    if want == "auto":
+        return NOT_FOUND
+    if entry is None:
+        return f"모르는 AI 실행기예요: {str(want)[:40]}"
+    if entry["status"] == "missing":
+        if entry["id"] == "custom":
+            return "직접 지정한 AI CLI의 실행 파일을 찾지 못했습니다. 설정 → AI 도움에서 경로를 확인하세요"
+        return (f"선택한 AI CLI({entry['name']})를 찾지 못했습니다. 설치했는지 확인하거나 설정 → AI 도움에서 "
+                "다른 것을 고르세요")
+    miss = ", ".join(entry.get("missing") or []) or entry.get("note") or "필요한 옵션"
+    return f"{entry['name']}: 비대화 실행·도구 끄기 옵션을 도움말에서 확인하지 못해 쓰지 않았습니다(확인 못 한 것: {miss})"
+
+
+def select(settings: dict | None = None, claude_exe: str | None = None, discover: bool = True, help_runner=None,
+           want: str | None = None, finder=None) -> tuple[Plan | None, str | None]:
+    """설정대로 실행기 하나를 고른다(필요하면 도움말을 읽어 확인) → (Plan, None) 또는 (None, 이유).
+    auto는 AUTO_ORDER 순서로 보다가 쓸 수 있고 안전한 첫 번째에서 멈춘다(그 뒤 것은 띄우지 않음).
+    직접 고른 것을 못 쓰면 다른 실행기로 몰래 바꾸지 않는다(글이 사용자가 고르지 않은 서비스로 가지 않게)."""
+    settings = settings or {}
+    want = want or settings.get("ai_provider") or "auto"
+    if want == "auto":
+        for aid in AUTO_ORDER:
+            e = _entry(aid, settings, claude_exe, discover, True, help_runner, finder)
+            if e["status"] == "ready" and e["safe"] and e.get("_plan"):
+                return e["_plan"], None
+        return None, NOT_FOUND
+    if want not in ADAPTERS:
+        return None, why_not(None, want)
+    e = _entry(want, settings, claude_exe, discover, True, help_runner, finder)
+    if e["status"] == "ready" and e.get("_plan"):
+        return e["_plan"], None
+    return None, why_not(e, want)
+
+
+def resolve(provider=None, command: str | None = None, store=None, settings: dict | None = None) -> tuple[Plan | None, str | None]:
+    """run_task·AiSession·run_evals가 쓰는 실행기 정하기.
+    provider: Plan(이미 고름) · 실행기 id · None(설정대로). command: claude 실행 파일(예전 인자 — 테스트·데모가 넣으면
+    PATH를 보지 않고 claude로 쓴다; 설정에서 custom을 골랐으면 custom)."""
+    if isinstance(provider, Plan):
+        return provider, None
+    if settings is None:
+        settings = (store.data.get("settings") if store is not None else None) or {}
+    want = provider if isinstance(provider, str) and provider else None
+    return select(settings, claude_exe=command, discover=not command, want=want)
+
+
+def _call(target, prompt: str, stdin: str, timeout: float, runner) -> tuple[dict | None, dict]:
+    """CLI를 한 번 실행. target: Plan 또는 claude 실행 파일 경로(예전 방식). 실패는 AgentCliError.
+    앞 인자 목록을 모른다고 하면(옛 버전) 다음 목록으로 한 번 더(호출 수에는 1회로 셈). 글은 늘 stdin."""
+    plan = target if isinstance(target, Plan) else claude_plan(target)
+    exe, name = plan.exe, plan.cli
+    variants = plan.argv(prompt)
+    if plan.prompt_mode == "stdin":
+        stdin = prompt + "\n\n" + stdin
+    env = None if runner else child_env(plan.own_env)
     with tempfile.TemporaryDirectory(prefix="lms-agent-ai-") as cwd:
         for i, args in enumerate(variants):
             try:
-                cp = run(args, input=stdin, timeout=timeout, cwd=cwd)
+                cp = (runner(args, input=stdin, timeout=timeout, cwd=cwd) if runner
+                      else _default_runner(args, input=stdin, timeout=timeout, cwd=cwd, env=env))
             except subprocess.TimeoutExpired:
                 raise AgentCliError(f"AI CLI({name})가 {timeout:g}초 안에 답하지 않았습니다") from None
             except OSError as e:
                 raise AgentCliError(f"AI CLI({name})를 실행하지 못했습니다: {_scrub(str(e), exe)}") from None
             if cp.returncode != 0:
                 err = _scrub((cp.stderr or "") + " " + (cp.stdout or ""), exe)
-                if i == 0 and re.search(r"unknown option|unrecognized|invalid option", err, re.I):
+                if i + 1 < len(variants) and re.search(r"unknown option|unrecognized|invalid option", err, re.I):
                     continue
                 raise AgentCliError(f"AI CLI({name})가 실패했습니다(종료 코드 {cp.returncode}): {err[:150]}")
             try:
-                return _payload(cp.stdout or "")
+                return parse_output(plan.output, cp.stdout or "")
             except AgentCliError as e:
                 raise AgentCliError(_scrub(str(e), exe)) from None
     raise AgentCliError(f"AI CLI({name})가 실패했습니다")
@@ -1043,21 +1625,23 @@ class AiResult:
     cli: str | None = None     # 명령 이름만(예: "claude")
     model: str | None = None   # CLI가 알려 주면
     notes: list = field(default_factory=list)
+    provider: str | None = None   # 실행기 id(계약 21장, 예: "codex")
 
 
 def run_task(name: str, inputs: dict, runner=None, command: str | None = None, store=None,
-             max_attempts: int | None = None) -> AiResult:
-    """작업 하나를 실행한다. 예외를 던지지 않는다. store를 주면 실행 기록(내용 없음)을 남긴다."""
+             max_attempts: int | None = None, provider=None) -> AiResult:
+    """작업 하나를 실행한다. 예외를 던지지 않는다. store를 주면 실행 기록(내용 없음)을 남긴다.
+    실행기: provider(Plan·id) > command(claude 실행 파일) > store의 settings.ai_provider(기본 auto) — resolve()."""
     task = TASKS.get(name)
     started = time.monotonic()
     if task is None:
         return AiResult(False, name, error=f"모르는 AI 작업: {name}")
     if max_attempts is not None:
         task = replace(task, max_attempts=max(1, min(max_attempts, task.max_attempts)))
-    exe = command or detect()
-    res = AiResult(False, name, cli=command_name(exe))
-    if not exe:
-        res.error = f"AI CLI({DEFAULT_COMMAND})를 찾지 못했습니다. 설치하거나 {ENV_VAR}에 경로를 넣으세요"
+    plan, why = resolve(provider, command, store)
+    res = AiResult(False, name, cli=plan.cli if plan else None, provider=plan.id if plan else None)
+    if plan is None:
+        res.error = why
         _log(store, res)
         return res
     inputs = dict(inputs)
@@ -1076,8 +1660,8 @@ def run_task(name: str, inputs: dict, runner=None, command: str | None = None, s
                  + "=== 입력 글 시작 / INPUT START ===\n" + sent + "\n=== 입력 글 끝 / INPUT END ===\n")
         res.attempts = attempt
         try:
-            obj, meta = _call(exe, PROMPT, stdin, task.timeout, runner)
-            res.model = meta.get("model") or res.model
+            obj, meta = _call(plan, PROMPT, stdin, task.timeout, runner)
+            res.model = meta.get("model") or plan.model or res.model
             if obj is None:
                 raise _Invalid("답에서 JSON 객체를 찾지 못했습니다 / no JSON object found in the reply")
             errs = check_schema(obj, task.schema)
@@ -1129,8 +1713,9 @@ class AiSession:
     동기화 안의 모든 AI 작업(평가 비중·마감·확인함 정리)이 같은 세션을 나눠 쓰면 한도가 함께 적용된다."""
 
     def __init__(self, store, runner=None, command: str | None = None, enabled: bool | None = None,
-                 max_calls: int = MAX_CALLS_PER_SYNC, max_per_day: int = MAX_CALLS_PER_DAY):
+                 max_calls: int = MAX_CALLS_PER_SYNC, max_per_day: int = MAX_CALLS_PER_DAY, provider=None):
         self.store, self.runner, self.command = store, runner, command
+        self.provider = provider   # Plan·id·None(None이면 store의 settings.ai_provider대로 — 계약 21-3)
         self.max_calls, self.max_per_day = max_calls, max_per_day
         self.enabled = bool((store.data.get("settings") or {}).get("ai_cli")) if enabled is None else bool(enabled)
         self.calls = 0
@@ -1150,7 +1735,8 @@ class AiSession:
         if why:
             return AiResult(False, name, error=why)
         left = min(self.max_calls - self.calls, self.max_per_day - calls_today(self.store))
-        res = run_task(name, inputs, runner=self.runner, command=self.command, store=self.store, max_attempts=left)
+        res = run_task(name, inputs, runner=self.runner, command=self.command, store=self.store, max_attempts=left,
+                       provider=self.provider)
         self.calls += res.attempts
         return res
 
@@ -1166,13 +1752,13 @@ def review_items(store) -> tuple[list[dict], list[dict]]:
 
 
 def auto_triage(store, runner=None, session: AiSession | None = None, names: list | None = None,
-                command: str | None = None) -> dict:
+                command: str | None = None, provider=None) -> dict:
     """확인함 후보를 AI로 정리해 검증된 결정만 store.update_user(..., by="ai", reason=…)로 반영한다.
     settings.ai_cli가 꺼져 있으면 아무것도 하지 않는다. 결과는 store.data["ai_triage"]에도 남는다(state.ai.last_triage).
     리더: 동기화 뒤 settings.ai_auto_triage가 켜져 있으면 `agent_cli.auto_triage(store, session=같은 세션)` 후 저장.
     반환: {"at", "ok", "applied": n, "skipped": [{"id","why"}], "error", "attempts",
            "pending_left": 아직 확인 대기 수, "user_reverted": 사용자가 되돌려 AI가 건드리지 않은 수}(계약 13-3)"""
-    session = session or AiSession(store, runner=runner, command=command)
+    session = session or AiSession(store, runner=runner, command=command, provider=provider)
     out = {"at": iso(now_local()), "ok": False, "applied": 0, "skipped": [], "error": None, "attempts": 0}
 
     def finish() -> dict:
@@ -1251,16 +1837,16 @@ def ask_json(prompt: str, text: str, schema_hint: str, timeout: float = 90, runn
              command: str | None = None) -> dict:
     """AI CLI에 한 번 묻고 답의 JSON 객체를 돌려준다(검사·재시도 없음). 글은 가린 뒤 stdin으로만, 최대 MAX_TEXT자.
     실패하면 AgentCliError(한국어). 앱 안에서는 검사·재시도·기록이 있는 run_task / AiSession을 쓴다."""
-    exe = command or detect()
-    if not exe:
-        raise AgentCliError(f"AI CLI({DEFAULT_COMMAND})를 찾지 못했습니다. 설치하거나 {ENV_VAR}에 경로를 넣으세요")
+    plan, why = resolve(None, command)
+    if plan is None:
+        raise AgentCliError(why)
     body, _ = redact(text)
     body, cut = cap_text(body)
     stdin = (f"응답 형식(JSON 객체 하나만, 다른 글 없이) / reply with one JSON object: {schema_hint}\n\n"
              + ("(글이 길어 일부만 보냄)\n" if cut else "")
              + "=== 입력 글 시작 / INPUT START ===\n" + body + "\n=== 입력 글 끝 / INPUT END ===\n")
     try:
-        obj, _ = _call(exe, prompt, stdin, timeout, runner)
+        obj, _ = _call(plan, prompt, stdin, timeout, runner)
     except AgentCliError as e:
         raise AgentCliError(str(e) + (f" (글이 길어 {MAX_TEXT:,}자만 보냈습니다)" if cut else "")) from None
     if obj is None:
@@ -1391,15 +1977,35 @@ def _check_expect(case: dict, res: AiResult) -> str | None:
     return None
 
 
-def run_evals(runner=None, command: str | None = None, cases: list | None = None) -> dict:
-    """평가 묶음을 돌린다(runner=None이면 실제 CLI — 호출 한도·기록과 무관한 점검용).
-    `python -m lms_agent ai-eval`에서 부르기 좋게 결과만 돌려준다(입력·답 내용 없음).
-    결과: {"cli", "passed", "total", "cases": [{"name","task","passed","ok","error","problem","attempts","duration_ms"}]}"""
-    out = []
-    for case in cases or EVAL_CASES:
-        res = run_task(case["task"], case["inputs"], runner=runner, command=command)
+EVAL_LABELS = {   # 화면의 [연결 시험] 목록에 보일 이름
+    "updated_grading_policy": "평가 비중 · 영어 공지 목록", "korean_syllabus_prose": "평가 비중 · 한국어 문장",
+    "no_weights": "평가 비중 · 없는 글", "asic_lab3_due": "마감 · 영어 게시판 글",
+    "asic_lab4_email_due": "마감 · 한국어 '자정'", "korean_prose_distribution": "학점 비율 · 한국어 문장",
+    "pass_fail_only": "학점 비율 · P/NP 과목", "triage_extension_and_holiday": "확인함 정리 · 연장·휴강",
+}
+
+
+def run_evals(runner=None, command: str | None = None, cases: list | None = None, provider=None,
+              settings: dict | None = None, progress=None) -> dict:
+    """평가 묶음을 돌린다(runner=None이면 실제 CLI — 호출 한도·기록과 무관한 점검용). 데모 문장만 보낸다(강의 글 아님).
+    `python -m lms_agent ai-eval`·화면의 [연결 시험](계약 21-3)에서 부르기 좋게 결과만 돌려준다(입력·답 내용 없음).
+    provider: Plan·실행기 id·None(settings대로, 기본 auto). progress(done, total, case_result)는 사례마다.
+    결과: {"cli", "provider", "passed", "total", "duration_ms", "error",
+           "cases": [{"name","label","task","passed","ok","error","problem","attempts","duration_ms"}]}"""
+    cases = cases or EVAL_CASES
+    started = time.monotonic()
+    plan, why = resolve(provider, command, settings=settings or {})
+    out: list[dict] = []
+    if plan is None:
+        return {"cli": None, "provider": None, "passed": 0, "total": len(cases), "cases": [], "error": why,
+                "duration_ms": 0}
+    for case in cases:
+        res = run_task(case["task"], case["inputs"], runner=runner, provider=plan)
         problem = _check_expect(case, res)
-        out.append({"name": case["name"], "task": case["task"], "passed": problem is None, "ok": res.ok,
-                    "error": res.error, "problem": problem, "attempts": res.attempts, "duration_ms": res.duration_ms})
-    return {"cli": command_name(command or detect()), "passed": sum(c["passed"] for c in out), "total": len(out),
-            "cases": out}
+        out.append({"name": case["name"], "label": EVAL_LABELS.get(case["name"], case["name"]), "task": case["task"],
+                    "passed": problem is None, "ok": res.ok, "error": res.error, "problem": problem,
+                    "attempts": res.attempts, "duration_ms": res.duration_ms})
+        if progress is not None:
+            progress(len(out), len(cases), out[-1])
+    return {"cli": plan.cli, "provider": plan.id, "passed": sum(c["passed"] for c in out), "total": len(out),
+            "cases": out, "error": None, "duration_ms": int((time.monotonic() - started) * 1000)}

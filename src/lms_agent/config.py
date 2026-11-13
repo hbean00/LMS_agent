@@ -25,6 +25,9 @@ def data_dir() -> Path:
     return base / APP_NAME
 
 
+DOTENV_KEYS: set = set()   # 우리 .env가 환경 변수에 넣은 이름 — AI CLI를 띄울 때 빼고 넘긴다(agent_cli.child_env, 계약 21-2)
+
+
 def load_dotenv(*paths: Path) -> list[Path]:
     """KEY=VALUE 형식의 .env를 읽어 환경 변수에 넣는다(이미 있는 값은 덮지 않음). 값은 출력하지 않는다."""
     loaded = []
@@ -44,6 +47,7 @@ def load_dotenv(*paths: Path) -> list[Path]:
             value = value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
+                DOTENV_KEYS.add(key)
         loaded.append(Path(p))
     return loaded
 

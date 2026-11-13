@@ -884,6 +884,34 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 /* 설정: 첨부·AI·캐릭터 */
 .path-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .path-row .input { flex: 1 1 260px; min-width: 0; height: 38px; }
+/* 설정 → AI 도움: 실행기(CLI) 고르기(계약 21) */
+.prov-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.provs { margin-top: 6px; border: 1px solid var(--rule-strong); border-radius: 10px; padding: 0 14px; }
+.prov { padding: 12px 0; border-top: 1px solid var(--rule); }
+.prov:first-child { border-top: 0; }
+.prov-pick { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.prov-pick input { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--burgundy); cursor: pointer; }
+.prov-pick input:disabled { cursor: not-allowed; }
+.prov-pick.is-off { cursor: default; }
+.prov-pick.is-off b { color: var(--graphite); }
+.prov-body { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.prov-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.prov-top b { font-size: 15.5px; margin-right: 2px; }
+.prov-ver { font-size: 13px; color: var(--graphite); }
+.prov-body small { font-size: 14px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.prov-body small a { color: var(--graphite); }
+.prov-extra { margin: 8px 0 0 30px; display: grid; gap: 6px; }
+.prov-extra .lbl { font-size: 14px; }
+.prov-extra .input { height: 38px; font-size: 15px; }
+.prov-extra textarea.input { min-height: 84px; height: auto; font-family: Consolas, ui-monospace, monospace; font-size: 14px; }
+.prov-extra select.input { width: auto; max-width: 100%; }
+.prov-warn, .prov-body small.prov-warn { font-size: 14px; color: var(--burgundy); font-weight: 600; }
+.ai-test { margin-top: 12px; display: grid; gap: 6px; }
+.ai-test-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ai-test-res { font-size: 15.5px; font-weight: 700; }
+.ai-cases { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 3px; font-size: 14px; }
+.ai-cases li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.ai-cases .ok { color: var(--graphite); }
 .moods { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 14px; }
 .mood { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--rule-strong); border-radius: 10px; }
 .mood-top { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 700; }
@@ -1811,7 +1839,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   const refresh = () => api('GET', '/api/state').then(applyState, () => {});
   // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking() || agRunning()));
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || updWorking() || agRunning() || aiTestRunning()));
   function pollWhileBusy() {
     if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
@@ -5064,6 +5092,187 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     aiError = '';
     post('/api/ai/settings', body).then((s) => { applyState(s); toast(want ? onMsg : offMsg); }, (err) => { aiError = err.message; render(); });
   }
+  // ---- 실행기(AI CLI) 고르기·직접 지정·연결 시험(계약 21). 서버가 providers를 주지 않으면(예전 서버) 이 부분은 그리지 않는다
+  const aiDraft = { path: null, args: null, output: null, model: null };   // 다시 그려도 입력 중인 값이 남게
+  const aiUi = { customOpen: false, probeAsked: false, rescanning: false, testStarting: false };
+  let aiProvError = '';
+  const aiProviders = () => { const A = aiState(); return A && Array.isArray(A.providers) ? A.providers.filter((p) => p && typeof p === 'object' && p.id) : []; };
+  const aiTest = () => { const A = aiState(); return A && A.test && typeof A.test === 'object' ? A.test : null; };
+  const aiTestRunning = () => { const t = aiTest(); return !!t && t.status === 'running'; };
+  const AI_OUT = { text: '글 그대로(답 안의 첫 JSON)', json: 'JSON 하나', 'json-lines': 'JSON 줄(사건마다 한 줄)', 'claude-json': 'Claude 모양 JSON' };
+  function fmtDur(ms) {
+    const s = Math.max(0, Math.round(num(ms) / 1000));
+    return s >= 60 ? Math.floor(s / 60) + '분 ' + (s % 60) + '초' : s + '초';
+  }
+  function provChips(p, inUse) {
+    const out = [];
+    if (inUse) out.push(tag('사용 중', 'new'));
+    if (p.id === 'custom' && p.status === 'missing' && p.note === '아직 지정하지 않았어요') out.push(tag('지정 안 함', 'quiet'));
+    else if (p.status === 'ready') out.push(p.safe ? tag('사용 가능 · 안전', 'accent', '도구·셸 실행을 끄는 옵션을 확인했어요')
+      : tag('사용 가능 · 도구 확인 안 됨', 'dash', '도구·셸을 끄는지 앱이 확인하지 못했어요. 자동으로는 고르지 않아요'));
+    else if (p.status === 'needs_check' && p.found && !p.probed) out.push(tag('아직 확인 전', 'dash', '[다시 찾기]를 누르면 이 프로그램의 도움말을 읽어 쓸 수 있는지 확인해요(글은 보내지 않아요)'));
+    else if (p.status === 'needs_check') out.push(tag('확인 필요', 'dash', '필요한 옵션을 도움말에서 확인하지 못해 쓰지 않아요'));
+    else out.push(tag('없음', 'quiet', '이 PC에서 찾지 못했어요'));
+    if (p.status === 'ready' && p.local) out.push(tag('이 PC 안에서만', 'quiet', '글이 인터넷으로 나가지 않아요'));
+    if (p.version) out.push(h('span', { class: 'prov-ver tnum' }, 'v' + p.version));
+    return out;
+  }
+  function provSave(body, msg) {
+    aiProvError = '';
+    return post('/api/ai/provider', body).then((s) => {
+      if ('custom' in body) { aiDraft.path = null; aiDraft.args = null; aiDraft.output = null; }
+      if ('model' in body) aiDraft.model = null;
+      if ('custom' in body && body.custom) aiUi.customOpen = false;
+      applyState(s);
+      if (msg) toast(msg);
+    }, (err) => { aiProvError = err.message; render(); });
+  }
+  // 도움말을 다시 읽어 상태를 정한다(몇 초). 쓰기 줄(enqueue)에 넣지 않는다: 그동안 다른 저장은 그대로 된다
+  function aiRescan(quiet) {
+    if (aiUi.rescanning) return;
+    aiUi.rescanning = true;
+    if (!quiet) { aiProvError = ''; render(); }
+    api('POST', '/api/ai/rescan', {}).then((s) => { aiUi.rescanning = false; applyState(s); if (!quiet) toast('AI CLI를 다시 찾았어요'); },
+      (err) => { aiUi.rescanning = false; if (!quiet) aiProvError = err.message; render(); });
+  }
+  function aiStartTest(id) {
+    if (aiUi.testStarting || aiTestRunning()) return;
+    aiUi.testStarting = true;
+    aiProvError = '';
+    render();
+    post('/api/ai/test', id ? { provider: id } : {}).then((s) => { aiUi.testStarting = false; applyState(s); },
+      (err) => { aiUi.testStarting = false; aiProvError = err.message; render(); });
+  }
+  function provPick(id, name, sel, usable, chips, lines) {
+    return h('label', { class: 'prov-pick' + (usable ? '' : ' is-off') },
+      h('input', { type: 'radio', name: 'ai-prov', value: id, 'data-key': 'ai-prov-' + id, checked: sel === id, disabled: !usable && sel !== id,
+        on: { change: (e) => { if (e.target.checked) provSave({ provider: id }, id === 'auto' ? 'AI 실행기를 자동으로 골라요' : 'AI 실행기를 바꿨어요 · ' + name); } } }),
+      h('span', { class: 'prov-body' }, h('span', { class: 'prov-top' }, h('b', null, name), chips),
+        lines.filter(Boolean).map((t) => (typeof t === 'string' ? h('small', null, t) : t))));
+  }
+  function ollamaExtra(p, A) {
+    const models = Array.isArray(p.models) ? p.models.map(String) : [];
+    const inp = h('input', { type: 'text', class: 'input', id: 'ai-model', 'data-key': 'ai-model', value: aiDraft.model !== null ? aiDraft.model : (A.model || ''),
+      list: models.length ? 'ai-models' : null, placeholder: p.model || '예: llama3.2:3b', spellcheck: 'false', autocomplete: 'off',
+      on: { input: (e) => { aiDraft.model = e.target.value; } } });
+    const save = () => { const v = inp.value.trim(); provSave({ model: v || null }, v ? '모델을 저장했어요 · ' + v : '모델을 비웠어요 — 받아 둔 첫 모델을 써요'); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    return h('div', { class: 'prov-extra' },
+      h('label', { class: 'lbl', for: 'ai-model' }, '모델'),
+      h('div', { class: 'path-row', style: 'margin-top:0' }, inp, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'ai-model-save', on: { click: save } }, '저장')),
+      models.length ? h('datalist', { id: 'ai-models' }, models.map((m) => h('option', { value: m }))) : null,
+      h('p', { class: 'help' }, '비워 두면 받아 둔 모델 중 첫 번째를 써요. 받지 않은 모델은 고를 수 없어요(앱이 몇 GB를 몰래 받지 않게) — 터미널에서 ollama pull <이름>으로 받아요.'));
+  }
+  function customExtra(p, A, sel) {
+    const C = A.custom && typeof A.custom === 'object' ? A.custom : { set: false, args: [], output: 'text' };
+    const args = Array.isArray(C.args) ? C.args.map((a) => (a === '' ? '""' : String(a))) : [];
+    const pathIn = h('input', { type: 'text', class: 'input', id: 'ai-c-path', 'data-key': 'ai-c-path', value: aiDraft.path !== null ? aiDraft.path : '',
+      placeholder: C.set ? '지금: ' + (C.name || '') + ' — 바꿀 때만 넣어요' : '예: C:\\tools\\mycli.exe 또는 PATH에 있는 이름', spellcheck: 'false', autocomplete: 'off',
+      on: { input: (e) => { aiDraft.path = e.target.value; } } });
+    const argsIn = h('textarea', { class: 'input', id: 'ai-c-args', 'data-key': 'ai-c-args', rows: '4', spellcheck: 'false', autocomplete: 'off',
+      value: aiDraft.args !== null ? aiDraft.args : args.join('\n'), placeholder: '한 줄에 인자 하나씩',
+      on: { input: (e) => { aiDraft.args = e.target.value; } } });
+    const outSel = h('select', { class: 'input', id: 'ai-c-out', 'data-key': 'ai-c-out', on: { change: (e) => { aiDraft.output = e.target.value; } } },
+      Object.keys(AI_OUT).map((k) => h('option', { value: k }, k + ' — ' + AI_OUT[k])));
+    outSel.value = aiDraft.output !== null ? aiDraft.output : (C.output || 'text');
+    const save = () => {
+      const custom = { args: argsIn.value.split('\n'), output: outSel.value };
+      if (pathIn.value.trim()) custom.path = pathIn.value.trim();
+      provSave({ provider: 'custom', custom }, '직접 지정한 CLI를 써요 — 도구를 끄는 옵션을 꼭 넣어 주세요');
+    };
+    return h('div', { class: 'prov-extra' },
+      h('p', { class: 'prov-warn' }, p.warning || '직접 지정한 CLI는 도구·셸을 끄는지 앱이 확인할 수 없어요. 도구를 끄는 옵션을 인자에 꼭 넣어 주세요.'),
+      h('label', { class: 'lbl', for: 'ai-c-path' }, '실행 파일'), pathIn,
+      C.set ? h('p', { class: 'help' }, '경로는 화면에 다시 보여 주지 않아요(사용자 이름이 들어 있어서). 비워 두면 지금 경로를 그대로 써요.') : null,
+      h('label', { class: 'lbl', for: 'ai-c-args' }, '인자(한 줄에 하나)'), argsIn,
+      h('p', { class: 'help' }, '셸을 거치지 않아요. 빈 인자는 "" 로 적어요. 강의 글은 늘 표준 입력으로 보내고 명령줄에 넣지 않아요(고정 지시만 필요하면 {prompt}).'),
+      h('label', { class: 'lbl', for: 'ai-c-out' }, '출력 형식'), outSel,
+      h('div', { class: 'form-actions', style: 'margin-top:4px' },
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'ai-c-save', on: { click: save } }, '저장하고 이것 쓰기'),
+        C.set ? h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'ai-c-clear',
+          on: { click: () => provSave(sel === 'custom' ? { custom: null, provider: 'auto' } : { custom: null }, '직접 지정을 지웠어요') } }, '지우기') : null));
+  }
+  function renderProviders(A) {
+    const list = aiProviders();
+    if (!list.length) return null;
+    const sel = String(A.selected || 'auto');
+    const cur = A.provider ? list.find((p) => p.id === A.provider) || null : null;
+    // 다른 프로그램(CLI)의 도움말을 읽는 것은 사용자가 [다시 찾기]를 눌렀을 때만 — 창을 열었다고 남의 프로그램을 실행하지 않는다
+    // (같은 이름의 다른 프로그램일 수도 있다: 예) VS Code의 copilot 실행기)
+    const order = Array.isArray(A.auto_order) ? A.auto_order : [];
+    const nameOf = (id) => { const p = list.find((x) => x.id === id); return p ? p.name : id; };
+    const rows = [h('div', { class: 'prov' }, provPick('auto', '자동', sel, true, [], [
+      sel === 'auto' ? (cur ? '지금: ' + cur.name + ' — 찾은 것 중 쓸 수 있고 안전한 첫 번째예요.' : (A.unavailable_reason || '쓸 수 있는 안전한 CLI가 아직 없어요.'))
+        : '찾은 것 중 쓸 수 있고 안전한 첫 번째를 골라요.',
+      order.length ? '순서: ' + order.map(nameOf).join(' → ') + '. 직접 지정은 자동으로 고르지 않아요.' : null]))];
+    for (const p of list) {
+      const usable = p.status === 'ready';
+      const lines = [];
+      if (p.id === 'custom') {
+        const C = A.custom && typeof A.custom === 'object' ? A.custom : {};
+        lines.push(C.set ? '명령 ' + (C.name || p.path_hint || '') + ' · 인자 ' + num(Array.isArray(C.args) ? C.args.length : 0) + '개 · 출력 ' + (C.output || 'text')
+          + (usable ? '' : ' — ' + (p.note || '실행 파일을 찾지 못했어요')) : '목록에 없는 CLI(Crush·사내 도구 등)를 경로와 인자로 연결해요.');
+        if (C.set && !aiUi.customOpen) lines.push(h('small', { class: 'prov-warn' }, p.warning || '도구·셸을 끄는지 앱이 확인할 수 없어요. 자동으로는 고르지 않아요.'));
+      } else {
+        if (usable && Array.isArray(p.flags) && p.flags.length) lines.push('확인한 옵션: ' + p.flags.join(' · '));
+        if (usable && p.id === 'ollama' && p.model) lines.push('모델 ' + p.model + (p.local ? '' : ' — 클라우드 모델이라 글이 이 PC 밖으로 가요'));
+        if (!usable && p.note) lines.push(p.note);
+        if (p.status === 'missing' && p.site) lines.push(h('small', null, h('a', { href: p.site, target: '_blank', rel: 'noopener noreferrer' }, p.name + ' 설치 안내')));
+      }
+      const row = [provPick(p.id, p.name, sel, usable, provChips(p, !!cur && cur.id === p.id), lines)];
+      if (p.id === 'ollama' && p.found) row.push(ollamaExtra(p, A));
+      if (p.id === 'custom') {
+        const C = A.custom && typeof A.custom === 'object' ? A.custom : {};
+        const open = aiUi.customOpen;
+        row.push(h('div', { class: 'prov-extra' }, h('div', null, h('button', { type: 'button', class: 'linkish', 'data-key': 'ai-c-toggle', 'aria-expanded': open ? 'true' : 'false',
+          on: { click: () => { aiUi.customOpen = !open; render(); } } }, open ? '접기' : C.set ? '경로·인자 바꾸기' : '경로·인자 넣기'))));
+        if (open) row.push(customExtra(p, A, sel));
+      }
+      rows.push(h('div', { class: 'prov' }, row));
+    }
+    const rescanBtn = h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'ai-rescan', 'aria-disabled': aiUi.rescanning ? 'true' : null,
+      on: { click: () => aiRescan(false) } }, aiUi.rescanning ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '찾는 중…'] : '다시 찾기');
+    return [h('div', { class: 'prov-head' }, h('h3', { class: 'sub-h', id: 'h-ai-cli' }, 'AI CLI 연결'), rescanBtn),
+      h('p', { class: 'help', style: 'margin-top:4px' }, '이 PC에 설치된 에이전트 CLI를 그대로 불러 써요. 가리기·근거 확인·호출 한도·기록은 어느 CLI든 같아요. 도구·셸을 끄는 옵션이 확인된 것만 ‘안전’이에요.'),
+      h('div', { class: 'provs', role: 'radiogroup', 'aria-labelledby': 'h-ai-cli' }, rows),
+      renderAiTest(A),
+      aiProvError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:6px' }, aiProvError) : null];
+  }
+  function renderAiTest(A) {
+    const t = aiTest();
+    const list = aiProviders();
+    const sel = String(A.selected || 'auto');
+    const target = sel === 'auto' ? (A.provider ? list.find((p) => p.id === A.provider) : null) : list.find((p) => p.id === sel);
+    const can = !!target && target.status === 'ready';
+    const running = aiTestRunning() || aiUi.testStarting;
+    const total = num(A.test_cases) || (t ? num(t.total) : 0);
+    const cases = t && Array.isArray(t.cases) ? t.cases.filter((c) => c && typeof c === 'object') : [];
+    const btn = h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'ai-test', 'aria-disabled': can && !running ? null : 'true',
+      on: { click: () => { if (can && !running) aiStartTest(target.id); } } },
+      running ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '시험하는 중…'] : '연결 시험');
+    const out = [h('div', { class: 'ai-test-line' }, btn,
+      t && t.status === 'running' ? h('span', { class: 'tnum', role: 'status' }, (t.name || '') + ' · ' + total + '개 중 ' + num(t.done) + '개 끝남') : null,
+      !can && !running ? h('span', { class: 'help' }, '쓸 수 있는 실행기를 먼저 골라 주세요.') : null),
+    h('p', { class: 'help' }, '데모 문장 ' + (total || '몇') + '개로 ' + (target ? target.name : '고른 실행기') + '를 시험해요 — 내 강의 글은 보내지 않아요. 실제 AI를 불러서 몇 분 걸릴 수 있어요.')];
+    if (t && t.status !== 'running') {
+      if (t.error && !cases.length) out.push(h('p', { class: 'inline-error' }, '연결 시험을 못 했어요: ' + String(t.error)));
+      else {
+        const all = num(t.total) > 0 && num(t.passed) === num(t.total);
+        const fin = parseDate(t.finished_at);
+        out.push(h('p', { class: 'ai-test-res' + (all ? '' : ' warn'), role: 'status' }, num(t.total) + '개 중 ' + num(t.passed) + '개 통과',
+          h('span', { class: 'help', style: 'font-weight:400;margin-left:8px' }, [t.name, num(t.duration_ms) ? fmtDur(t.duration_ms) : '', fin ? fmtShortDT(fin) : ''].filter(Boolean).join(' · '))));
+        const bad = cases.filter((c) => !c.passed);
+        if (bad.length) out.push(h('ul', { class: 'ai-cases' }, bad.map((c) => h('li', null, h('span', { class: 'warn' }, '실패'), h('span', null, String(c.label || c.name || '')),
+          h('span', { class: 'help' }, String(c.problem || c.error || ''))))));
+        else if (all) out.push(h('p', { class: 'help' }, '근거를 원문 그대로 인용하고 형식을 지켰어요. 이 실행기로 AI 도움을 쓸 수 있어요.'));
+        if (state.demo) out.push(h('p', { class: 'help' }, '데모의 AI는 규칙으로 흉내 내는 가짜예요. 확인함 정리·묻기만 흉내 내고 평가 비중·마감·학점 비율 문장은 일부러 ‘못 찾음’으로 답해요(실제 CLI는 모두 통과해야 해요).'));
+      }
+    } else if (cases.length) {
+      out.push(h('ul', { class: 'ai-cases' }, cases.map((c) => h('li', null, h('span', { class: c.passed ? 'ok' : 'warn' }, c.passed ? '통과' : '실패'),
+        h('span', null, String(c.label || c.name || ''))))));
+    }
+    return h('div', { class: 'ai-test' }, out);
+  }
   function renderAiPane() {
     const pane = $('pane-ai');
     const box = $('ai-box');
@@ -5076,13 +5285,18 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const runs = Array.isArray(A.recent_runs) ? A.recent_runs : [];
     const lim = A.limits && typeof A.limits === 'object' ? A.limits : null;
     const lt = A.last_triage && typeof A.last_triage === 'object' ? A.last_triage : null;
-    const TASK = { triage_review: '확인함 정리', grading_weights: '평가 비중 찾기' };
+    const TASK = { triage_review: '확인함 정리', grading_weights: '평가 비중 찾기', deadline_from_text: '마감 찾기', map_score_item: '점수 연결',
+      count_items: '개수 찾기', grade_distribution: '학점 비율 찾기', assist: '에이전트에게 묻기' };
+    const who = A.provider_name || (A.command ? cliName(A.command) : '');
+    const maxc = lim && lim.max_chars ? Number(lim.max_chars).toLocaleString('ko-KR') : '12,000';
     add(box, [
       h('p', { class: 'help' }, '규칙으로 못 찾은 평가 비중을 찾고, 확인함의 후보를 근거와 함께 정리해요. AI가 바꾼 것은 표시가 남고 되돌릴 수 있어요.'),
       h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', 'data-key': 'ai-cli', checked: on, disabled: !avail, on: { change: (e) => aiSet({ ai_cli: e.target.checked }, 'AI 도움을 켰어요', 'AI 도움을 껐어요', e.target.checked) } }),
-        h('span', null, h('b', null, 'AI 도움 쓰기' + (A.command ? ' (' + cliName(A.command) + ')' : '')),
-          h('small', null, avail ? '켜면 강의 글 일부(한 번에 최대 ' + (lim && lim.max_chars ? Number(lim.max_chars).toLocaleString('ko-KR') : '12,000') + '자)가 AI 서비스로 보내져요. 이메일·전화·학번·링크·이름은 가린 뒤 보내고, 점수와 성적 파일은 보내지 않아요.' : 'Claude CLI가 설치돼 있으면 쓸 수 있어요.'))),
+        h('span', null, h('b', null, 'AI 도움 쓰기' + (avail && who ? ' (' + who + ')' : '')),
+          h('small', null, avail ? '켜면 선택한 AI 서비스로 가린 글 일부(한 번에 최대 ' + maxc + '자)가 가요 · ollama는 이 PC 안에서만. 이메일·전화·학번·링크·이름은 가린 뒤 보내고, 점수와 성적 파일은 보내지 않아요.'
+            + (A.local ? ' 지금은 ' + who + '라 글이 이 PC 밖으로 나가지 않아요.' : '')
+            : '아래 ‘AI CLI 연결’에서 Claude Code·Codex 같은 CLI를 연결하면 쓸 수 있어요.'))),
       h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', 'data-key': 'ai-auto', checked: aiAuto(), disabled: !avail || !on, on: { change: (e) => aiSet({ ai_auto_triage: e.target.checked }, '동기화 뒤 AI가 확인함을 정리해요', '자동 정리를 껐어요', e.target.checked) } }),
         h('span', null, h('b', null, '동기화 뒤 AI가 자동 정리'), h('small', null, '신규 후보가 오면 근거 문장이 맞는 것만 일정에 넣거나 빼요. 근거가 부족하면 그대로 둬요.'))),
@@ -5091,6 +5305,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
         (lt.ok === false ? String(lt.error || '실패') : triageText(lt)) + (lt.note ? ' ' + lt.note : '')) : null,
       A.last_error ? h('p', { class: 'inline-error', style: 'margin-top:6px' }, String(A.last_error)) : null,
       aiError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:6px' }, aiError) : null,
+      renderProviders(A),
       missedBlock(),
       runs.length ? [h('h3', { class: 'sub-h', style: 'margin-top:12px' }, 'AI 실행 기록'),
         h('ul', { class: 'ai-runs' }, runs.slice(0, 5).map((r) => {
@@ -5098,6 +5313,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
           const secs = num(r.duration_ms) ? fmtNum(num(r.duration_ms) / 1000, 1) + '초' : '';
           return h('li', null, h('span', { class: 'tnum' }, d ? fmtShortDT(d) : '-'), h('span', null, TASK[r.task] || 'AI 작업'),
             h('span', { class: r.ok === false ? 'warn' : null }, r.ok === false ? '실패' : '성공'),
+            r.cli ? h('span', { class: 'help' }, String(r.cli)) : null,
             h('span', { class: 'tnum' }, [secs, num(r.input_chars) ? num(r.input_chars).toLocaleString('ko-KR') + '자 보냄' : '', num(r.attempts) > 1 ? r.attempts + '번 시도' : ''].filter(Boolean).join(', ')),
             r.error ? h('span', { class: 'inline-error' }, String(r.error)) : null);
         }))] : null
@@ -5206,7 +5422,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       on: { click: () => { if (ready && !aiBusy) runTriage(); else if (!ready) { location.hash = '#settings'; } } } },
       aiBusy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), 'AI가 정리하는 중…'] : 'AI로 정리');
     add(bar, [h('div', { class: 'ai-bar' }, btn,
-      h('span', null, !A.available ? 'Claude CLI가 설치돼 있으면 쓸 수 있어요.' : ready ? '근거 문장이 맞는 후보만 일정에 넣거나 빼요. 결정마다 이유가 남고 되돌릴 수 있어요.' : '설정의 AI 도움을 켜면 쓸 수 있어요.'))]);
+      h('span', null, !A.available ? '설정 → AI 도움에서 Claude Code·Codex 같은 AI CLI를 연결하면 쓸 수 있어요.' : ready ? '근거 문장이 맞는 후보만 일정에 넣거나 빼요. 결정마다 이유가 남고 되돌릴 수 있어요.' : '설정의 AI 도움을 켜면 쓸 수 있어요.'))]);
   }
   function runTriage() {
     aiBusy = true;
@@ -5377,6 +5593,13 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       lim && num(lim.per_day) ? h('span', { class: 'tnum' }, '오늘 ' + num(A.calls_today) + '/' + num(lim.per_day) + '번') : null]);
     else m.appendChild(tag('규칙으로 찾기', 'quiet', 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요'));
   }
+  // 보낼 곳 안내(계약 21): 고른 실행기 이름, ollama처럼 이 PC 안에서 도는 모델이면 밖으로 나가지 않는다고
+  function aiSendNote() {
+    const P = aiState();
+    const who = P && P.provider_name ? String(P.provider_name) : '';
+    if (P && P.local) return '보내면 질문과 관련 글 일부를 이 PC의 모델' + (who ? '(' + who + ')' : '') + '이 읽어요. 밖으로 나가지 않아요.';
+    return '보내면 질문과 관련 글 일부가 선택한 AI 서비스' + (who ? '(' + who + ')' : '') + '로 가요. 이메일·전화·학번·이름은 가린 뒤 보내요.';
+  }
   function agBar(A) {
     const wait = ag.sending || agRunning();
     const send = $('agent-send');
@@ -5384,7 +5607,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     send.replaceChildren();
     add(send, wait ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '찾는 중…'] : ['묻기']);
     $('agent-note').textContent = wait ? '앞 질문의 답을 찾는 중이에요. 끝나면 이어서 물을 수 있어요.'
-      : A.enabled ? '보내면 질문과 관련 글 일부가 AI 서비스로 가요. 이메일·전화·학번·이름은 가린 뒤 보내요.'
+      : A.enabled ? aiSendNote()
         : 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요. 밖으로 보내는 것은 없어요.';
   }
   // 답이 오면 알린다: 서랍이 열려 있으면 화면 낭독기로, 닫혀 있으면 입구에 점 + 알림

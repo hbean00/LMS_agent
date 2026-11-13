@@ -32,9 +32,9 @@ def busy(app) -> bool:
 @router.state_section("agent")
 def agent_state(app, ctx):
     st = app.store.data.get("settings") or {}
-    from .ai import _detect
+    from .ai import available
     active = {k for k, t in app.agent_jobs.items() if t.is_alive()}
-    return {"enabled": bool(st.get("ai_cli")), "available": bool(_detect(app)), "busy": bool(active),
+    return {"enabled": bool(st.get("ai_cli")), "available": available(app), "busy": bool(active),
             "threads": agent.public_threads(app.store, active),
             "calls_today": agent_cli.calls_today(app.store),
             "limits": {"per_day": agent_cli.MAX_CALLS_PER_DAY, "per_ask": 2, "timeout": 90,
@@ -53,10 +53,10 @@ def ask(app, body):
             th = agent.new_thread(app.store, msg, cid)
             app.store.write()
         ai_on = bool((app.store.data.get("settings") or {}).get("ai_cli"))
-        from .ai import _detect
+        # 실행기는 작업이 읽은 설정대로(settings.ai_provider, 계약 21-3). ai_command는 테스트·데모가 넣은 claude
         t = threading.Thread(target=agent.run_job, daemon=True, args=(app.store, th["id"], msg, cid),
                              kwargs={"ai_enabled": ai_on, "runner": getattr(app, "ai_runner", None),
-                                     "command": _detect(app), "names": _names(app)})
+                                     "command": getattr(app, "ai_command", None), "names": _names(app)})
         app.agent_jobs = {k: v for k, v in app.agent_jobs.items() if v.is_alive()}
         app.agent_jobs[th["id"]] = t
         t.start()

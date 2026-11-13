@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lms-agent"
-version = "0.6.1"
+version = "0.6.2"
 description = "Canvas LMS에서 마감이 안 보이는 과제(이메일 제출 등)까지 찾아 캘린더(.ics)로 모아 주는 도구"
 readme = "README.md"
 license = { text = "MIT" }
