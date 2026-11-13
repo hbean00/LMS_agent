@@ -1,4 +1,4 @@
-"""Windows 알림(토스트): 백그라운드 동기화가 새 마감 후보를 찾았을 때 앱을 열지 않아도 알 수 있게.
+"""Windows 알림(토스트): 백그라운드 동기화가 신규 마감 후보를 찾았거나 보상을 받았을 때 앱을 열지 않아도 알 수 있게.
 
 - 추가 설치 없이 PowerShell로 Windows 알림 API(ToastNotificationManager)를 부른다. 창은 뜨지 않는다.
 - 잠금 화면에도 보일 수 있으므로 성적 같은 민감한 내용은 넣지 않는다(호출하는 쪽 책임, 여기서는 길이만 자른다).
@@ -55,3 +55,26 @@ def new_deadlines_message(report: dict, view: list[dict]) -> tuple[str, str] | N
     names = ", ".join(f"{v.get('course_short') or v.get('course_name')} {v['title']}" for v in fresh[:2])
     more = f" 외 {len(fresh) - 2}개" if len(fresh) > 2 else ""
     return f"LMS Agent · 신규 마감 후보 {len(fresh)}개", f"{names}{more} — 확인함에서 확인하세요"
+
+
+# 앱을 안 여는 사람에게도 보상이 닿게(계약 11-1): 보상만, 성적 반응(graded·score)과 출발 인사(start)는 알리지 않는다
+REWARD_TOAST = ("km", "week_clear", "streak", "inbox_zero")
+
+
+def reward_message(pending: list[dict], told) -> tuple[str, str, str] | None:
+    """오늘 화면에 띄울 것(celebrations.pending) 중 아직 알리지 않은 보상 하나 → (제목, 본문, 보상 id). 없으면 None.
+    pending은 이미 우선순위 순이다. 잠금 화면에도 보일 수 있으므로 점수·학점은 넣지 않는다(보상 이름만)."""
+    for e in pending:
+        if e.get("kind") not in REWARD_TOAST or not e.get("id") or e["id"] in told:
+            continue
+        kind = e["kind"]
+        if kind == "km":
+            body = "학기 마라톤 완주! 정말 수고했어요." if e.get("finish") else "결승선까지 같이 달려요."
+        elif kind == "week_clear":
+            body = f"이번 주 마감 {e['count']}개를 다 끝냈어요." if e.get("count") else "이번 주 마감을 다 끝냈어요."
+        elif kind == "streak":
+            body = "꾸준히 달리는 게 제일 빨라요."
+        else:
+            body = "확인할 마감 후보를 다 정리했어요."
+        return f"LMS Agent · {e.get('title') or '보상'}", body + " 앱을 열면 메달을 걸어 드려요.", e["id"]
+    return None

@@ -472,6 +472,10 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 상태: `celebrations.pending`에 같은 모양(`kind`, `id`, `title`, 필요한 숫자)으로 섞여 들어오고, `celebrations.medals`: 받은 보상 목록 `[{"id","kind","title","at","week"}]`, `celebrations.streak`: 현재 연속 완주 주 수.
 - 기록은 `store.data["celebrated"]`(본 키)와 `store.data["medals"]`(받은 보상). 처음 실행 때 지난 주들의 `week_clear`·`streak`은 조용히 메달함에만 넣고 모달로 띄우지 않는다(스팸 방지).
 - 화면: 대시보드에 마라톤 진행 막대(현재 km, 다음 이정표까지 남은 km)와 메달함(받은 것 + 다음 목표 1개), 새 보상은 모달 대신 가벼운 카드/토스트로(성적 반응만 모달).
+- **앱을 안 열어도 (v0.6.4)**: 백그라운드 동기화(`lms-agent sync --background`, `settings.notify` 기본 참, Windows)는 신규 마감 알림을 띄우지 않은 실행에서
+  `celebrations.pending` 중 아직 알리지 않은 **보상 하나**(`km`·`week_clear`·`streak`·`inbox_zero`; 성적 반응·출발 인사는 넣지 않음 — 잠금 화면)를
+  Windows 알림으로 띄운다: 제목 "LMS Agent · {title}", 본문 한 줄 + "앱을 열면 메달을 걸어 드려요." 알린 id는 `state.reward_toasts`(최근 100개)에 남겨 다시 알리지 않는다.
+  화면의 카드·메달함은 그대로라(본 것으로 바꾸지 않음) 앱을 열면 보상을 받는다. 알림은 한 번에 하나(`notify.reward_message`).
 
 ### 11-2. 구현 결과 (D, `celebrate.py`·`features/celebrate.py`·`features/mascot.py`)
 

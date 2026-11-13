@@ -155,6 +155,29 @@ def cmd_setup(args) -> None:
     _out(f"연결됨: {me.get('name') or '사용자'} — 설정 저장 위치: {path}")
 
 
+def _toast_reward(store) -> None:
+    """백그라운드 동기화: 앱을 안 열어도 보상이 닿게, 오늘 화면에 띄울 보상 중 아직 알리지 않은 하나를 Windows 알림으로
+    (계약 11-1). 화면의 축하 카드·메달은 그대로 — 열면 받는다. 알린 보상 id는 state의 reward_toasts에 남겨 다시 알리지 않는다."""
+    from . import celebrate
+    from .notify import reward_message, toast
+    try:
+        sem = core.semester_info(store.data.get("cache"), store.view())
+        pending = celebrate.state(store, sem, core.annotate(store.view(), sem, store.data.get("cache")))[0]["pending"]
+    except Exception:   # 보상 계산이 실패해도 동기화 결과는 그대로
+        return
+    msg = reward_message(pending, set(store.data.get("reward_toasts") or []))
+    if not msg or not toast(msg[0], msg[1]):
+        return
+    _out(f"  알림: {msg[0]}")
+    try:
+        with store.locked():
+            store.reload_if_changed()
+            store.data["reward_toasts"] = (list(store.data.get("reward_toasts") or []) + [msg[2]])[-100:]
+            store.write()
+    except (OSError, TimeoutError):
+        pass
+
+
 def cmd_sync(args) -> None:
     home = data_dir()
     cfg = load_config(home)
@@ -184,6 +207,8 @@ def cmd_sync(args) -> None:
         msg = new_deadlines_message(r, view)
         if msg and toast(*msg):
             _out(f"  알림: {msg[0]}")
+        else:   # 알림은 한 번에 하나: 마감 알림이 없을 때만 보상을 알린다(못 알린 보상은 다음 동기화 때)
+            _toast_reward(store)
     if args.push:  # 구글 캘린더에 반영(연결돼 있을 때만)
         from .config import google_client
         from .gcal import GoogleError

@@ -163,6 +163,40 @@ def test_cli_background_sync_records_run(tmp_path, mock, monkeypatch, capsys):
     assert not os.path.exists(tmp_path / "state.lock")     # 잠금 파일이 남지 않는다
 
 
+def test_background_sync_toasts_a_new_reward_once(tmp_path, mock, monkeypatch, capsys):
+    """백그라운드 동기화: 신규 마감 알림이 없으면 오늘 띄울 보상 하나를 알리고(성적은 안 알림), 같은 보상은 다시 안 알린다."""
+    from lms_agent import celebrate, notify
+    _, base = mock
+    monkeypatch.setenv("LMS_AGENT_HOME", str(tmp_path))
+    monkeypatch.delenv("LMS_AGENT_CANVAS_URL", raising=False)
+    monkeypatch.delenv("LMS_AGENT_TOKEN", raising=False)
+    save_config({"canvas_url": base, "token": DEMO_TOKEN}, tmp_path)
+    cli.main(["sync"])                                       # 첫 동기화(마감 후보는 여기서 다 나옴)
+    capsys.readouterr()
+    shown = []
+    monkeypatch.setattr(notify, "toast", lambda title, body: shown.append((title, body)) or True)
+    real_state = celebrate.state
+    reward = {"id": "week_clear:t:2026-11-09", "kind": "week_clear", "title": "11주차 완주", "count": 3}
+    grade = {"id": "graded:1", "kind": "graded", "title": "중간고사", "score": 88}
+
+    def fake_state(store, sem, items, now=None):
+        out, updates = real_state(store, sem, items, now)
+        return {**out, "pending": [grade, reward]}, updates
+    monkeypatch.setattr(celebrate, "state", fake_state)
+    cli.main(["sync", "--background"])                       # 바뀐 곳 없음 → 마감 알림 없음 → 보상 알림
+    assert shown == [("LMS Agent · 11주차 완주", "이번 주 마감 3개를 다 끝냈어요. 앱을 열면 메달을 걸어 드려요.")]
+    assert "알림: LMS Agent · 11주차 완주" in capsys.readouterr().out
+    assert Store(tmp_path / "state.json").data["reward_toasts"] == [reward["id"]]
+    cli.main(["sync", "--background"])                       # 같은 보상은 다시 안 알린다
+    assert len(shown) == 1
+    store = Store(tmp_path / "state.json")
+    store.data["settings"]["notify"] = False                 # 알림을 끄면 보상도 안 알린다
+    store.data["reward_toasts"] = []
+    store.save()
+    cli.main(["sync", "--background"])
+    assert len(shown) == 1
+
+
 def test_review_reminder_event(tmp_path, mock):
     """확인 대기 후보가 있으면 오늘 09:00 '[확인] 마감 후보 N개' 일정(설정을 켰을 때만)."""
     _, base = mock
