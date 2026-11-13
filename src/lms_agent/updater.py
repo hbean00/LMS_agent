@@ -1,4 +1,4 @@
-"""업데이트: 새 버전 확인(하루 한 번)과 설치 방식별 한 번 누르기 업데이트. 계약 16장.
+"""업데이트: 새 버전 확인(하루 한 번)과 설치 방식별 한 번 누르기 업데이트. 계약 19장.
 
 - 확인: GitHub 공개 Releases API(`GET /repos/hbean00/LMS_agent/releases/latest`) 하나만 부른다. 보내는 것은 고정된
   User-Agent뿐이다(이름·토큰·학교 정보 없음). 결과는 state.json의 "update" 칸에 두고, 하루가 지나기 전에는 다시 묻지 않는다.
@@ -39,7 +39,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import __version__
+from . import __version__, net
 from .config import CONFIG_FILE, STATE_FILE
 from .timeutil import iso, now_local, parse_iso
 
@@ -143,8 +143,9 @@ class _GitHubOnlyRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def _open(req, timeout: float):
-    """실제 네트워크. 테스트(conftest)는 이 함수를 막아 둔다."""
-    return urllib.request.build_opener(_GitHubOnlyRedirects).open(req, timeout=timeout)
+    """실제 네트워크. Canvas·구글과 같은 공통 HTTPS 설정(net.py, 계약 17장 — 운영체제·사용자 루트 인증서)을 쓴다.
+    테스트(conftest)는 이 함수를 막아 둔다."""
+    return urllib.request.build_opener(net.https_handler(), _GitHubOnlyRedirects).open(req, timeout=timeout)
 
 
 def http_fetch(url: str, max_bytes: int, timeout: float = 20.0) -> bytes:
@@ -168,7 +169,10 @@ def http_fetch(url: str, max_bytes: int, timeout: float = 20.0) -> bytes:
             raise UpdateError("GitHub이 잠시 확인을 막았어요. 몇 시간 뒤 다시 확인할게요", "rate_limited") from None
         raise UpdateError(f"GitHub 응답 오류({e.code})라 확인하지 못했어요", "http") from None
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError, ValueError) as e:
-        if isinstance(getattr(e, "reason", e), ssl.SSLError):
+        reason = getattr(e, "reason", e)
+        if net.is_cert_error(reason):   # 백신·네트워크가 HTTPS를 가로채는 경우: Canvas와 같은 고치는 방법을 알려 준다
+            raise UpdateError(net.cert_help(urlparse(url).hostname or "", reason, "GitHub(업데이트 확인)"), "offline") from None
+        if isinstance(reason, ssl.SSLError):
             raise UpdateError("GitHub과 보안 연결(인증서)을 확인하지 못해 멈췄어요", "offline") from None
         raise UpdateError("인터넷에 연결되지 않아 새 버전을 확인하지 못했어요", "offline") from None
     if len(data) > max_bytes:

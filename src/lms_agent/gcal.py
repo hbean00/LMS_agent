@@ -53,7 +53,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+def _opener() -> urllib.request.OpenerDirector:
+    from . import net   # 운영체제·사용자 루트 인증서까지 믿는 공통 HTTPS 설정(계약 17장)
+    return urllib.request.build_opener(net.https_handler(), _NoRedirect)
 
 
 def _parse(raw: bytes):
@@ -77,7 +79,7 @@ def _send(method: str, url: str, *, body: bytes | None = None, content_type: str
         req.add_unredirected_header("Authorization", "Bearer " + bearer)
     timeout_msg = f"구글 응답이 {timeout:g}초 안에 오지 않았습니다 (시간 초과)"
     try:
-        with _OPENER.open(req, timeout=timeout) as resp:
+        with _opener().open(req, timeout=timeout) as resp:
             return resp.status, _parse(resp.read()), resp.headers
     except urllib.error.HTTPError as e:
         try:
@@ -90,6 +92,9 @@ def _send(method: str, url: str, *, body: bytes | None = None, content_type: str
     except urllib.error.URLError as e:
         if isinstance(e.reason, (socket.timeout, TimeoutError)):
             raise GoogleError(timeout_msg) from None
+        from . import net
+        if net.is_cert_error(e.reason):
+            raise GoogleError(net.cert_help(urllib.parse.urlsplit(req.full_url).hostname or "", e.reason, "구글")) from None
         raise GoogleError("구글에 연결하지 못했습니다. 인터넷 연결을 확인하세요") from None
     except (socket.timeout, TimeoutError):
         raise GoogleError(timeout_msg) from None

@@ -317,3 +317,182 @@ def test_decimal_statistics_are_not_dates(s):
 def test_dotted_dates_still_parse(s):
     from lms_agent.extract import find_dates
     assert len(find_dates(s, REF.date())) == 1, s
+
+
+# ================================================================ 일반화(docs/CORNER_CASES.md)
+# 위의 실제 사례를 고친 규칙이 '같은 모양'의 다른 글에도 맞는지. 다른 학교·다른 과목의 글을 흉내 낸 문장들이다.
+from lms_agent.extract import find_dates, split_sentences  # noqa: E402
+
+OCT1 = datetime(2026, 10, 1, 9, 0, tzinfo=KST)
+
+
+def dues(found):
+    return [(f.due, f.kind, f.title_hint) for f in found]
+
+
+# ---- 가족 1: 마침표가 문장 끝이 아닌 경우(줄임말·이니셜·날짜 속 마침표)
+
+@pytest.mark.parametrize("text,n", [
+    ("Office hours with Prof. Kim on Mon. Nov. 16 at 3 p.m. in Room 101.", 1),
+    ("Submit Lab 3 by 5 p.m. Late reports get no credit.", 2),          # 'p.m.' 뒤 대문자 낱말 = 새 문장
+    ("Bring a pencil, an eraser, etc. The exam starts at 9.", 2),
+    ("Read Ch. 5 and Sec. 2.3 (see Fig. 3.4 and Eq. (2.1)) before the quiz.", 1),
+    ("The U.S. holiday moves the quiz, i.e. it will be on Nov. 27.", 1),
+    ("Write approx. 5 pages vs. the usual 3.", 1),
+    ("Lab 3 is due Nov. 20. Lab 4 is due Nov. 27.", 2),                 # 숫자로 끝난 문장 + 대문자 낱말
+    ("보고서는 2026. 11. 20.(금)까지 제출. 늦으면 감점합니다.", 2),
+    ("Dr. Lee will proctor the exam. Bring your ID.", 2),
+    ("The quiz is on Thu. Oct. 22. See you then.", 1),                 # 숫자 뒤는 양쪽에 날짜가 있을 때만 끊는다
+    ("Quiz on Thu. Oct. 22. Final exam on Tue. Dec. 15.", 2),
+    ("Submit by 5 P.M. Friday.", 1),                                    # 'P.M.' 뒤가 요일 → 이어진다
+    ("J. Smith and Mr. Park will grade the report.", 1),
+])
+def test_split_sentences_general(text, n):
+    assert len(split_sentences(text)) == n, split_sentences(text)
+
+
+@pytest.mark.parametrize("text,ref,due,kind", [
+    ("Report due 22 Oct. 2026 at noon.", OCT1, (2026, 10, 22, 12, 0), "과제"),
+    ("Quiz on Thu., Oct. 22 in class.", OCT1, (2026, 10, 22, 23, 59), "시험"),
+    ("레포트 제출 기한: 10. 22.(목) 23:59", OCT1, (2026, 10, 22, 23, 59), "과제"),
+    ("기말 보고서 제출: 2026. 12. 18. 오후 6시", REF, (2026, 12, 18, 18, 0), "과제"),
+    ("Homework 4 is due Tues. Nov. 17 by 11:59 p.m. Late submissions lose 10%.", REF, (2026, 11, 17, 23, 59), "과제"),
+    ("The midterm is on Wed., Nov. 25 (see Ch. 3 and Fig. 2.1).", REF, (2026, 11, 25, 23, 59), "시험"),
+    ("Prof. Kim: the final exam will be held on Dec. 15 at 10:30 a.m. in Room 101.", REF, (2026, 12, 15, 10, 30), "시험"),
+    ("When: Tuesday, Dec. 15, 10:30 AM — final exam", REF, (2026, 12, 15, 10, 30), "시험"),
+])
+def test_abbreviations_and_date_formats_keep_the_date(text, ref, due, kind):
+    f = one(text, ref=ref)
+    assert (f.due, f.kind) == (at(*due), kind)
+    assert not any("요일 불일치" in n for n in f.notes)
+
+
+def test_two_deadlines_in_two_english_sentences_on_one_line():
+    found = find_deadlines("Lab 3 is due Nov. 20. Lab 4 is due Nov. 27.", REF)
+    assert dues(found) == [(at(2026, 11, 20), "과제", "LAB 3"), (at(2026, 11, 27), "과제", "LAB 4")]
+    # 뒤 문장에 날짜가 없으면 잇는다: 제출 낱말이 뒤 문장에만 있어도 마감을 잃지 않는다
+    f = one("Lab 3: Nov. 20. Submit via email to ta@x.edu.")
+    assert (f.due, f.kind, f.method) == (at(2026, 11, 20), "과제", "email")
+
+
+def test_weekday_written_before_english_date_is_checked():
+    f = one("Quiz on Fri., Oct. 22 in class.", ref=OCT1)     # 2026-10-22는 목요일
+    assert f.due == at(2026, 10, 22) and any("요일 불일치" in n for n in f.notes)
+
+
+# ---- 가족 2: 학기 시점 낱말(중간·기말) + 종류 낱말 — 마지막 낱말이 종류를 정한다
+
+@pytest.mark.parametrize("text,kind,hint", [
+    ("Final Report due Dec. 18 at 6 pm", "과제", "Final Report"),
+    ("Midterm Presentation: Nov. 19 in class", "과제", "Midterm Presentation"),
+    ("기말 프로젝트 발표: 12월 10일 수업 시간", "과제", "기말 프로젝트 발표"),
+    ("중간 보고서 제출 마감은 11월 20일입니다", "과제", "중간 보고서"),
+    ("중간고사 대체 과제는 11월 27일까지 제출하세요", "과제", "중간고사 대체 과제"),
+    ("Quiz 3 will be on Nov. 19", "시험", "Quiz 3"),
+    ("There will be a pop quiz on Nov. 19 in class.", "시험", "Quiz"),
+    ("The midterm exam is on Nov. 25.", "시험", "Midterm Exam"),
+    ("Final project report is due Dec. 18.", "과제", "Final Project Report"),
+    ("기말고사는 12월 15일 10시입니다.", "시험", "기말고사"),
+    ("Midterm take-home exam due Nov. 20 at noon", "시험", "Midterm Take-Home Exam"),
+])
+def test_term_word_plus_kind_word(text, kind, hint):
+    f = one(text)
+    assert (f.kind, f.title_hint) == (kind, hint)
+
+
+@pytest.mark.parametrize("text", [
+    "Final Exam Review session on Dec. 10 at 3 pm in Room 101.",       # 복습 세션(시험 아님)
+    "Midterm grades will be posted by Nov. 20.",                        # 성적 게시
+    "중간고사 성적 확인 기간: 11월 20일까지",
+    "기말고사 범위 설명회는 12월 1일 오후 3시입니다.",
+    "Midterm week: no class on Oct. 20.",
+    "The presentation slides from the Nov. 3 lecture are uploaded.",
+    "중간고사 성적 발표: 11월 20일",                                     # '발표' = 성적 알림
+    "Final exam solutions will be uploaded on Dec. 20.",
+])
+def test_exam_word_as_modifier_is_not_an_exam(text):
+    assert find_deadlines(text, REF) == [], text
+
+
+def test_exam_after_scope_phrase_still_found():
+    f = one("기말고사 범위는 1~7장이고, 기말고사는 12월 15일입니다.")
+    assert (f.due, f.kind, f.title_hint) == (at(2026, 12, 15), "시험", "기말고사")
+
+
+@pytest.mark.parametrize("a,b,expected", [
+    ("Midterm Project", "Midterm Exam", False),     # 같은 '중간'이어도 하나는 프로젝트, 하나는 시험
+    ("Midterm Project", "Midterm project report", True),
+    ("Final Report", "기말 보고서", True),
+    ("Final Project", "Final Exam", False),
+    ("Midterm", "중간고사", True),
+    ("중간고사 대체 과제", "중간고사", False),       # 머리가 '과제'
+])
+def test_same_task_term_needs_same_head(a, b, expected):
+    assert same_task(a, b) is expected
+
+
+# ---- 가족 3: 종류는 제목에만, 본문은 칸(날짜·시간·장소)
+
+@pytest.mark.parametrize("title,body,html,due", [
+    ("기말고사 공지", "일시: 12/15(화) 10:30~11:30\n장소: 공학관 101호", False, (2026, 12, 15, 10, 30)),
+    ("Final Exam", "Date: Dec 15 / Time: 10:30-11:30 / Room: 101", False, (2026, 12, 15, 10, 30)),
+    ("Final Exam Information", "When: Tuesday, Dec. 15, 10:30 AM\nWhere: Room 101", False, (2026, 12, 15, 10, 30)),
+    ("중간고사 안내", "날짜: 11월 25일(수)\n시간: 10시 30분 ~ 11시 30분", False, (2026, 11, 25, 10, 30)),
+    ("Midterm", "시간: 오후 2시부터\n날짜: 11월 25일", False, (2026, 11, 25, 14, 0)),       # 시간 칸이 먼저
+    ("기말고사 공지", "<table><tr><td>날짜</td><td>12/15</td></tr><tr><td>시간</td><td>10:30</td></tr></table>",
+     True, (2026, 12, 15, 10, 30)),
+    ("기말고사 공지", "날짜 | 12월 15일\n시간 | 10:30am\n장소 | 강의실", False, (2026, 12, 15, 10, 30)),
+    ("Quiz 2 notice", "Date: Nov. 19 (Thu)\nTime: 9:00 a.m.", False, (2026, 11, 19, 9, 0)),
+    ("시험 안내", "시험 일시 : 2026년 12월 15일(화) 오전 10시 30분", False, (2026, 12, 15, 10, 30)),
+])
+def test_title_kind_with_field_style_body_variants(title, body, html, due):
+    found = find_deadlines(body, REF, is_html=html, title=title)
+    assert [(f.due, f.kind) for f in found] == [(at(*due), "시험")], found
+
+
+@pytest.mark.parametrize("title,body", [
+    ("기말고사 범위 안내", "12월 10일 복습 세션에서 범위를 설명합니다."),
+    ("기말고사 범위 안내", "범위: 1~7장\n질문은 12월 10일까지 받습니다."),
+    ("중간고사 성적 공지", "날짜: 11월 20일\n성적 이의 신청은 조교에게."),
+    ("Midterm exam results", "Date: Nov. 20\nAverage: 72.5"),
+    ("기말고사 공지", "12월 8일 수업은 휴강입니다."),
+    ("Final Exam Review", "Date: Dec. 10\nTime: 3 pm"),
+    ("Announcement about Midterm Week", "There is no class on Oct. 20, 2026."),
+    ("기말고사 공지", "Lab 5 보고서는 12월 1일에 나갑니다."),     # 그 줄에 다른 종류(실습 보고서)가 있다
+])
+def test_title_kind_does_not_create_bogus_exams(title, body):
+    assert find_deadlines(body, REF, title=title) == [], (title, body)
+
+
+# ---- 가족 4: 점 숫자·빗금 숫자가 날짜가 아닌 경우(통계·버전·절 번호·점수·학점)
+
+@pytest.mark.parametrize("s", [
+    "평균 11.5점", "avg 9.25", "median: 8.5", "상위 12.5%", "v1.2", "version 2.1", "1.2절", "Fig. 3.4", "Eq. (2.1)",
+    "점수 9.5/10", "GPA 3.8/4.5", "Section 3.2", "Table 2.1", "그림 3.4", "식 (2.1)", "Problem 2.3", "score: 9/10",
+    "Lab 2.1", "Exercise 4.12", "표 1.3", "문제 3.2",
+])
+def test_numbers_that_are_not_dates(s):
+    assert find_dates(s, REF.date()) == [], s
+
+
+@pytest.mark.parametrize("text,due", [
+    ("Submit Problem 2.3 by Friday", (2026, 11, 13)),
+    ("Read Section 1.2 before the quiz on 11/19.", (2026, 11, 19)),
+    ("Submit v1.2 of the report by 11/20", (2026, 11, 20)),
+    ("Quiz 2 on Nov. 19 at 10.30 am", (2026, 11, 19, 10, 30)),           # 점으로 쓴 시각
+    ("과제는 11.30까지 제출", (2026, 11, 30)),
+])
+def test_identifiers_do_not_steal_the_date(text, due):
+    f = one(text)
+    assert f.due == at(*due)
+
+
+def test_dotted_time_range_after_a_date_is_time_not_dates():
+    f = one("시험 일시: 12/15 10.30~11.30")
+    assert (f.due, f.kind) == (at(2026, 12, 15, 10, 30), "시험")     # 10.30·11.30을 10/30·11/30으로 읽지 않는다
+    assert one("제출 기간: 11.13 ~ 11.20").due == at(2026, 11, 20)  # 날짜 범위는 그대로
+
+
+def test_quiz_score_fraction_is_not_a_deadline():
+    assert find_deadlines("Quiz 1 score: 9/10", REF) == []
+    assert find_deadlines("Your midterm score is 85.5 (avg 72.25, median 74.5).", REF) == []

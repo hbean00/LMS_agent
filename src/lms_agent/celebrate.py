@@ -21,6 +21,7 @@ import math
 import re
 from datetime import date, datetime, timedelta, timezone
 
+from . import distribution as dm
 from . import grades as g
 from .core import short_course_name, week_of
 from .store import course_mode, hidden_courses
@@ -108,15 +109,20 @@ def _day(s: str | None) -> date | None:
 
 # ---------------------------------------------------------------- 성적 반응
 
-def _course_dist(store, cid) -> dict:
+def _effective(store, cid) -> dict:
+    """그 과목의 학점 기준(계약 16장): 사용자 비율 > 강의계획서 비율·절대평가 기준(dist_auto) > 기본값."""
     cfg = (store.data.get("grades") or {}).get(str(cid)) if cid is not None else None
-    return (cfg or {}).get("dist") or g.DEFAULT_DISTRIBUTION
+    return dm.effective(cfg)
+
+
+def _course_dist(store, cid) -> dict:
+    return _effective(store, cid)["dist"]
 
 
 def _dist_basis(store, cid) -> str:
-    """학점 비율의 근거: 사용자가 그 과목 비율을 정했으면 "user", 기본 비율(15/30/45/60/75…)이면 "default"(계약 13-2)."""
-    cfg = (store.data.get("grades") or {}).get(str(cid)) if cid is not None else None
-    return "user" if (cfg or {}).get("dist") else "default"
+    """학점 비율의 근거(계약 13-2·16장): 사용자가 정한 비율 "user", 강의계획서·공지에서 찾은 비율·기준 "syllabus",
+    기본 비율(15/30/45/60/75…) "default"."""
+    return _effective(store, cid)["by"]
 
 
 def _course_estimate(store, cid, memo: dict):
@@ -126,36 +132,55 @@ def _course_estimate(store, cid, memo: dict):
     key = str(cid)
     if key not in memo:
         cfg = (store.data.get("grades") or {}).get(key) or {}
+        eff = dm.effective(cfg)
         est = None
         if cfg.get("components"):
             try:
-                est = g.estimate(cfg["components"], cfg.get("dist") or g.DEFAULT_DISTRIBUTION,
-                                 class_size=cfg.get("class_size"))
+                est = g.estimate(cfg["components"], eff["dist"], class_size=cfg.get("class_size"),
+                                 cutoffs=eff["cutoffs"])
             except (ValueError, TypeError, KeyError):
                 est = None
         memo[key] = est
     return memo[key]
 
 
-def _judge(store, cid, score, mean, sd, memo) -> dict:
+def _judge(store, cid, score, mean, sd, memo, max_score=None) -> dict:
     """점수의 위치: 평균·표준편차가 있으면 이 점수로, 없으면 과목 추정으로, 둘 다 없으면 판정 없음.
-    letter_basis: 학점을 사용자가 정한 비율로 매겼으면 "user", 기본 비율이면 "default"(화면은 '기본 비율이라면 …'), 학점이 없으면 None.
+    letter_basis: 학점을 사용자가 정한 비율로 매겼으면 "user", 강의계획서에서 찾은 비율·기준이면 "syllabus",
+    기본 비율이면 "default"(화면은 '기본 비율이라면 …'), 학점이 없으면 None.
+    절대평가 기준이 있는 과목은 순위가 아니라 점수로 학점을 정한다: 만점이 적힌 점수면 그 점수 비율로, 아니면 과목 추정으로.
     P/NP 과목(계약 15장)은 학점·상위 %를 매기지 않는다(band None — 담백하게)."""
     if course_mode(store.data, cid) == "pass_fail":
         return {"top": None, "letter": None, "band": None, "basis": None, "letter_basis": None}
+    eff = _effective(store, cid)
+    top = None
     if score is not None and mean is not None and sd is not None and sd > 0:
         try:
             top = g.top_percent(score, mean, sd)
-            letter = g.letter_for(top, _course_dist(store, cid))
+        except ValueError:
+            top = None
+    if eff["cutoffs"]:
+        if score is not None and max_score:
+            try:
+                letter = g.letter_for_score(float(score) / float(max_score) * 100.0, eff["cutoffs"])
+                return {"top": round(top, 1) if top is not None else None, "letter": letter, "band": band_of(letter),
+                        "basis": "score", "letter_basis": eff["by"]}
+            except (ValueError, ZeroDivisionError):
+                pass
+    elif top is not None:
+        try:
+            letter = g.letter_for(top, eff["dist"])
             return {"top": round(top, 1), "letter": letter, "band": band_of(letter), "basis": "score",
-                    "letter_basis": _dist_basis(store, cid)}
+                    "letter_basis": eff["by"]}
         except ValueError:
             pass
     est = _course_estimate(store, cid, memo)
     if est and est.get("grade"):
         return {"top": round(float(est["top"]), 1) if est.get("top") is not None else None,
                 "letter": est["grade"], "band": band_of(est["grade"]), "basis": "course",
-                "letter_basis": _dist_basis(store, cid)}
+                "letter_basis": eff["by"]}
+    if top is not None:   # 절대평가인데 만점·과목 추정이 없으면 위치만(학점은 지어내지 않는다)
+        return {"top": round(top, 1), "letter": None, "band": None, "basis": "score", "letter_basis": None}
     return {"top": None, "letter": None, "band": None, "basis": None, "letter_basis": None}
 
 
@@ -195,7 +220,8 @@ def _graded_events(store, memo) -> list[dict]:
                               "title": a.get("name") or "과제", "score": score,
                               "max_score": _num(a.get("points_possible")) or None,
                               "max_assumed": not _num(a.get("points_possible")), "mean": mean, "sd": sd,
-                              **_judge(store, cid or None, score, mean, sd, memo),
+                              **_judge(store, cid or None, score, mean, sd, memo,
+                                       max_score=_num(a.get("points_possible")) or None),
                               "exam": exam_of(a.get("name")), "source_title": "Canvas 과제", "source_type": "canvas",
                               "url": a.get("html_url"), "at": iso(parse_iso(at))}})
     return out
@@ -241,7 +267,7 @@ def _score_events(store, memo) -> list[dict]:
                                   "title": c.get("label") or c.get("source_title") or "점수",
                                   "score": score, "max_score": mx, "max_assumed": mx is None,   # 만점 미기재 → 100점 가정
                                   "mean": mean, "sd": sd,
-                                  **_judge(store, cid, score, mean, sd, memo),
+                                  **_judge(store, cid, score, mean, sd, memo, max_score=mx),
                                   "exam": exam_of(c.get("label"), c.get("source_title")),
                                   "source_title": c.get("source_title"), "source_type": c.get("source_type"),
                                   "url": c.get("url"), "at": c.get("posted_at")}}

@@ -65,7 +65,7 @@ def cmd_serve(args) -> None:
         return
     app = App(store, home)
     app.sync_in_background()  # 켤 때마다 바뀐 곳만 확인한다
-    start_background_checks(app)    # 새 버전 확인은 하루 한 번(설정에서 끌 수 있음, 계약 16장)
+    start_background_checks(app)    # 새 버전 확인은 하루 한 번(설정에서 끌 수 있음, 계약 19장)
     _run_server(app, args.port, not args.no_browser)
 
 

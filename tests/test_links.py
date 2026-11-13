@@ -537,3 +537,57 @@ def test_demo_scenario_with_downloads_and_demo_student_id(tmp_path):
     assert st["grades"]["score_files_waiting"] == 0 and st["grades"]["score_files_unmatched"] == []
     mats = {m["filename"]: m for m in st["materials"]["items"]}
     assert mats["Lab0_score.pdf"]["board_title"] == "공지 첨부 파일"
+
+
+# ================================================================ 일반화(docs/CORNER_CASES.md 가족 6)
+# 'Next labs: A → B → C'와 같은 모양의 다른 글: 남은 개수, 번호가 적힌 목록, 범위, 강의 일정 표 — 그리고 세면 안 되는 목록.
+
+@pytest.mark.parametrize("text,fam,zero,n", [
+    ("Lab 3 posted\nUpcoming labs: STA, SRAM", "lab", True, 6),                      # 3 + 1 + 2
+    ("Lab 1 posted. Upcoming labs: Lab 2 (STA), Lab 3 (SRAM)", "lab", True, 4),       # 목록의 번호: 3 + 1
+    ("HW 3 posted. There will be 3 more homework assignments.", "hw", False, 6),
+    ("과제 2 안내\n남은 과제: 2개", "hw", False, 4),
+    ("Lab 2 report\nRemaining labs: 4", "lab", True, 7),
+    ("실습 3 안내\n실습은 2번 더 남았습니다.", "lab", False, 5),
+    ("Quiz 2 results\nTwo more quizzes are left.", "quiz", False, 4),
+])
+def test_hint_variants(text, fam, zero, n):
+    r = links.hint(text, fam, zero)
+    assert r is not None and r[0] == n, (text, r)
+
+
+@pytest.mark.parametrize("text,fam", [
+    ("Lab 3\nNext lab: bring your laptop, charger", "lab"),      # 단수 'Next lab:' = 다음 실습 하나의 안내
+    ("Lab 3\nNext steps: synthesis → P&R → STA", "lab"),
+    ("Lab 2\n다음 실습: 노트북 지참", "lab"),
+    ("Lab 2\n다음 실습: 노트북, 충전기 지참하세요", "lab"),
+    ("Lab 3\nthe next 3 labs use ICC2", "lab"),                   # 'next 3'은 남은 수라고 하지 않음
+    ("HW 2\nRemaining time: 2 hours", "hw"),
+    ("Lab 3\nNext labs will use the same server; bring your ID.", "lab"),
+])
+def test_hint_does_not_count_unrelated_lists(text, fam):
+    assert links.hint(text, fam, True) is None, text
+
+
+@pytest.mark.parametrize("text,fam,n", [
+    ("이번 학기 실습은 총 8회의 실습으로 진행합니다", "lab", 8),
+    ("Labs 0 through 6 are mandatory.", "lab", 7),
+    ("실습 1~10 진행", "lab", 10),
+    ("Homework 1-5 will be assigned biweekly.", "hw", 5),
+    ("There will be five quizzes.", "quiz", 5),
+    ("Week 3 | Lab 1\nWeek 5 | Lab 2\nWeek 7 | Lab 3\nWeek 9 | Lab 4", "lab", 4),   # 일정 표
+    ("1주차 오리엔테이션\n2주차 실습 0\n3주차 실습 1\n4주차 실습 2\n5주차 실습 3", "lab", 4),
+    ("Lab 4–6 will cover P&R and STA", "lab", None),             # 일부 범위(전체 아님)
+    ("We will have 2 labs this week.", "lab", None),             # 이번 주 개수
+    ("Week 3 | Lab 1\nWeek 9 | Lab 4", "lab", None),             # 줄이 적고 번호가 빈다
+])
+def test_stated_count_variants(text, fam, n):
+    r = links.stated(text, fam)
+    assert (r[0] if r else None) == n, (text, r)
+
+
+def test_numbered_expands_ranges():
+    assert links.numbered("Lab 4–6 will cover P&R", "lab") == [4, 5, 6]
+    assert links.numbered("Lab4-Lab6", "lab") == [4, 5, 6]
+    assert links.numbered("실습 2-3 보고서", "lab") == [2]          # '2-3'은 2번 실습의 3번일 수도 — 펼치지 않음
+    assert links.numbered("Lab 3 - 2026 fall", "lab") == [3]

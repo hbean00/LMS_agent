@@ -520,7 +520,8 @@ def _attachment_bytes(canvas: Canvas, att: dict, max_bytes: int = 50_000_000) ->
         if origin(url) != origin(canvas.base_url):
             raise ValueError("첨부 주소가 Canvas와 다른 서버입니다")
         req = urllib.request.Request(url, headers={"User-Agent": "lms-agent"})  # 인증 헤더 없음
-        with urllib.request.urlopen(req, timeout=60) as r:
+        from . import net
+        with net.urlopen(req, timeout=60) as r:
             data = r.read(max_bytes + 1)
         if len(data) > max_bytes:
             raise ValueError("파일이 너무 큽니다")
@@ -561,12 +562,22 @@ def _auto_weights(store, ai_enabled: bool, session=None) -> list[str]:
     return auto_fill(store, srcs, ai_enabled, session=session) or []
 
 
-# 자동 단계(평가 비중·AI 정리·평가 항목 연결/개수)가 바꾸는 칸: id → 값
-_AI_KEYS = ("user", "grades", "weights_auto", "grade_links_ai", "grade_counts_ai")
+def _auto_dist(store, ai_enabled: bool, session=None) -> list[str]:
+    """학점 비율·점수 기준 자동 찾기(gradebook.auto_dist, 계약 16장) — 평가 비중 다음, 같은 AiSession으로."""
+    try:
+        from .gradebook import auto_dist
+    except ImportError:
+        return []
+    srcs = _sources(store.data.get("cache"), store.data.get("manual", []), now_local())
+    return auto_dist(store, srcs, ai_enabled, session=session) or []
+
+
+# 자동 단계(평가 비중·학점 비율·AI 정리·평가 항목 연결/개수)가 바꾸는 칸: id → 값
+_AI_KEYS = ("user", "grades", "weights_auto", "grade_links_ai", "grade_counts_ai", "dist_ai")
 
 
 def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_valid=None) -> dict:
-    """동기화 뒤 자동 단계: 평가 비중 찾기, (켜져 있으면) AI 평가 항목 연결·개수, AI 확인함 정리.
+    """동기화 뒤 자동 단계: 평가 비중 찾기, 학점 비율 찾기, (켜져 있으면) AI 평가 항목 연결·개수, AI 확인함 정리.
     한 번의 AiSession을 나눠 써서 호출 한도가 함께 적용된다.
     AI는 몇십 초 걸릴 수 있어 잠금 밖에서 돌리고, 저장할 때 파일을 다시 읽어 **그 사이 사용자가 손대지 않은 칸만** 덮는다
     (백그라운드 동기화가 앱에서 방금 한 사용자 결정을 지우지 않게)."""
@@ -583,6 +594,9 @@ def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_
     logs = _auto_weights(store, ai_enabled, session)
     if logs:
         out["auto_weights"] = logs
+    logs = _auto_dist(store, ai_enabled, session)
+    if logs:
+        out["auto_dist"] = logs
     if session is not None:   # 규칙이 못 정한 점수·마감의 평가 항목, 명시·단서 없는 개수(계약 14-2·14-4)
         from .gradebook import ai_links
         r = ai_links(store, session)

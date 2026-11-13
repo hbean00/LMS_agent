@@ -260,6 +260,15 @@ def test_server_grades_links_exams_and_modes(running):
     assert (hw["count"]["n"], hw["count"]["low"], hw["count"]["basis"]) == (None, 7, "observed")
     assert {"LAB4 보고서", "LAB5 예비보고서"} <= {s["title"] for s in hw["schedule"]}
     assert asic["remaining"][0] == {"component": "Homework assignments", "weight": 30.0, "count_left": None, "range": None}
+    # 계약 16장: 'Updated Grading Policy'의 학점 가이드라인(A+, A0: 35~45% …) → 강의계획서 비율이 기본값을 대신한다
+    ds = asic["dist_source"]
+    assert (ds["by"], ds["kind"], ds["source_title"], ds["found_by"]) == ("syllabus", "relative", "Updated Grading Policy",
+                                                                          "rules")
+    assert ds["ranges"] == {"A+·A0": [35, 45], "B+·B0": [40, 50], "C+~F": [5, 25]}
+    assert asic["letter_basis"] == "syllabus" and asic["using_default_dist"] is False
+    assert (asic["dist_used"]["A+"], asic["dist_used"]["B0"], asic["dist_used"]["F"]) == (20, 22.5, 3)
+    dsp = next(c for c in state["grades"]["courses"] if c["course_id"] == "102")
+    assert dsp["dist_source"]["by"] == "default" and dsp["letter_basis"] == "default"
     assert state["grades"]["score_files_waiting"] == 0 and state["grades"]["score_files_unmatched"] == []
     quiz = next(i for i in state["items"] if i["course_id"] == "101" and i["kind"] == "시험")
     assert (quiz["title"], quiz["component"], quiz["component_by"]) == ("Quiz", "Midterm quiz", "rules")

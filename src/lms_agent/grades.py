@@ -2,6 +2,7 @@
 남은 시험에 필요한 점수, 먼저 챙길 과목.
 
 전부 추정이다. 정규분포, 평가 항목 사이 상관(ρ), 학점 비율을 가정하므로 결과마다 notes에 그 가정을 적는다.
+절대평가 기준표(cutoffs, 계약 16장)가 있으면 학점은 순위가 아니라 예상 총점으로 정한다(letter_for_score, estimate_absolute).
 엑셀(xlsx)에서는 본인 행과 반 전체 집계만 돌려준다. 다른 학생의 행·학번은 결과에 넣지 않는다.
 """
 from __future__ import annotations
@@ -104,6 +105,41 @@ def letter_for(top: float, dist: dict = DEFAULT_DISTRIBUTION) -> str:
     return bands[-1][0]
 
 
+def validate_cutoffs(cutoffs: dict) -> list[str]:
+    """절대평가 기준표 {학점: 100점 기준 최소 점수}의 문제(한국어). 학점 순서대로 내려가야 한다. 빈 리스트면 정상."""
+    if not isinstance(cutoffs, dict) or not cutoffs:
+        return ["점수 기준은 {학점: 최소 점수} 모양이어야 합니다"]
+    out = [f"모르는 학점: {k}" for k in cutoffs if k not in GRADES or k == "F"]
+    vals = []
+    for g in GRADES:
+        if g in cutoffs:
+            v = cutoffs[g]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not 0 <= v <= 100:
+                out.append(f"{g} 기준이 0~100 사이 숫자가 아닙니다: {v!r}")
+            else:
+                vals.append((g, float(v)))
+    for (g1, a), (g2, b) in zip(vals, vals[1:]):
+        if b >= a:
+            out.append(f"{g2} 기준({b:g})이 {g1} 기준({a:g})보다 낮아야 합니다")
+    return out
+
+
+def letter_for_score(total_pct: float, cutoffs: dict) -> str:
+    """절대평가: 100점 기준 총점 → 학점. 기준이 적힌 학점 중 total 이상인 가장 높은 학점, 어느 기준에도 못 미치면 F."""
+    problems = validate_cutoffs(cutoffs)
+    if problems:
+        raise ValueError("점수 기준 오류: " + "; ".join(problems))
+    for g in GRADES:
+        c = cutoffs.get(g)
+        if c is not None and total_pct >= float(c) - 1e-9:
+            return g
+    return "F"
+
+
+def _cut_note(cutoffs: dict) -> str:
+    return "절대평가 기준(강의계획서): " + " · ".join(f"{g} {float(cutoffs[g]):g}" for g in GRADES if g in cutoffs) + "점 이상"
+
+
 def _check(dist: dict, rho: float) -> None:
     problems = validate_distribution(dist)
     if problems:
@@ -167,8 +203,11 @@ def _dist_note(dist: dict) -> str:
 # ---------------------------------------------------------------- 위치 추정
 
 def estimate(components: list, dist: dict = DEFAULT_DISTRIBUTION, rho: float = 0.6,
-             class_size: int | None = None) -> dict:
-    """점수·평균·표준편차가 다 있는 항목만으로 반에서의 위치(상위 %)와 예상 학점을 어림한다."""
+             class_size: int | None = None, cutoffs: dict | None = None) -> dict:
+    """점수·평균·표준편차가 다 있는 항목만으로 반에서의 위치(상위 %)와 예상 학점을 어림한다.
+    cutoffs(절대평가 기준표, 계약 16장)를 주면 학점은 순위가 아니라 예상 총점으로 정한다(estimate_absolute)."""
+    if cutoffs:
+        return estimate_absolute(components, cutoffs, rho=rho, class_size=class_size)
     dist = DEFAULT_DISTRIBUTION if dist is None else dist
     _check(dist, rho)
     if class_size is not None and (isinstance(class_size, bool) or int(class_size) < 1):
@@ -233,13 +272,129 @@ def estimate(components: list, dist: dict = DEFAULT_DISTRIBUTION, rho: float = 0
             "completed_weight": done_w, "components": rows, "notes": notes}
 
 
+def _absolute_parts(comps: list[Component], skip: Component | None = None):
+    """(받은 점수의 비중 가중 합 Σw·x, 그 비중 합, 남은 항목 [(비중, 항목)], 만점으로 가정한 고정 항목 이름)."""
+    done = done_w = 0.0
+    left, assumed = [], []
+    for c in comps:
+        if c is skip:
+            continue
+        w = _weight(c)
+        if c.score is not None:
+            done += w * (float(c.score) / _max(c))
+            done_w += w
+        elif c.fixed:
+            done += w
+            done_w += w
+            assumed.append(c.name)
+        else:
+            left.append((w, c))
+    return done, done_w, left, assumed
+
+
+def estimate_absolute(components: list, cutoffs: dict, rho: float = 0.6, class_size: int | None = None) -> dict:
+    """절대평가(계약 16장): 받은 점수 비율이 남은 평가에도 이어진다고 보고 예상 총점(100점 기준) → letter_for_score.
+    grade_range는 [남은 평가 만점일 때, 0점일 때]의 학점. 평균·표준편차가 있으면 반에서의 위치(top)도 함께 어림한다."""
+    problems = validate_cutoffs(cutoffs)
+    if problems:
+        raise ValueError("점수 기준 오류: " + "; ".join(problems))
+    if not 0 <= rho <= 1:
+        raise ValueError("상관 ρ는 0~1 사이여야 합니다")
+    comps = [_as_component(c) for c in components]
+    done, done_w, left, assumed = _absolute_parts(comps)
+    if done_w <= 0:
+        raise ValueError("점수가 있는 평가 항목이 없어 예상 총점을 계산할 수 없습니다")
+    all_w = sum(_weight(c) for c in comps)
+    denom = max(100.0, all_w)
+    avg = done / done_w
+    expected = avg * 100.0
+    worst = done / denom * 100.0
+    best = (done + (denom - done_w)) / denom * 100.0
+    rows, top, rng, rank = [], None, None, None
+    pos = None
+    try:
+        pos = estimate(components, DEFAULT_DISTRIBUTION, rho=rho, class_size=class_size)
+    except ValueError:
+        pos = None
+    for c in comps:
+        row_top = None
+        if pos:
+            row_top = next((r["top"] for r in pos["components"] if r["name"] == c.name), None)
+        rows.append({"name": c.name, "weight": _weight(c), "top": row_top,
+                     "status": "known" if c.score is not None else ("fixed" if c.fixed else "missing")})
+    if pos:
+        top, rng, rank = pos["top"], pos["range"], pos["rank"]
+    notes = ["예상 총점으로 매긴 추정 — 남은 평가 결과에 따라 달라짐", _cut_note(cutoffs),
+             f"예상 총점 {expected:.1f}점: 지금까지 받은 점수 비율(평균 {avg * 100:.1f}%)이 남은 평가에도 이어진다고 가정"]
+    if all_w < 100 - 0.01:
+        notes.append(f"평가 항목이 없는 나머지 {100 - all_w:g}%도 같은 비율로 가정")
+    if best - worst > 0.05:
+        notes.append(f"지금 점수로 총점은 {worst:.1f}점(남은 평가 0점) ~ {best:.1f}점(남은 평가 만점) 사이")
+    if assumed:
+        notes.append("모두 비슷하게 받는 항목은 만점으로 가정: " + ", ".join(assumed))
+    if left:
+        notes.append("아직 점수가 없는 항목: " + ", ".join(f"{c.name}({_pc(w)}%)" for w, c in left))
+    if pos:
+        notes.append(f"반에서의 위치(상위 {top:.1f}%)는 평균·표준편차로 따로 어림한 값 — 학점은 점수 기준으로 정함")
+    return {"top": top, "range": rng, "grade": letter_for_score(expected, cutoffs),
+            "grade_range": [letter_for_score(best, cutoffs), letter_for_score(worst, cutoffs)], "rank": rank,
+            "completed_weight": done_w, "components": rows, "notes": notes, "basis": "absolute",
+            "expected_total": round(expected, 2), "total_range": [round(worst, 2), round(best, 2)]}
+
+
+def _needed_absolute(comps: list[Component], k: Component, target: str, cutoffs: dict) -> dict:
+    """절대평가: 남은 항목 k에서 몇 점이면 총점이 target 기준 이상인지. 다른 남은 항목은 지금까지의 평균 비율로 가정."""
+    problems = validate_cutoffs(cutoffs)
+    if problems:
+        raise ValueError("점수 기준 오류: " + "; ".join(problems))
+    if target not in cutoffs:
+        raise ValueError(f"{target}의 점수 기준이 강의계획서에 없습니다")
+    wk = _weight(k)
+    if wk <= 0:
+        raise ValueError(f"{k.name}의 비중이 0입니다")
+    mxk = _max(k)
+    done, done_w, left, assumed = _absolute_parts(comps, skip=k)
+    if done_w <= 0:
+        raise ValueError("이미 받은 점수가 없어 남은 항목을 가정할 수 없습니다")
+    all_w = sum(_weight(c) for c in comps)
+    denom = max(100.0, all_w)
+    avg = done / done_w
+    others = sum(w for w, _ in left) + (denom - all_w)
+    cut = float(cutoffs[target])
+    notes = ["예상 총점으로 매긴 추정 — 남은 평가 결과에 따라 달라짐", _cut_note(cutoffs),
+             f"목표 {target} 이상 = 총점 {cut:g}점 이상"]
+    if others > 0.01:
+        notes.append(f"{k.name} 말고 아직 점수가 없는 비중 {_pc(others)}%는 지금까지의 평균 비율({avg * 100:.1f}%)로 가정")
+    if assumed:
+        notes.append("모두 비슷하게 받는 항목은 만점으로 가정: " + ", ".join(assumed))
+    if k.score is not None:
+        notes.append(f"{k.name}에 입력된 점수는 무시하고 남은 항목으로 계산")
+    xk = (cut / 100.0 * denom - done - others * avg) / wk
+    res = {"target": target, "possible": True, "already": False, "need_top": None, "need_score": None, "notes": notes}
+    if xk > 1 + 1e-9:
+        res["possible"] = False
+        notes.append(f"{k.name} 만점을 받아도 {target} 기준에 못 미칠 가능성이 큼(계산상 만점의 {xk * 100:.0f}% 필요)")
+        return res
+    already = xk <= 0
+    need_top = None
+    if not already and k.mean is not None and k.sd is not None and k.sd > 0:
+        need_top = top_percent(xk, k.mean / mxk, k.sd / mxk)
+    res.update(already=already, need_top=need_top, need_score=max(xk, 0.0) * mxk)
+    if already:
+        notes.append(f"{k.name}을(를) 0점 받아도 계산상 {target} 이상 — 결시·과락 규정은 따로 확인")
+    else:
+        notes.append(f"{k.name}에서 약 {res['need_score']:.1f}/{mxk:g}점 이상이면 {target} 이상(추정)")
+    return res
+
+
 def _cutoff(target: str, dist: dict) -> float:
     return sum(float(dist.get(g, 0) or 0) for g in GRADES[:GRADES.index(target) + 1])
 
 
 def needed_on(components: list, remaining_name: str, target: str, dist: dict = DEFAULT_DISTRIBUTION,
-              rho: float = 0.6) -> dict:
-    """남은 항목 remaining_name에서 target 학점 이상이 되려면 몇 점(상위 몇 %)이 필요한지 어림한다."""
+              rho: float = 0.6, cutoffs: dict | None = None) -> dict:
+    """남은 항목 remaining_name에서 target 학점 이상이 되려면 몇 점(상위 몇 %)이 필요한지 어림한다.
+    cutoffs(절대평가 기준표)를 주면 순위가 아니라 총점 기준으로 계산한다(need_top은 평균·표준편차가 있을 때만)."""
     dist = DEFAULT_DISTRIBUTION if dist is None else dist
     _check(dist, rho)
     if target not in GRADES:
@@ -250,6 +405,8 @@ def needed_on(components: list, remaining_name: str, target: str, dist: dict = D
         raise ValueError(f"'{remaining_name}' 평가 항목이 없습니다")
     if k.fixed:
         raise ValueError(f"{k.name}은(는) 모두 비슷하게 받는 항목이라 필요 점수를 계산할 수 없습니다")
+    if cutoffs:
+        return _needed_absolute(comps, k, target, cutoffs)
     wk = _weight(k)
     if wk <= 0:
         raise ValueError(f"{k.name}의 비중이 0입니다")
@@ -314,6 +471,32 @@ def needed_on(components: list, remaining_name: str, target: str, dist: dict = D
     return res
 
 
+def _priority_absolute(i: int, c: dict, est: dict, rw: float, mw: float, extra: dict) -> tuple:
+    """절대평가 과목: 예상 총점과 위·아래 학점 기준의 점수 차(10점을 표준편차 1쯤으로 봄)로 우선순위를 매긴다."""
+    cut = c["cutoffs"]
+    total, grade = float(est["expected_total"]), est["grade"]
+    have = [g for g in GRADES if g in cut]
+    better = next((g for g in reversed(have) if GRADES.index(g) < GRADES.index(grade)), None)
+    if rw <= 0:
+        why = missing_weight_note(mw) or "남은 평가 없음"
+        return (False, 0.0, i, {"course": c.get("course"), "score": 0.0, "grade": grade, "reason": why, **extra})
+    gap_up = max(0.0, float(cut[better]) - total) if better else math.inf
+    gap_down = max(0.0, total - float(cut[grade])) if grade in cut else math.inf
+    up = 0.0 if math.isinf(gap_up) else 1 / (0.15 + gap_up / 10)
+    down = 0.0 if math.isinf(gap_down) else 0.5 / (0.15 + gap_down / 10)
+    score = rw / 100 * (up + down)
+    if up == 0 and down == 0:
+        why = "학점 경계 없음"
+    elif up >= down:
+        why = f"{grade}/{better} 기준까지 {gap_up:.1f}점(절대평가 예상 총점 {total:.1f}점)"
+    else:
+        why = f"{grade} 기준 아래로 {gap_down:.1f}점 남음(절대평가 예상 총점 {total:.1f}점)"
+    reason = f"{why} · 남은 비중 {_pc(rw)}%"
+    if missing_weight_note(mw):
+        reason += f" · {missing_weight_note(mw)}"
+    return (True, score, i, {"course": c.get("course"), "score": score, "grade": grade, "reason": reason, **extra})
+
+
 def _z(top: float) -> float:
     t = min(max(top, 1e-9), 100 - 1e-9)
     return _PHI.inv_cdf(1 - t / 100)
@@ -336,6 +519,11 @@ def priorities(courses: list[dict]) -> list[dict]:
         rw = float(c.get("remaining_weight") or 0)
         mw = float(c.get("missing_weight") or 0)
         extra = {"missing_weight": mw} if "missing_weight" in c else {}
+        if c.get("letter_basis"):
+            extra["letter_basis"] = c["letter_basis"]
+        if c.get("cutoffs") and est.get("expected_total") is not None:
+            out.append(_priority_absolute(i, c, est, rw, mw, extra))
+            continue
         if est.get("top") is None:
             out.append((False, 0.0, i, {"course": c.get("course"), "score": 0.0, "grade": None,
                                         "reason": "점수·평균·표준편차가 부족해 추정 불가", **extra}))

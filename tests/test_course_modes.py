@@ -73,7 +73,9 @@ def test_hidden_suggestion_real_name():
     # 학기 표시가 있는 과목·대괄호 머리도 '교육'도 없는 과목은 제안하지 않는다
     assert "1" not in course_modes.suggestions(_cache("262R (서울-학부)[학생] 안전 교육-00분반"))
     assert "1" not in course_modes.suggestions(_cache("반도체공학"))
-    assert course_modes.suggestions(_cache("Lab safety training"))["1"]["mode"] == "hidden"
+    # 과목 코드 모양을 비교할 다른 과목이 없으면 교육 낱말 하나로는 제안하지 않는다(가족 8: 대괄호 머리도 있어야)
+    assert "1" not in course_modes.suggestions(_cache("Lab safety training"))
+    assert course_modes.suggestions(_cache("[Students] Lab safety training"))["1"]["mode"] == "hidden"
 
 
 def test_pass_fail_suggestion_needs_grading_words():
@@ -199,3 +201,52 @@ def test_pass_fail_no_letter_estimate_and_no_band(demo):
 
 def test_demo_student_id_constant_is_fake():
     assert DEMO_STUDENT_ID.startswith("2026") and len(DEMO_STUDENT_ID) == 10
+
+
+# ================================================================ 일반화(docs/CORNER_CASES.md 가족 8)
+# '정규 수업이 아닌 과목' 신호를 학교마다 다른 과목 코드 모양에도: 내 다른 과목들이 함께 쓰는 코드 모양을 배워서,
+# 그 모양이 없고 + (대괄호 대상 머리 또는 교육·training으로 끝나는 이름) + 공지·게시판 없음일 때만 제안한다.
+# 어느 과목에도 코드 모양이 없으면(다른 학교) 대괄호 머리와 교육 낱말이 둘 다 있을 때만.
+
+def _many(*courses, announcements=()):
+    return {"courses": [{"id": str(i), "name": n, "course_code": c or n, "syllabus_body": None}
+                        for i, (n, c) in enumerate(courses, 1)],
+            "announcements": [{"id": i, "context_code": f"course_{cid}", "title": "t", "message": "<p>x</p>"}
+                              for i, cid in enumerate(announcements)],
+            "boards": [], "conversations": [], "pdf_texts": {}}
+
+
+@pytest.mark.parametrize("courses,hidden", [
+    # 고려대 실제 모양: 학기 코드 '262R (서울-학부)'를 다른 과목이 함께 쓴다
+    ((("262R (서울-학부)로봇공학개론(GENERAL ROBOTICS)-00분반", None), ("262R (서울-학부)테니스(TENNIS)-05분반", None),
+      ("[학생] [한국어] 2026 인권과 성평등 교육 - 03분반", None)), {"3"}),
+    # 미국식: 과목 코드가 course_code에만 있다
+    ((("Intro to Programming", "CS 101"), ("Calculus II", "MATH 2210"),
+      ("Title IX Training 2026", "Title IX Training 2026")), {"3"}),
+    # 이름 앞에 코드: 'CS 101: …'
+    ((("CS 101: Intro to Programming", None), ("MATH 2210: Calculus II", None),
+      ("Academic Integrity Module", None)), {"3"}),
+    # 코드가 어디에도 없는 학교: 대괄호 머리 + 오리엔테이션 → 제안
+    ((("Calculus", None), ("Physics", None), ("[All Students] New Student Orientation", None)), {"3"}),
+    # 코드가 어디에도 없고 교육 낱말만 → 제안하지 않음
+    ((("Calculus", None), ("Physics", None), ("Lab Safety Training", None)), set()),
+    # 이름 중간에 교육·안전이 있는 정규 과목
+    ((("262R (서울-학부)교육학개론-00분반", None), ("262R (서울-학부)안전공학-01분반", None),
+      ("262R (서울-학부)테니스-05분반", None)), set()),
+    # 코드 모양이 다르지만 교육 낱말도 대괄호 머리도 없음
+    ((("262R (서울-학부)로봇공학개론-00분반", None), ("262R (서울-학부)테니스-05분반", None), ("Robotics Club", None)), set()),
+    # 대괄호 머리가 붙은 정규 과목(코드 모양이 같다)
+    ((("[영강] 262R (서울-학부)반도체공학-00분반", None), ("262R (서울-학부)테니스-05분반", None),
+      ("262R (서울-학부)로봇공학개론-00분반", None)), set()),
+    # 과목이 하나뿐이고 코드도 없음: 대괄호 머리 + 교육
+    ((("[필수] 연구실 안전교육 (2026)", None),), {"1"}),
+])
+def test_hidden_suggestion_general(courses, hidden):
+    got = {cid for cid, s in course_modes.suggestions(_many(*courses)).items() if s["mode"] == "hidden"}
+    assert got == hidden, courses
+
+
+def test_hidden_suggestion_needs_no_posts_even_for_outlier():
+    cache = _many(("Intro to Programming", "CS 101"), ("Calculus II", "MATH 2210"),
+                  ("Title IX Training 2026", "Title IX Training 2026"), announcements=["3"])
+    assert "3" not in course_modes.suggestions(cache)

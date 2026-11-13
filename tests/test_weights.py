@@ -241,3 +241,68 @@ def test_medium_partial_applied_and_low_skipped(gstore):
     assert gstore.data["grades"]["201"]["auto_confidence"] == "medium"
     log = gradebook.auto_fill(gstore, [S("<p>평가: 중간고사 10%, 기말고사 20%</p>", cid="202")], ai_enabled=False)
     assert "202" not in gstore.data["grades"] and any("확신이 낮아" in x for x in log)
+
+
+# ================================================================ 일반화(docs/CORNER_CASES.md 가족 7)
+# 'Homework assignments: 30% (w/ short reports)'·'Assessment: Final exam 50% / Report 20% / …'와 같은 모양의 다른 글.
+
+@pytest.mark.parametrize("text,is_html,want", [
+    # 점수(배점)로 적은 목록
+    ("성적 평가: 과제 30점, 중간고사 30점, 기말고사 40점", False, {"과제": 30, "중간고사": 30, "기말고사": 40}),
+    ("평가 비율: 중간고사 (30) 기말고사 (40) 과제 (20) 출석 (10)", False,
+     {"중간고사": 30, "기말고사": 40, "과제": 20, "출석": 10}),
+    # 줄마다 흩어진 목록(빈 줄·글머리표)
+    ("Grading\n\n- Midterm: 30%\n\n- Final: 40%\n\n- Homework: 20%\n\n- Attendance: 10%", False,
+     {"중간고사": 30, "기말고사": 40, "과제": 20, "출석": 10}),
+    # 퍼센트와 점이 섞임(합 100)
+    ("Grading: Midterm 30%, Final 40 points, Homework 30", False, {"중간고사": 30, "기말고사": 40, "과제": 30}),
+    # 괄호 안 조건(결석 3회 이상 F)은 비중이 아니다
+    ("평가: 중간고사 30%, 기말고사 40%, 과제 20%, 출석 10% (결석 3회 이상 F)", False,
+     {"중간고사": 30, "기말고사": 40, "과제": 20, "출석": 10}),
+    ("Grading: Midterm 30%, Final 40%, Labs 20%, Attendance 10% (3+ absences = F)", False,
+     {"중간고사": 30, "기말고사": 40, "실습": 20, "출석": 10}),
+    # 표(HTML) — 머리글이 영어, 셀에 % 없음
+    ("<table><tr><th>Component</th><th>Weight (%)</th></tr><tr><td>Midterm Exam</td><td>35</td></tr>"
+     "<tr><td>Final Exam</td><td>35</td></tr><tr><td>Lab Reports</td><td>30</td></tr></table>", True,
+     {"중간고사": 35, "기말고사": 35, "Lab Reports": 30}),
+    # '|'로 나눈 글 표
+    ("평가 항목 | 비율\n중간고사 | 30%\n기말고사 | 30%\n프로젝트 | 40%", False, {"중간고사": 30, "기말고사": 30, "프로젝트": 40}),
+    # 이름 줄 + 숫자 줄(쉼표)
+    ("Grading breakdown\nMidterm, Final, Homework, Quizzes\n30%, 30%, 25%, 15%", False,
+     {"중간고사": 30, "기말고사": 30, "과제": 25, "퀴즈": 15}),
+    # 각 항목의 세부 배분은 큰 항목에 넣는다
+    ("Grading: Quizzes 20% (4 × 5%), Midterm 30%, Final 50%", False, {"퀴즈": 20, "중간고사": 30, "기말고사": 50}),
+])
+def test_weight_variants(text, is_html, want):
+    w = find_weights(text, is_html)
+    assert w is not None, text
+    assert comps(w) == {k: float(v) for k, v in want.items()}, (text, comps(w))
+    assert w.total == 100
+
+
+@pytest.mark.parametrize("text", [
+    "30% of instructions are loads or stores; miss rate = 2%; hit rate 98%.",      # 강의 자료의 %
+    "Late penalty: 10% per day, up to 50%.",
+    "출석 80% 이상 참여해야 하며, 결석 3회 이상이면 F입니다.",
+    "Lab3 results: 85% passed the testbench, 15% failed.",
+    "A+, A: 40~50% / B+, B: 40~60% / C+~F: 0~10%",                                  # 실제 강의계획서의 학점 가이드
+    "Your score: Midterm 78, Final 85, Homework 92",                               # 점수 알림
+])
+def test_weight_variants_not_weights(text):
+    assert find_weights(text) is None, text
+
+
+@pytest.mark.parametrize("text,want", [
+    # 항목 번호가 비중으로 읽히면 안 된다('Exam 1 (20%)'의 1)
+    ("Exam 1 (20%), Exam 2 (20%), Final (30%), HW (30%)", {"Exam 1": 20, "Exam 2": 20, "기말고사": 30, "과제": 30}),
+    # 괄호 안 개수('Projects (2)')는 비중이 아니다
+    ("Participation: 5% / Quizzes: 15% / Projects (2): 40% / Final: 40%",
+     {"수업참여": 5, "퀴즈": 15, "프로젝트": 40, "기말고사": 40}),
+    # 'A and B each 30%' — 둘 다 30%
+    ("The midterm and the final each count for 30%, homework 40%.", {"중간고사": 30, "기말고사": 30, "과제": 40}),
+    ("성적: 중간고사와 기말고사는 각각 30%, 과제 40%", {"중간고사": 30, "기말고사": 30, "과제": 40}),
+])
+def test_item_numbers_counts_and_each(text, want):
+    w = find_weights(text)
+    assert w is not None and comps(w) == {k: float(v) for k, v in want.items()}, (text, w and comps(w))
+    assert w.total == 100

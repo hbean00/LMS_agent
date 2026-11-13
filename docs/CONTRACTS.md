@@ -615,12 +615,40 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 데모: ASIC에 Updated Grading Policy·성적 PDF 2개(가짜 학번)·퀴즈 공지·Lab6.pdf "Next labs: …", Capstone에 P/NP 문장, 과목 105 "[학생] [한국어] 2026 연구실 안전 교육 - 01분반"(제외 제안), 데모만 가짜 학번 2026000002.
 - 화면: 성적 표의 세부 점수 줄·연결 칩(`openChooser`, `#pick-dlg` 재사용, 되돌리기)·개수 줄(고치기)·남은 비중, 학번 안내 띠(`sidBanner`)와 설정 → 성적 칸, 대시보드 "시험 일정"(`examSection`), 과목 "평가 지도"(`gradeMapBlock`), 과목 종류 단추(`modeControl`)와 제안 칩, 제외한 과목 묶음, 과목별 읽은 글 수.
 
-## 16. 업데이트: 새 버전 확인과 한 번 누르기 업데이트 (사용자 요청 2026-11-13: "옛 버전을 쓰는 사람이 새 버전을 쉽게")
+## 16. 학점 비율 자동 찾기 (사용자 제보 2026-11-13: "로공개 학점 비율도 강의자료에 나온 거로 기억")
+
+원칙(사용자): **특정 과목·문장에 맞추지 않고, 다른 학생의 어떤 과목이 와도 처리되게** — 일반 구조(학점 낱말 묶음·범위·누적·이하/이내·점수 기준표)로 읽고, 변형 문장으로 시험한다. 못 읽는 꼴은 (켜져 있으면) AI → 사용자.
+
+- 실제 예(로봇공학개론 Syllabus.pdf): "Grade (Guideline) / A+,A: 40~50% / B+,B: 40~60% / C+~F: 0~10%" — 학점 묶음(A+,A), 범위(40~50%), 꼬리 묶음(C+~F).
+- `distribution.find_distribution(text, is_html=False) -> DistFound | None`:
+  `{"kind": "relative" | "absolute", "dist": {9학점: %} | None, "ranges": {묶음: [lo, hi]}, "cutoffs": {학점: 점수} | None, "sentence", "confidence", "notes"}`.
+  - relative: 묶음별 %(단일값·범위·이하/이내·최대·누적 "B 이상 70%"·"A+B ≤ 70%")를 9학점 비율로. 범위는 가운데 값을 쓰되 `ranges`에 그대로 남긴다. 묶음 안(A+/A0)은 고르게 나누고 메모. 합이 100이 아니면 메모(누적이면 차이로 계산).
+  - absolute: "A: 90점 이상", "90 ≤ A+", "A0 85~89" 같은 점수 기준표 → `cutoffs`. 이때 순위가 아니라 예상 총점으로 학점을 정한다(`grades.letter_for_score`).
+  - 무시: 평가 비중(중간 30%), 출석 기준("66% 이상 출석"), 통계 소수, 글 속 일반 퍼센트.
+- 자동 넣기: `gradebook` — 사용자가 정한 비율(`config.dist`) > 자동 비율(`config.dist_auto = {dist|cutoffs, kind, ranges, source, source_type, posted_at, confidence, notes}`, 가장 최근 글이 이김) > 기본값. 사용자가 학점 비율을 저장하면 자동은 쓰지 않는다.
+- 학점 표시 근거: `letter_basis = "user" | "syllabus" | "default" | null`(13-2 확장). "syllabus"면 화면이 학점을 보여 주되 근거 문장과 범위(예: "강의계획서 가이드라인 A 40~50%의 가운데로 계산")를 함께. `courses[].dist_source = {"by": "user"|"syllabus"|"default", "sentence", "source_title", "ranges"}`.
+- AI 작업 `grade_distribution`(규칙이 못 읽고 AI가 켜져 있을 때): 결과는 합·범위 검사와 원문 인용 검사를 통과해야 한다.
+- 실제 기준(로봇공학개론): kind relative, A(A+·A0) 45%(40~50), B(B+·B0) 50%(40~60), C+~F 5%(0~10), `letter_basis: "syllabus"`.
+
+## 17. HTTPS 인증서 (베타테스터 제보 2026-11-13: "CERTIFICATE_VERIFY_FAILED … self-signed certificate in certificate chain")
+
+원인: 백신의 'HTTPS 검사'(웹 보호)나 학교·회사·기숙사 네트워크 장비가 연결을 가로채 자기 루트 인증서로 다시 서명한다. 브라우저는 그 루트를 믿지만 파이썬은 못 볼 수 있다.
+- `net.py`가 모든 외부 HTTPS(Canvas `canvas.py`, LearningX `learningx.py` 두 연결, 구글 `gcal.py`, 첨부 다운로드 `core._attachment_bytes`)의 공통 설정을 만든다: `ssl.create_default_context()`(Windows 인증서 저장소 포함) + macOS 키체인(`security find-certificate`로 내보내 더함) + 사용자가 넣은 루트 인증서(`<데이터 폴더>/certs/*.pem|.crt|.cer|.der`, 환경 변수 `LMS_AGENT_CA_FILE`; PEM·DER 둘 다).
+- 인증서 검증을 끄는 선택지는 없다(끄면 토큰이 가로채일 수 있다).
+- 검증 실패는 `net.cert_help(host, reason, service, port)`로 고칠 수 있는 말이 된다: 어느 서버인지, 인증서 발급자(`net.peer_issuer` — 검증 없이 TLS 인사만 하고 끊어 발급자 이름만 읽음, 아무 데이터도 보내지 않음), 원인(HTTPS 검사), 방법(① 그 프로그램의 HTTPS 검사 끄기 ② 루트 인증서를 certs 폴더에 넣고 다시 연결), 읽지 못한 인증서 파일 이름. 토큰·개인 정보는 넣지 않는다.
+- `POST /api/account/login`은 연결 전에 `net.reset()` — certs 폴더에 넣고 다시 [연결]하면 바로 읽는다.
+- 시험: `tests/test_net.py` — openssl로 만든 가짜 '검사 장비' 루트 CA와 그 CA가 서명한 127.0.0.1 서버로 실패(발급자 이름이 담긴 안내) → certs 폴더에 .cer을 넣으면 성공까지(openssl이 없으면 건너뜀).
+
+## 18. 열마다 다른 평가인 점수표 (베타테스터 제보 2026-11-13: "성적 자동 입력이 안 된다")
+- 'Quiz 1 (10) | Midterm (100)'처럼 열마다 다른 평가인 표는 열마다 결과 하나(`scorefile.parse_score_results`, 이름 = 열 이름과 번호, `ScoreFileResult.key`), 합계 열이 있거나 다른 열 만점의 합이 한 열의 만점인 표(ASIC Lab0)는 결과 하나(기존과 같음). 자세한 판단은 `docs/CORNER_CASES.md`.
+- `gradebook.score_file_candidates`가 결과마다 후보 하나: key `pdf:<첨부 키>#<열>`(결과가 하나면 `pdf:<첨부 키>` 그대로 — 기존 연결 유지). 열 이름으로 평가 항목에 자동 연결되므로 파일 이름이 '성적.pdf'여도 들어간다.
+
+## 19. 업데이트: 새 버전 확인과 한 번 누르기 업데이트 (사용자 요청 2026-11-13: "옛 버전을 쓰는 사람이 새 버전을 쉽게")
 
 `updater.py`(확인·체크섬·백업·교체·다시 시작), `migrate.py`(state.json 맞추기), `features/update.py`(경로·상태 칸).
 릴리스 쪽은 `.github/workflows/release.yml`이 태그마다 `SHA256SUMS.txt`(`sha256sum` 형식, 실행 파일 3개 + wheel)를 함께 올린다.
 
-### 16-1. 확인
+### 19-1. 확인
 - 앱을 켤 때(`lms-agent serve`) 하루 한 번(실패하면 3시간 뒤 다시) + 설정의 [지금 확인]. 화면 서버는 한 시간마다 '하루가 지났는지'만 본다.
   데모·테스트의 `App`은 저절로 확인하지 않는다(`start_background_checks`는 cli만 부름).
 - 요청은 `GET https://api.github.com/repos/hbean00/LMS_agent/releases/latest` 하나. 헤더는 고정 `User-Agent: lms-agent-update-check`뿐(토큰·이름·학교·버전 없음).
@@ -630,7 +658,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 캐시 `store.data["update"] = {"checked_at", "latest": "0.6.0", "tag": "v0.6.0", "notes_url", "notes"(본문 앞 1,500자), "published_at",
   "assets": [{"name", "url", "size"}], "error", "dismissed"?: "0.6.0", "applied"?: {"version", "from", "at", "how", "seen"?}}`.
 
-### 16-2. `GET /api/state` 추가
+### 19-2. `GET /api/state` 추가
 
 ```json
 "update": {
@@ -655,7 +683,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 ```
 `settings.update_check`(기본 true)·`settings.auto_update`(기본 false)는 `state.settings`에 있고 `POST /api/settings`로 바꾼다.
 
-### 16-3. 요청 (성공하면 새 state, 실패는 4xx `{"error"}`)
+### 19-3. 요청 (성공하면 새 state, 실패는 4xx `{"error"}`)
 
 | 요청 | 동작 |
 |---|---|
@@ -664,7 +692,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 | `POST /api/update/restart` | pip·git 설치를 마친 뒤(`result.restart`) 새 버전으로 다시 켜기 → `phase: "restarting"`. 그 밖에는 400 |
 | `POST /api/update/dismiss` | 배너 닫기: 새 버전 알림이면 `dismissed = latest`, 방금 업데이트 알림이면 `applied.seen`, 실패 결과면 지움 |
 
-적용(언제나 사용자가 누를 때만. 자동은 16-5):
+적용(언제나 사용자가 누를 때만. 자동은 19-5):
 1. **exe**: 이 OS의 파일(`lms-agent-windows.exe`·`lms-agent-macos`·`lms-agent-linux`)과 `SHA256SUMS.txt`를 받아 SHA-256이 맞을 때만
    실행 파일 옆에 `<이름>.new`로 저장(디스크에서 한 번 더 확인) → state·config 백업 → `applied` 기록 → `phase: "restarting"`(화면이 볼 틈 1.2초) →
    실행 중인 파일을 `<이름>.old`로 이름 바꾸고 `.new`를 그 자리로(실패하면 되돌림) → 포트를 비우고 같은 포트·`--no-browser`로 다시 켬
@@ -677,14 +705,14 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
    고친 파일이 있으면 아무것도 하지 않고 명령을 알려 준다.
 4. **unknown**: 릴리스 주소와 `python -m pip install -U git+https://github.com/hbean00/LMS_agent@<tag>`만 보여 준다.
 
-보안: 주소는 https만, 리다이렉트는 `github.com`·`api.github.com`·`objects.githubusercontent.com`·`release-assets.githubusercontent.com`으로만 따라간다.
+보안: 연결은 공통 HTTPS 설정(`net.py`, 17장 — 운영체제·사용자 루트 인증서, 실패하면 `net.cert_help` 안내)을 쓴다. 주소는 https만, 리다이렉트는 `github.com`·`api.github.com`·`objects.githubusercontent.com`·`release-assets.githubusercontent.com`으로만 따라간다.
 체크섬이 맞지 않으면 아무것도 저장·실행·교체하지 않는다. 체크섬은 같은 릴리스에 있으므로 '받는 도중 바뀐 파일'은 막지만 '릴리스 자체가 바뀐 경우'는 못 막는다
 (다음 단계 후보: 코드 서명 또는 앱에 넣은 ed25519 공개 키로 서명한 SHA256SUMS).
 
 화면은 `phase`가 checking·applying이면 2초마다 state를 다시 묻고, restarting이 되거나(exe) 응답이 끊기면 `GET /`을 1초마다 불러
 세션 값(`lms-agent-token`)이 바뀐 화면이 오면 새로 고친다(2분 넘으면 "직접 다시 켜 주세요").
 
-### 16-4. 백업과 state.json 맞추기
+### 19-4. 백업과 state.json 맞추기
 - 업데이트 직전: `state.json`·`config.json`을 같은 폴더에 `state.before-<새 버전>.json`·`config.before-<새 버전>.json`으로 복사(권한 그대로, 덮어씀).
 - `state.json`에 `app_version`(마지막으로 저장한 앱 버전)을 둔다. 0.6.0 전 파일에는 없다.
 - 옛 버전이 저장한 파일을 처음 읽을 때 `state.before-<이 버전>.json`이 없으면 만든다(직접 pip·git으로 바꾼 경우도 백업이 남게).
@@ -692,7 +720,7 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
   틀린 파일(예: `settings`가 목록)을 열 수 있게 고치고 틀린 값은 `_repaired`에 옮긴다.
 - 더 새 버전이 저장한 파일은 고치지 않는다: 모르는 칸은 그대로 지닌 채 저장하고 `app_version`도 낮추지 않는다 → `update.data_newer`.
 
-### 16-5. 켤 때 자동 업데이트(선택)
+### 19-5. 켤 때 자동 업데이트(선택)
 `settings.auto_update`(기본 false, exe·pip만, `update_check`가 켜져 있어야 함). 켜 두면 `lms-agent serve`가 화면을 열기 전에 확인(하루 한 번 규칙)하고
-새 버전이 있으면 16-3과 같은 확인·백업을 거쳐 바꾼 뒤 원래 인자로 다시 켠다. 지난번에 같은 버전으로 바꿨는데 아직 옛 버전이 돌면(`applied.version == latest`)
+새 버전이 있으면 19-3과 같은 확인·백업을 거쳐 바꾼 뒤 원래 인자로 다시 켠다. 지난번에 같은 버전으로 바꿨는데 아직 옛 버전이 돌면(`applied.version == latest`)
 되풀이하지 않고 `error`로 알린다. 터미널: `lms-agent update [--check] [-y]`.

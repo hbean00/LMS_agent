@@ -15,7 +15,7 @@ CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 
        "img-src 'self' data:; frame-ancestors 'none'")
 SETTINGS = {"include_canvas": True, "weekly_summary": True, "review_reminder": False,  # 키: 기본값
             "tutorial_done": False, "notify": True,
-            "update_check": True, "auto_update": False}                                # 계약 16장
+            "update_check": True, "auto_update": False}                                # 계약 19장
 
 
 def items(ctx):

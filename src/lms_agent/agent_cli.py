@@ -5,7 +5,7 @@
   JSON 스키마(형식·범위 검사), 사후 검사(비중 합 ~100, 근거 문장이 보낸 글에 그대로 있는지, 날짜가 근거와 맞는지 …),
   재시도(검사 오류를 그대로 인용해 고쳐 달라고 한 번 더), 시간 제한.
   작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
-  map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장).
+  map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장).
 - 실행(run_task): `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·세션 저장 안 함 — 옛 버전이
   모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
@@ -33,7 +33,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from . import distribution as _dist
 from .extract import KO_WD, find_dates, html_to_text
+from .grades import GRADES
 from .store import group_key
 from .timeutil import iso, local_tz, now_local, parse_iso
 from .weights import WeightsFound, display_names, is_fixed
@@ -294,6 +296,7 @@ PROMPT = ("You are one data-extraction step inside the LMS Agent app. Follow the
 _GRADING_FOCUS = (r"평가\s*(?:방법|기준|비율|요소|항목)|성적\s*(?:평가|산출|반영)|배점|비중|반영\s*비율|"
                   r"grading|evaluation|assessment|weight")
 _DATE_FOCUS = r"\d{1,2}\s*[/.월]\s*\d{1,2}|due|deadline|마감|까지"
+_DIST_FOCUS = r"학점\s*(?:비율|분포|부여)|상대\s*평가|절대\s*평가|grade\s*(?:distribution|scale|guideline)|curv|A\s*\+|A0"
 
 
 def _text_builder(focus: str):
@@ -699,6 +702,37 @@ def _count_validate(obj: dict, sent: str, inputs: dict, final: bool):
     return {"count": int(n), "evidence": unplace(ev)[:300]}
 
 
+# ---- grade_distribution (계약 16장)
+
+_GRADE_IN = re.compile(r"(?<![A-Za-z0-9])[A-DF](?:\+|0)?(?![A-Za-z0-9])")
+
+
+def _dist_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    """AI가 준 학점 묶음·기준표를 규칙과 같은 방법(distribution.from_groups)으로 풀어 검사한다:
+    근거는 보낸 글에 그대로 있고 학점 낱말이 있어야 하며, 묶음은 이어진 학점·겹치지 않음·pct가 [low, high] 안,
+    합은 100(범위 안에서 맞출 수 있으면 통과), 기준표는 학점 순서대로 내려가야 한다."""
+    kind = obj.get("kind")
+    if kind in (None, "none"):
+        return None
+    evidence = _flat(str(obj.get("evidence") or ""))
+    if not _quoted(evidence, sent):
+        raise _Invalid("evidence는 입력 글에 있는 문장을 한 글자도 바꾸지 말고 그대로 복사해야 합니다 "
+                       "/ evidence must be copied verbatim from the input text")
+    if not _GRADE_IN.search(evidence):
+        raise _Invalid("evidence에 학점(A+, B0 등)이 없습니다 / evidence must contain the letter grades")
+    try:
+        if kind == "absolute":
+            cut = {c["grade"]: float(c["min_score"]) for c in obj.get("cutoffs") or []}
+            df = _dist.from_groups("absolute", cutoffs=cut, sentence=unplace(evidence))
+        else:
+            df = _dist.from_groups("relative", groups=obj.get("groups") or [], sentence=unplace(evidence))
+    except ValueError as e:
+        raise _Invalid(str(e)) from None
+    df.confidence = "medium"
+    df.notes = list(df.notes) + ["AI CLI로 찾음 — 맞는지 확인하세요"]
+    return df
+
+
 TASKS: dict[str, AiTask] = {}
 
 
@@ -823,6 +857,42 @@ register(AiTask(
         "evidence": {"type": "string", "maxLength": 400}}},
     build_input=_count_build,
     post_validate=_count_validate,
+))
+
+
+register(AiTask(
+    name="grade_distribution",
+    purpose="규칙으로 못 읽은 강의 글에서 학점 비율(상대평가) 또는 점수 기준(절대평가)을 찾는다",
+    instructions=(
+        "작업: 아래 강의 글에서 학점 비율 / grade distribution을 찾으세요. 글에 없는 것은 지어내지 마세요.\n"
+        "Task: find the letter-grade policy in the course text below: either a relative distribution (share of "
+        "students per grade) or absolute score cutoffs. Never invent anything that is not in the text.\n"
+        "- 상대평가(relative): groups = [{grades: [\"A+\",\"A0\"], pct 또는 low·high, cumulative}] — 학점 이름은 "
+        "A+ A0 B+ B0 C+ C0 D+ D0 F만. 'A'는 A+와 A0, 'B 이상 70%'는 cumulative true, '40~50%'는 low 40·high 50, "
+        "'30% 이내'는 high 30 / grade names must be from A+ A0 B+ B0 C+ C0 D+ D0 F; 'A' means A+ and A0; "
+        "'B or above 70%' is cumulative; ranges go to low/high; caps go to high.\n"
+        "- 절대평가(absolute): cutoffs = [{grade, min_score}] (100점 기준 최소 점수) / minimum total score out of 100.\n"
+        "- 평가 비중(중간고사 30%), 출석 기준(66% 이상 출석), 점수 통계는 학점 비율이 아닙니다 / grading weights, "
+        "attendance thresholds and score statistics are NOT a grade distribution.\n"
+        "- P/NP(Pass/Fail)만 있거나 학점 비율이 없으면 {\"kind\": \"none\"} / if there is none, kind none.\n"
+        "- evidence: 근거 문장을 입력 글에서 한 글자도 바꾸지 말고 그대로 복사 / copy the evidence verbatim.\n"
+        "- 다른 정보(이름, 학번, 연락처, 점수)는 넣지 마세요 / include no other data."),
+    schema={"type": "object", "required": ["kind"], "properties": {
+        "kind": {"type": "string", "enum": ["relative", "absolute", "none"]},
+        "groups": {"type": "array", "maxItems": 9, "items": {
+            "type": "object", "required": ["grades"], "properties": {
+                "grades": {"type": "array", "maxItems": 9, "items": {"type": "string", "enum": list(GRADES)}},
+                "pct": {"type": "number", "minimum": 0, "maximum": 100},
+                "low": {"type": "number", "minimum": 0, "maximum": 100},
+                "high": {"type": "number", "minimum": 0, "maximum": 100},
+                "cumulative": {"type": "boolean"}}}},
+        "cutoffs": {"type": "array", "maxItems": 9, "items": {
+            "type": "object", "required": ["grade", "min_score"], "properties": {
+                "grade": {"type": "string", "enum": list(GRADES)},
+                "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}},
+        "evidence": {"type": "string", "maxLength": 600}}},
+    build_input=_text_builder(_DIST_FOCUS),
+    post_validate=_dist_validate,
 ))
 
 
@@ -1126,6 +1196,14 @@ EVAL_CASES = [
      "inputs": {"title": "LAB4 보고서 제출 안내", "posted_at": "2026-11-09T10:00:00+09:00",
                 "text": "LAB4 보고서는 조교 이메일(asic.ta@example.ac.kr)로 제출합니다. 마감: 11월 18일(수) 자정"},
      "expect": {"deadlines": [{"month": 11, "day": 18, "evidence_has": "11월 18일"}]}},
+    {"name": "korean_prose_distribution", "task": "grade_distribution",
+     "inputs": {"title": "강의계획서", "text": "성적은 상대평가로 매깁니다. 수강생의 상위 35% 정도까지 A를 주고, 그다음 "
+                "40% 정도에 B를 주며, 나머지는 C 이하로 줍니다. 출석 3/4 미만은 F."},
+     "expect": {"dist_groups": {"A+": 17.5, "A0": 17.5, "B+": 20, "B0": 20}}},
+    {"name": "pass_fail_only", "task": "grade_distribution",
+     "inputs": {"title": "Syllabus", "text": "Grading: this course is graded on a P/NP (Pass/Non-pass) basis. "
+                "Attendance over 66% is required."},
+     "expect": {"dist_groups": None}},
     {"name": "triage_extension_and_holiday", "task": "triage_review",
      "inputs": {"items": _TRIAGE_ITEMS, "all_items": _TRIAGE_ITEMS},
      "expect": {"triage": {"not": {"f-lab4-a": "approved", "f-holiday": "approved"},
@@ -1148,6 +1226,14 @@ def _check_expect(case: dict, res: AiResult) -> str | None:
             return "비중을 못 찾음"
         got = {c["name"].lower(): c["weight"] for c in res.data.components}
         return None if got == {k.lower(): float(v) for k, v in want.items()} else f"다름: {got}"
+    if "dist_groups" in exp:
+        want = exp["dist_groups"]
+        if want is None:
+            return None if res.data is None else "학점 비율이 없어야 하는데 찾음"
+        if res.data is None or res.data.kind != "relative":
+            return "학점 비율을 못 찾음"
+        bad = {k: res.data.dist.get(k) for k, v in want.items() if abs((res.data.dist.get(k) or 0) - v) > 0.6}
+        return None if not bad else f"다름: {bad}"
     if "deadlines" in exp:
         got = res.data or []
         for w in exp["deadlines"]:

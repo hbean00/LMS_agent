@@ -156,12 +156,13 @@ _UNIT = (r"(?P<unit>%|％|퍼센트|percent(?:age)?(?![a-z])|pct(?![a-z])|점|pt
          r"marks?(?![a-z]))")
 _PAIR = re.compile(
     rf"(?<![\w&'’.+/\-])(?P<name>{_WORD}(?:[ \t]+(?:{_WORD}|\d{{1,2}}(?![\d.:/%]))){{0,5}}?)"
-    rf"(?:[ \t]*[(\[](?P<alias>[^()\[\]\d%]{{1,40}})[)\]])?"           # 병기: 중간고사(Midterm)
+    rf"(?:[ \t]*[(\[](?P<alias>[^()\[\]%]{{1,40}})[)\]])?"             # 병기: 중간고사(Midterm), 개수: Projects (2)
     rf"[ \t]*(?:[:：=|]|[-–—~](?!\d)|\.{{2,}}|…+)?[ \t]*(?P<open>[(\[])?[ \t]*"
     rf"(?:(?<![\w.])|(?<=[가-힣])(?=\d{{1,3}}(?:\.\d+)?[ \t]*[%％]))"   # '중간고사30%'만 붙여 쓰기 허용
     rf"{_NUM}[ \t]*{_UNIT}?"
-    rf"(?(unit)|(?![ \t]*(?:\d|[./:\-]\d)|[A-Za-z가-힣]))"              # 단위 없는 수: 날짜·시각·번호가 아니어야
-    rf"[ \t]*[)\]]?", re.I)
+    rf"(?(unit)|(?![ \t]*(?:\d|[./:\-]\d)|[A-Za-z가-힣]"                # 단위 없는 수: 날짜·시각·번호가 아니어야,
+    rf"|[ \t]*[)\]]?[ \t]*(?:[:：=]|[(\[])?[ \t]*\d{{1,3}}(?:\.\d+)?[ \t]*(?:%|％|퍼센트|점|pts?(?![a-z])|points?)))"
+    rf"[ \t]*[)\]]?", re.I)                                             # 뒤에 단위 붙은 수가 오면 앞 수는 번호·개수
 _BAD_AFTER = re.compile(
     r"\s*(?:이상|이하|미만|초과|이내|내외|가량|정도|씩|마다|까지|감점|가산|할인|만점|증가|감소|"
     r"[을를]\s*받|받았|받은|의\s*(?:학생|인원|수강생|확률)|"
@@ -287,13 +288,43 @@ _LABEL_LINE = re.compile(r"^[A-Za-z가-힣][^\d]{0,29}$")
 
 
 def _tokens(line: str) -> list[str]:
+    """표 한 줄의 칸: 탭·'|'·두 칸 이상 공백, 없으면 쉼표·세미콜론('Midterm, Final, Homework' / '30%, 30%, 25%'),
+    그것도 없으면 공백."""
     parts = re.split(r"\t+|\s*\|\s*|\s{2,}", line.strip().strip("|"))
+    if len(parts) <= 1 and re.search(r"[,;]", line):
+        parts = re.split(r"\s*[,;]\s*", line.strip().strip(",;"))
     if len(parts) <= 1:
         parts = line.split()
     return [p.strip() for p in parts if p.strip()]
 
 
+_EACH = re.compile(r"(?i)(?:(?<=\s)|^)(?:are\s+|will\s+be\s+)?(?:each|각각|각)\s+(?:worth\s+|counts?\s+(?:for\s+)?|"
+                   r"weighted\s+(?:at\s+)?|is\s+)?(?P<num>\d{1,3}(?:\.\d+)?)\s*(?P<unit>%|％|퍼센트|percent|점)")
+_EACH_SPLIT = re.compile(r"(?i)\s*(?:,|\band\b|&|및|(?<=[가-힣])(?:와|과)(?=\s))\s*")
+
+
+def _expand_each(text: str) -> str:
+    """'The midterm and the final each count for 30%'·'중간고사와 기말고사는 각각 30%' → 항목마다 30%.
+    앞 마디(':'·';'·줄 시작부터)가 평가 항목 이름 둘 이상으로만 이루어졌을 때만 펼친다."""
+    out, pos = [], 0
+    for m in _EACH.finditer(text):
+        start = max(text.rfind(c, 0, m.start()) for c in ":;\n.") + 1
+        if m.start() - start > 80:
+            continue
+        seg = text[start:m.start()]
+        names = [re.sub(r"(?i)^(?:the|both)\s+|(?:은|는|이|가)$", "", p.strip()) for p in _EACH_SPLIT.split(seg)]
+        names = [n for n in names if n]
+        if len(names) < 2 or not all(_is_label(n) for n in names):
+            continue
+        lead = re.match(r"\s*", seg).group(0)
+        out.append(text[pos:start] + lead + ", ".join(f"{n} {m['num']}{m['unit']}" for n in names))
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _prepare(text: str) -> str:
+    text = _expand_each(text)
     text = _SUBPARTS.sub(r"\1", text)  # "중간고사 30%(객관식 20%, 서술형 10%)" → 세부 비중은 뺀다
     lines = text.split("\n")
     out: list[str] = []

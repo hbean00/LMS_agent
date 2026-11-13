@@ -1,4 +1,4 @@
-"""업데이트(계약 16장): 버전 비교, 설치 방식 찾기, 확인 캐시(하루 한 번·인터넷 없음), 체크섬, exe 교체,
+"""업데이트(계약 19장): 버전 비교, 설치 방식 찾기, 확인 캐시(하루 한 번·인터넷 없음), 체크섬, exe 교체,
 pip·git 적용, 상태 파일 맞추기(migrate), 화면 API. 실제 네트워크·실제 설치·실제 다시 시작은 쓰지 않는다
 (가짜 fetch·runner·relaunch, conftest가 진짜 네트워크를 막아 둔다)."""
 import base64
@@ -597,3 +597,19 @@ def test_just_updated_note_until_dismissed(tmp_path):
     assert u.status()["updated"]["to"] == __version__
     u.dismiss()
     assert u.status()["updated"] is None
+
+
+def test_http_fetch_cert_error_explains_like_canvas(monkeypatch):
+    """백신·네트워크가 HTTPS를 가로채면 Canvas와 같은 고치는 방법(계약 17장)을 보여 준다(발급자 조회도 가짜로)."""
+    import ssl
+
+    from lms_agent import net
+
+    def boom(req, timeout):
+        raise urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed: self-signed certificate in certificate chain"))
+    monkeypatch.setattr(updater, "_open", boom)
+    monkeypatch.setattr(net, "peer_issuer", lambda host, port=443, timeout=4.0: "Example AV Root")
+    with pytest.raises(updater.UpdateError) as e:
+        updater.http_fetch(updater.API_LATEST, 100)
+    assert e.value.kind == "offline"
+    assert "GitHub(업데이트 확인)" in str(e.value) and "Example AV Root" in str(e.value) and "certs" in str(e.value)

@@ -1,4 +1,4 @@
-"""업데이트 확인·적용 (계약 16장). 일은 updater.py가 하고, 여기는 경로·상태 칸·백그라운드 실행·다시 시작만.
+"""업데이트 확인·적용 (계약 19장). 일은 updater.py가 하고, 여기는 경로·상태 칸·백그라운드 실행·다시 시작만.
 
 - 확인은 앱을 켤 때(cli serve) 하루 한 번 + 설정의 [지금 확인]. 테스트·데모의 App은 저절로 확인하지 않는다
   (start_background_checks는 cli만 부른다). 테스트는 App(..., update_fetch=가짜, update_how=…, relaunch=가짜)로

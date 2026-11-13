@@ -37,6 +37,8 @@ def _connect(app, url: str, token: str) -> dict:
         raise ApiError(400, "Canvas 주소와 토큰을 모두 입력하세요")
     if not urlparse(url).netloc:
         raise ApiError(400, "Canvas 주소가 올바르지 않습니다")
+    from .. import net
+    net.reset()   # certs 폴더에 인증서를 넣고 다시 [연결]하면 바로 읽게
     try:
         me = Canvas(url, token).whoami()  # 실제로 되는지 먼저 확인
     except CanvasError as e:

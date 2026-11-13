@@ -158,7 +158,7 @@ class Store:
                 if isinstance(loaded, dict):
                     self._before_migrate(loaded)
                     try:
-                        migrate(loaded)   # 옛 버전이 저장한 파일을 지금 모양으로(계약 16-4). 모르는 칸은 그대로 둔다
+                        migrate(loaded)   # 옛 버전이 저장한 파일을 지금 모양으로(계약 19-4). 모르는 칸은 그대로 둔다
                     except Exception:     # 맞추기가 실패해도 멀쩡한 파일을 '깨진 파일'로 치우지 않는다(백업은 이미 있음)
                         pass
                     data.update(loaded)

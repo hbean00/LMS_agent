@@ -908,7 +908,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
   .confetti { display: none; }
   .win-ring .fg { transition: none; }
 }
-/* 새 버전 알림(계약 16장): 배너 모양 그대로, 버튼만 오른쪽에 */
+/* 새 버전 알림(계약 19장): 배너 모양 그대로, 버튼만 오른쪽에 */
 .update-banner { flex-wrap: wrap; align-items: center; }
 .update-banner p { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-top: 0; }
 .update-banner .upd-actions { display: flex; align-items: center; gap: 8px; flex: none; }
@@ -5133,7 +5133,7 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
     maybePopups();
   }
 
-  // ---------------------------------------------------------------- 업데이트 (계약 16장)
+  // ---------------------------------------------------------------- 업데이트 (계약 19장)
   // 새 버전 알림은 모든 화면 위에 조용히 한 줄. 받기·바꾸기는 사용자가 [지금 업데이트]를 눌러야만 한다
   const upd = () => (state && state.update && typeof state.update === 'object' ? state.update : null);
   const updWorking = () => { const u = upd(); return !!(u && (u.phase === 'checking' || u.phase === 'applying')); };

@@ -22,7 +22,7 @@ python scripts/build_exe.py                        # PyInstaller로 dist/lms-age
 - 서버: `server.py`는 보안 검사(Host, 세션 값 `X-LMS-Agent`)와 HTTP만. API는 `features/*.py`가 `api.router`에 등록한다(`@router.route`, `@router.state_section`, `@router.on("changed")`, `@router.on_init`). 기능 추가 = `features/`에 파일 하나 + `features/__init__.py`의 FEATURES에 이름. 예시는 `api.py` 맨 위.
 - 데이터 모양(화면 API, Item, 학기, 구글, 성적)은 `docs/CONTRACTS.md`가 기준. 바꾸면 그 문서와 `web/index.html`을 같이 고친다.
 - `mock_canvas.py`·`mock_google.py`는 데모와 테스트가 함께 쓴다. 시나리오를 바꾸면 e2e 기대값도 바뀐다.
-- 업데이트: `updater.py`(GitHub 릴리스 확인·SHA256SUMS 확인·exe 교체/pip/git·다시 시작), `migrate.py`(`state.json`의 `app_version` 기준 단계). 테스트는 가짜 fetch·runner·relaunch만 쓴다(conftest가 실제 네트워크를 막음). 계약 16장.
+- 업데이트: `updater.py`(GitHub 릴리스 확인·SHA256SUMS 확인·exe 교체/pip/git·다시 시작), `migrate.py`(`state.json`의 `app_version` 기준 단계). 테스트는 가짜 fetch·runner·relaunch만 쓴다(conftest가 실제 네트워크를 막음). 계약 19장.
 - 진행 상황·확인 안 된 것·사용자 결정: `docs/PROGRESS.md`.
 
 ## Rules
