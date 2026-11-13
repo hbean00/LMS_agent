@@ -817,3 +817,167 @@ Windows 작업 스케줄러에 작업을 등록해 **로그인할 때 + N시간�
 - 요청: `POST /api/ai/provider`(provider 생략 가능, custom 칸은 저장값에 합침, `custom: null` = 지우기, stdin 끄기·.cmd/.bat 인자의 위험 문자·못 쓰는 선택 → 400), `POST /api/ai/rescan`(도움말 다시 읽기), `POST /api/ai/test`(백그라운드, `state.ai.test = {status, provider, name, done, total, passed, cases[{label,…}], duration_ms, error}`, 한도·기록에 안 셈).
 - `state.ai` 추가: `provider_name, selected, local, unavailable_reason, model, custom{set, name, args(홈은 ~), output, stdin}, auto_order, test, test_cases`. 실행기 칸 추가: `probed, auto, flags, missing, note, notes, site, output`, ollama `model/models`, custom `warning/args`.
 - 아직: claude 말고는 실제 실행으로 끝까지 확인하지 않음(출력 모양은 공개 문서 기준 시험). 데모의 [연결 시험]은 가짜 AI가 정리·묻기만 흉내 내서 '8개 중 3개'로 나온다(화면에 그 이유를 적음). 한 번 부르기 90초 제한은 그대로(느린 로컬 모델은 걸릴 수 있음).
+
+## 22. 에이전트 확장 — v0.7.0 (사용자 요청 2026-11-13: "지금은 놓친 것만 확인하는 느낌" → A~H 모두, "컴퓨터 켤 때 바로 실행 … 이 기능을 agent가 해줄 수 있게. 궁극적으로 사용자가 클릭해서 할 수 있는 기능을 agent가 모두 수행")
+
+원칙(12·20장 그대로): 답·제안에는 근거(그대로 인용한 문장 + 원문 링크)를 붙인다. **숫자 계산은 앱이 하고 AI는 설명만**. 상태를 바꾸는 것은
+제안 → 사용자가 [실행]/[반영] → 되돌리기. 밖으로 보내는 것은 없다(메일은 초안만). AI가 꺼져 있어도 규칙만으로 최소한의 답을 한다.
+개인정보·동의가 걸린 것(로그아웃·데이터 지우기·학번·AI 켜기/실행기 바꾸기·구글 연결 해제)은 에이전트가 하지 않는다(사용자가 직접).
+
+### 22-0. 파일 소유(서브에이전트 병렬 작업 — 남의 파일은 고치지 않는다)
+
+| 담당 | 파일(만들거나 고침) | 테스트 |
+|---|---|---|
+| W 만약에 | `whatif.py` | `tests/test_whatif.py` |
+| Q 채팅 | `agent.py`(묻기 갈래·A 답하기·다른 모듈 handle 연결), `agent_cli.py`(작업 `answer` 등록, assist에 action 추가), `mock_ai.py`, `features/agent.py` | `tests/test_agent_chat.py`, `tests/test_agent_qa.py` |
+| M 메일·체크리스트 | `maildraft.py`, `checklist.py`, `features/checklist.py`, `mock_canvas.py`(과제 설명에 제출 요건 문장만 덧붙임 — 날짜 없는 문장, 다른 테스트 기대값을 바꾸지 않게) | `tests/test_maildraft.py`, `tests/test_checklist.py` |
+| C 코치 | `coach.py`(C 브리핑·D 바뀐 마감·E 회고·종강 리포트), `features/coach.py`, `cli.py`(백그라운드 브리핑 알림 — `_toast_reward` 주변만), `notify.py`(문구 함수 추가만) | `tests/test_coach.py` |
+| F 공부 일정 | `plan.py`, `features/plan.py`, `core.py`의 `calendar_payload` 주변만, `ics.py`·`gsync.py`(공부 블록을 일정으로) | `tests/test_plan.py` |
+| S 자동 실행·액션 | `autostart.py`, `features/autostart.py`, `actions.py`(에이전트가 할 수 있는 클릭 목록·실행·되돌리기) | `tests/test_autostart.py`, `tests/test_actions.py` |
+| U 화면 | `web/index.html`만 | (화면 확인은 리드) |
+| 리드 | `docs/CONTRACTS.md`·`PROGRESS.md`·`README.md`·`features/__init__.py`·버전 | 전체 |
+
+리드가 미리 만든 빈 모듈(함수 이름·모양 고정): `whatif.handle`, `maildraft.handle`, `plan.handle`, `actions.handle`(모두 해당 없으면 `None`),
+`features/coach.py`·`features/plan.py`·`features/checklist.py`·`features/autostart.py`(FEATURES에 등록됨). 각 담당이 몸통을 채운다.
+
+### 22-1. 묻기 갈래 (Q, `agent.answer`)
+
+`answer()`가 메시지를 갈래로 나눠 처리하고 대화에 `kind`를 남긴다(옛 대화는 없으면 `"missing"`으로 본다). 순서대로 첫 번째로 `None`이 아닌 것:
+1. `actions.handle(store, message, course_id)` — "자동 실행 켜줘", "동기화해줘", "주간 요약 꺼줘", "성적 화면 열어줘" 같은 **명령** → `kind "action"`
+2. `maildraft.handle(store, message, course_id, names)` — "메일/이메일 … 써줘/초안/작성/문의" → `kind "mail"`
+3. `plan.handle(store, message, course_id, now)` — "공부 계획/공부 일정/계획 세워/스케줄 짜" → `kind "plan"`
+4. `whatif.handle(store, message, course_id, now)` — "몇 점 받아야/받으려면/만약/…이면/0점이면/P(패스) 기준" → `kind "whatif"`
+5. 놓친 것(지금 20장 assist·규칙) — "안 보여/안 들어와/빠졌/없어요/놓친/못 찾/이상해" → `kind "missing"`
+6. 그 밖의 질문 → `kind "question"`(22-2)
+
+각 handle 결과 `{"answer": str, ...추가 칸}`을 대화에 그대로 합친다(`answer`·`by` 등 20장 칸은 유지). handle이 예외를 내면 다음 갈래로 넘어가고 `notes`에 남긴다.
+AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `answer` 작업. action·mail·plan·whatif는 규칙(+필요하면 각 모듈이 AI 선택 사용 — 숫자·날짜·주소는 지어내지 않음).
+대화 칸 추가: `kind`, `citations`(question), `whatif`(whatif), `draft`(mail), `plan`(plan), 제안 `type "action"`(action, 22-9).
+
+### 22-2. A. 과목 질문에 답하기 (Q)
+
+- 검색은 지금 `_search`(공지·게시판·메시지·강의계획서·PDF 글). 범위·형식·규정 같은 질문 낱말에 맞게 점수 보강(예: 범위/scope/coverage/chapter, 형식/format/파일명, 감점/late/지각/규정/policy, 출석/attendance, 시험장/강의실/room).
+- 대화 칸 `citations: [{"source_key", "course_id", "course_short", "type", "title", "posted_at", "url", "quote"}]` — `quote`는 그 글의 문장 그대로(500자 이내).
+- 규칙(AI 꺼짐·실패): 가장 관련 높은 문단 1~3개를 인용해 "이 글들에 이렇게 적혀 있어요" 형태로 답하고 citations를 채운다. 못 찾으면 그렇다고 말한다(지어내지 않음).
+- AI(`agent_cli` 작업 `answer`, mock_ai도 흉내): 입력은 assist와 같은 글 묶음. 출력 `{"answer": 2~6문장, "citations": [{"source_key", "quote"}]}`.
+  검증: 각 quote가 보낸 글에 그대로 있어야 하고(없으면 다시 묻기, 마지막엔 그 인용을 뺌), 인용이 하나도 없으면 "글에서 찾지 못했어요" 답만 허용.
+  답에 있는 날짜·숫자는 인용 안에 있어야 한다(없으면 다시 묻기). 제안(proposals)은 없음.
+
+### 22-3. B. 성적 '만약에' (W, `whatif.py`)
+
+- `handle(store, message, course_id=None, now=None) -> dict | None`. 성적 화면과 같은 계산 재료를 쓴다:
+  `gradebook.section(store, courses, items, sem)`(features/grades가 쓰는 것과 같은 방식으로 만든 과목별 평가 항목·점수·평균·표준편차·학점 비율·절대평가 기준·P/NP)와
+  `grades.estimate`/`estimate_absolute`/`needed_on`. **숫자는 이 계산 결과만**.
+- 알아듣는 질문(예): "기말에서 몇 점 받아야 A?"(목표 학점 + 남은 항목 → needed), "A 받으려면?"(남은 항목이 여럿이면 항목별), "LAB 하나 0점이면?"/"중간 70점이면 학점은?"(가정 점수로 다시 추정 → scenario),
+  "P/NP 기준 넘었어?"(P/NP 과목: 받은 점수·남은 비중만 설명 — 학점 추정 안 함). 과목을 못 정하면 성적이 있는 과목이 하나면 그것, 여럿이면 되묻기(answer로 과목 목록).
+  "A"는 A0로 보고(A+이면 A+) 그렇게 했다고 basis에 적는다. 목표 학점이 없으면 지금 추정 학점과 다음 학점까지를 보여 준다.
+- 결과 `{"answer": str, "whatif": {"course_id", "course_short", "kind": "needed"|"scenario"|"pass_fail"|"current"|"ask_course",
+  "target": "A0"|null, "component": str|null, "lines": [str], "rows": [{"label": str, "value": str}], "basis": [str]}}`.
+  `basis`: 어떤 값이 기본값/추정/사용자 입력인지(예: "학점 비율은 강의계획서에서 찾은 값", "평균·표준편차가 없어 기본값으로 어림"). 계산할 수 없으면 kind "current"·이유를 answer에.
+- 이 PC 밖으로 성적을 보내지 않는다(AI 안 씀).
+
+### 22-4. C·D·E. 코치 카드 (C, `coach.py`·`features/coach.py`)
+
+`state.coach = {"briefing": 카드|null, "retro": 카드|null, "report": 카드|null, "changes": [바뀐 마감…]}` — 화면을 물을 때 저장된 것만으로 계산(네트워크 없음).
+카드 공통: `{"id", "kind": "briefing"|"retro"|"report", "title", "lines": [{"text", "item_ids": [..], "tone": "deadline"|"exam"|"study"|"pace"|"warn"|"cheer"}], "created_for": "2026-11-09"}`.
+- **briefing(C)**: 이번 주(월~일) 기준. 이번 주 마감(일정·확인 대기) 수와 가장 몰린 요일, 30일 안 시험 D-day, `gradebook.priorities` 상위 1~2(어느 과목부터),
+  페이스(km·연속 완주·다음 메달까지). 문장마다 근거 항목 id. 이번 주 내내 보이고, 닫으면(`POST /api/coach/dismiss {"id"}` → `store.data["coach"]["dismissed"]`) 그 주에는 다시 안 보임.
+- **retro(E 주간)**: 지난주 결과 — 마감 n개 중 m개 제출, 놓친 것 제목(최대 3), 연속 완주·다음 메달. 월·화요일에만(닫으면 끝).
+- **report(E 종강)**: `week_now > weeks_total`이면 학기 리포트 — 마감 처리 수, 메달 수·이름, 최고 연속, 과목별 한 줄(성적 추정은 화면 안에서만). 닫을 때까지.
+- **changes(D)**: 최근 14일 안에 마감이 바뀐 항목 `[{"item_id", "title", "course_short", "from", "to", "direction": "later"|"earlier", "source_title", "posted_at", "quote", "url"}]`.
+  근거는 같은 과제의 다른 후보(충돌·대체됨)나 근거 사슬에서 찾은 더 새 글. 근거 문장이 있을 때만(지어내지 않음).
+- 백그라운드(cli `_toast_reward` 순서: 신규 마감 알림 > **주간 브리핑(주 1회, 그 주 첫 백그라운드 동기화)** > 보상): "LMS Agent · 11주차 작전" / "마감 4개, 목요일이 고비 …". 알린 주는 `store.data["coach"]["toasted"]`. 성적 없음.
+
+### 22-5. F. 공부 일정 (F, `plan.py`·`features/plan.py`)
+
+- `make(store, course_id=None, item_id=None, days=None, minutes=60, hour=20, start=None, now=None) -> {"title", "course_id", "item_id", "blocks": [{"start", "end", "title", "course_id", "item_id"}], "notes": [str]}`.
+  기본 대상: 그 과목(없으면 가장 가까운) 시험 항목. 오늘~시험 전날 사이 하루 한 블록, 마감이 2개 이상인 날·시험 당일은 건너뜀, 최대 14블록. 시각은 hour:00(KST), 길이 minutes.
+- `handle(store, message, course_id=None, now=None)` — "기말 전 2주 공부 계획 세워줘" → `{"answer", "plan": make(...)}`(아직 저장 안 함, 미리 보기).
+- 요청: `POST /api/plan/preview {course_id?, item_id?, days?, minutes?, hour?}` → `{"plan": {...}}`(저장 안 함),
+  `POST /api/plan/apply {"title", "course_id"?, "item_id"?, "blocks": [...]}` → 검증(미래·최대 30블록·각 15~240분·겹침 없음) 후 `store.data["plans"]`에 `{id: "p-…", created_at, decided_by: "user"|"ai", ...}` 저장, "changed" → 새 state,
+  `POST /api/plan/remove {"id"}` → 그 계획의 블록 전부 삭제 → 새 state. `state.plans = [{"id", "title", "course_id", "item_id", "blocks", "created_at"}]`.
+- 내보내기: `core.calendar_payload`가 공부 블록을 함께 낸다(.ics·구글 모두, UID `study-<plan>-<n>@lms-agent`, 제목 앞 "[공부] ", 길이가 있는 일정, 알림 30분 전). 계획을 지우면 다음 반영에서 구글 일정도 지워진다.
+
+### 22-6. G. 과제 체크리스트 (M, `checklist.py`·`features/checklist.py`)
+
+- `extract(texts: list[{"text", "source_title", "url"}]) -> [{"text", "quote", "source_title", "url"}]`: 제출 요건 문장을 규칙으로 — 파일 형식(PDF·zip·docx·hwp), 파일명 규칙, 분량(쪽·페이지·words), 포함할 것(코드·스크린샷·보고서·사진), 제출처(LMS·이메일 주소·종이·우편함), 팀/개인, 지각 규정. 문장마다 그대로 인용.
+- 대상 글: 그 항목의 Canvas 과제 설명 + 근거 사슬의 글(공지·메시지)·같은 과목 공지 중 제목이 맞는 것. 날짜는 체크리스트에 넣지 않음(마감은 따로 있음).
+- `state.checklists = {item_id: {"items": [{"id", "text", "quote", "source_title", "url", "done", "by": "rules"|"user"}], "updated_at"}}` — 화면에 보이는 항목(review·scheduled)만, 요건이 하나라도 있을 때.
+- 요청: `POST /api/checklist/<item_id> {"op": "toggle", "id"} | {"op": "add", "text"} | {"op": "remove", "id"} | {"op": "refresh"}` → 새 state. 사용자 체크·추가는 다시 동기화해도 남는다.
+
+### 22-7. H. 문의 메일 초안 (M, `maildraft.py`)
+
+- `draft(store, course_id, purpose, item_id=None, note=None, names=None) -> {"course_id", "purpose", "to": [{"email", "quote", "source_title"}], "subject", "body", "notes": [str]}`.
+  purpose: `extension`(연장)·`absence`(결석·공결)·`grade`(성적 문의)·`submission`(제출 확인)·`question`(일반). 정중한 한국어 틀에 과목 이름·과제 제목·마감을 채운다.
+  받는 사람: 그 과목 글에서 조교/TA/교수/professor/문의 근처의 이메일 주소만(인용과 함께), 항목의 `email_to`가 있으면 그것 우선. **없으면 비워 두고** notes에 "주소를 못 찾았어요". 지어내지 않음.
+  이름·학번은 `[이름]`·`[학번]` 자리표시(설정에 사용자 이름이 있으면 이름만 채움). 보내지 않는다.
+- `handle(store, message, course_id=None, names=None)` — "LAB4 연장 문의 메일 써줘" → 과목·항목·목적을 알아내 `{"answer", "draft"}`.
+- 요청: `POST /api/mail/draft {"course_id", "purpose", "item_id"?, "note"?}` → `{"draft": {...}}`(저장 안 함). 화면: 제목·본문 고칠 수 있는 칸, [복사], [메일 앱으로 열기](`mailto:`).
+
+### 22-8. 컴퓨터를 켜면 앱 열기 (S, `autostart.py`·`features/autostart.py`)
+
+- `state.autostart = {"supported": bool, "enabled": bool, "open_browser": bool, "how": "windows-task"|"macos-launchagent"|"linux-autostart"|null, "command": str|null, "error": str|null}`.
+- `POST /api/autostart {"enabled": bool, "open_browser"?: bool}` → 등록/해제 → 새 state. Windows: 작업 스케줄러 로그온 작업 "LMS Agent App"이 실행 스크립트(.vbs, 창 없이)로
+  `lms-agent serve --port 8765`(open_browser false면 `--no-browser`)을 켠다 — 경로는 백그라운드 동기화처럼 지금의 파이썬·exe(켤 때마다 스크립트 갱신).
+  macOS: `~/Library/LaunchAgents/kr.lmsagent.app.plist`(RunAtLoad). Linux: `~/.config/autostart/lms-agent.desktop`. 이미 같은 포트에 앱이 떠 있으면 새로 켜지 않고 브라우저만(open_browser일 때).
+  데모는 등록하지 않음(supported false). 테스트는 가짜 runner/경로(실제 PC 설정을 건드리지 않음). 실패는 400 `{"error"}`.
+
+### 22-9. 에이전트가 하는 클릭 (S `actions.py` + Q 연결 + U 단추)
+
+- `actions.CATALOG`: 화면 단추가 부르는 API를 이름 붙여 묶은 목록. 항목 `{"id", "title"(한국어), "params"(간단한 모양), "client": bool, "route": ("POST", "/api/…") 또는 None, "undoable": bool}`.
+  서버 액션은 **같은 API 경로를 앱 안에서 부른다**(api.router.match → handler(app, body) — 검증·저장이 화면과 똑같음). 되돌리기는 실행 전 값을 기억해 같은 경로로 되돌림(되돌릴 수 없으면 `undoable: false`).
+  최소 목록: 설정 칸 켜기/끄기(include_canvas·weekly_summary·review_reminder·notify·update_check·auto_update), 백그라운드 동기화 켜기/끄기·간격, **컴퓨터를 켜면 앱 열기 켜기/끄기**,
+  지금 동기화(전체 다시 확인 포함), 구글 캘린더 지금 반영(연결돼 있을 때), 과목 종류 바꾸기(성적 있음·P/NP·제외), 항목 승인·제외·확인 전으로, 새 버전 확인, 지금 업데이트,
+  첨부 자동 다운로드, 캐릭터 바꾸기, 브리핑 닫기, 공부 계획 넣기·지우기(22-5), 체크리스트 체크(22-6).
+  화면 액션(`client: true`, 화면이 직접 함): 화면 열기(대시보드·확인함·학기·과목·성적·자료·설정 칸·특정 과목/항목), 튜토리얼·달라진 점 보기, 캘린더 파일 받기.
+  하지 않음: 로그아웃, 데이터 지우기, 학번, AI 켜기·실행기 바꾸기, 구글 연결 해제, 토큰.
+- `actions.handle(store, message, course_id=None) -> {"answer", "proposals": [액션 제안]} | None` — 규칙으로 명령 알아듣기(켜/꺼/해줘/열어/바꿔/동기화/반영/업데이트 + 목록의 이름). 명령이 아니면 None.
+  액션 제안: `{"type": "action", "action": id, "params": {...}, "title": "컴퓨터를 켜면 앱 열기 켜기", "reason": str, "client": bool, "undoable": bool}`.
+  AI assist도 같은 목록(이름·params 모양)을 받아 type "action"을 낼 수 있다 — `actions.check(store, p) -> p(+rejected_reason)`이 id·params를 검사(모르는 것·금지 목록은 rejected_reason).
+  `actions.catalog_text() -> str`: AI에게 보낼 목록 설명(이름·params·뜻, 2,000자 이내).
+- 실행: 서버 액션은 `POST /api/agent/apply`(지금 경로)에서 type "action"이면 `actions.run(app, p) -> {"ok", "message", "undo": 값|None}` → 제안에 `applied`·`result`·`_undo` 저장,
+  `POST /api/agent/undo` → `actions.undo(app, p)`. 화면 액션은 화면이 바로 수행(서버 기록 없음). 실행은 늘 사용자가 [실행]을 누를 때만.
+
+### 22-10. 화면 (U, `web/index.html`)
+
+- 채팅 서랍: kind별 — question(답 + 인용 목록: 인용문·글 제목·날짜·[원문]), whatif(줄·표 rows·basis 작은 글씨·[성적에서 보기]), mail(받는 사람·제목·본문 고칠 칸·[복사]·[메일 앱으로 열기]·notes),
+  plan(블록 목록·[캘린더에 넣기]→/api/plan/apply·[다시 짜기]), action 제안([실행]·결과·[되돌리기]·client 액션은 화면이 바로). 예시 칩: '기말 범위 어디까지야?', '기말에서 몇 점 받아야 A?',
+  'LAB4 연장 문의 메일 써줘', '기말 전 2주 공부 계획 세워줘', '컴퓨터 켤 때 자동 실행해줘', '기말고사 날짜가 안 보여요'.
+- 대시보드: 브리핑 카드(위, 닫기), 회고 카드(월·화), 종강 리포트, "바뀐 마감" 묶음(D: from → to·근거 인용).
+- 항목 카드(확인함·대시보드 날짜 목록·과목 상세): 체크리스트 칩 "체크리스트 2/5" → 펼치기(체크·추가·삭제·근거), [문의 메일] → 초안 창(/api/mail/draft).
+- 설정: "컴퓨터를 켜면 앱 열기"(켜기·브라우저도 열기) 칸. 공부 계획 목록(지우기)은 학기 화면 또는 대시보드.
+- 튜토리얼: `TOUR_VERSION` 3 — '달라진 점'에 "물어보면 답해요"(질문·만약에·메일·계획·명령 예시)와 브리핑 카드 단계를 더한다(보일 때만).
+
+### 22-11. 구현 결과 (v0.7.0, 서브에이전트 7명 병렬 → 리드 통합)
+
+- **갈래(Q)**: 모든 대화에 `kind`(답하는 중에는 `null`, 옛 대화·오래된 오류는 `"missing"`)와 `citations`(question 말고는 `[]`). handle이 예외를 내거나 dict가 아니면 다음 갈래로 넘어가고 `notes`에 갈래 이름·예외 종류만 남긴다(예외 내용은 남기지 않음).
+  handle 결과는 대화의 뼈대 칸(`id, at, message, course_id, status, kind, finished_at, searched, results, attempts`)을 덮지 못한다.
+  `agent.classify`: '안 보여요' 말이 없어도 **날짜 질문**("LAB4 마감 언제야?")은 missing(규칙이 놓친 마감을 [반영]할 수 있는 갈래), '안 보여요' + 주제만 있고 고칠 것이 없으면("제출 형식이 안 보여요") question.
+- **질문(Q)**: `agent.TOPICS` 8개(scope·format·policy·attendance·room·materials·grading·contact) — 문단에 주제가 있으면 +4, 제목 +1.5. 규칙 인용은 평가 낱말(기말·LAB…)과 같은 번호(LAB4면 Lab6 글 제외)·주제가 문단이나 제목에 있어야 하고,
+  과목을 말했으면 그 과목 글만, 최대 3개(가장 높은 점수의 절반 이상). AI 작업 `answer`: 인용 8자 이상·최대 4개, 잘못된 source_key는 인용이 실제로 있는 글로 고침, 답의 날짜는 인용의 월/일과 맞아야 하고
+  다른 숫자는 인용·질문·과목 이름·인용한 글 제목에 있어야 함(마지막 시도까지 어기면 규칙 답). 점수 1.0을 넘는 검색 결과가 없으면 AI를 부르지 않는다(하루 한도 아낌). 인용은 원문으로 되돌려 보여 준다(가린 이메일 대신 실제 주소).
+- **만약에(W)**: kind `current`는 '계산할 수 없음'(첫 줄 `계산할 수 없는 이유: …`)과 '되묻기'(`물어볼 것: …`)도 맡는다. rows 값은 모두 문자열(소수 한 자리). 남은 항목이 여럿이면 항목마다 따로 `needed_on`(성적 화면의 필요 점수와 같음).
+  P/NP 과목은 '점수가 들어간 비중 X%: 비중대로 더하면 100점 중 Y점'(단순 합, 학점 추정 아님). 불평 말(안 들어가/반영이 안/누락/오류/버그 …)이 있으면 None → missing 갈래. 대문자 A~D만 학점으로 읽는다.
+- **코치(C)**: 카드 id `briefing:<월요일>`·`retro:<월요일>`·`report:<마지막 주 일요일>`(=`created_for`). 칸 추가: briefing `week`, retro `week, total, done`, report `weeks_total`.
+  changes 추가 칸: `source_type`, `basis`(`conflict`|`edited`|`canvas`|`canvas_post`), `from_item_id`, `status`(review|scheduled|replaced — 옛 날짜를 승인한 뒤 연장 공지가 오면 replaced로 보여 줌), `url`은 null일 수 있음. 최근 14일·최대 10개·최신 글 먼저.
+  `store.data["coach"] = {"dismissed": [...], "toasted": [...]}`(각 100개). dismiss: 지금 보이지 않는 id는 400, 잠금 시간 초과는 409.
+  백그라운드 브리핑 알림은 주 1회지만 **그 주에 앱·CLI 동기화가 있었으면 보내지 않는다**(카드를 이미 볼 수 있었음 — 알림은 앱을 안 여는 사람용). 알림 글은 마감·시험·응원 줄만(공부·페이스·성적 없음).
+- **공부 일정(F)**: `apply`는 state와 함께 `plan_id`를 돌려준다(본문 `decided_by`·`reason` 받음, AI일 때만 reason 저장). 저장된 다른 계획과 겹쳐도 400(같은 계획 두 번 넣기 방지), 계획 최대 50개.
+  plan에 `course_short, target{title,due,status,kind,url}, days, minutes, hour`. `state.plans[]`에 `course_short, decided_by, reason, hidden, past`, 블록마다 `uid, gcal_link`. 시험: kind "시험" 또는 시험류 평가 항목에 연결된 항목.
+  내보내기: `core.study_events` → calendar_payload 둘째 목록에 `kind: "study"`(TRANSP 투명 — gcal과 같음, VALARM -PT30M, CATEGORIES:공부). 구글 `google.desired.study`(공부 블록이 있을 때만) — 13-5의 합 검사는 `deadlines + summaries + study`.
+- **체크리스트·메일(M)**: 체크리스트 항목 `kind`(where·format·name·length·include·team·policy·user), 규칙 항목 id = `"r-" + sha1(kind|text)[:10]`(다시 동기화해도 체크 유지, 문구가 바뀌면 새 항목).
+  `toggle`에 선택 `done`(되돌리기용), `refresh` = 숨긴 규칙 항목 되살리기, 사용자 항목 최대 30·200자. 404(모르는 항목·숨긴 과목·모르는 칸), 400(잘못된 op·id·글). "changed"는 내보내지 않음.
+  메일 초안 `to[]`에 `role`(교수|조교|문의처|제출처)·`url`, `item_id`. 받는 사람 최대 3(항목 `email_to`는 그 주소를 적은 문장이 있을 때만 맨 앞, 조교 → 교수, 결석은 교수 먼저).
+  역할 낱말이 근처에 없으면 주소 앞부분(`ta`·`prof`)으로 역할을 짐작한다. 과목을 못 정하면 `course_id: null`·`[과목명]` 자리표시 초안과 과목 목록. 400(목적·id·note 1000자 초과), 404(모르는 과목·항목).
+- **자동 실행(S)**: `settings.autostart_open_browser`(기본 true). 실행 스크립트(Windows `app-start.vbs` — WinHttp, macOS·Linux `app-start.sh` — curl→wget→python)가 먼저 `GET http://127.0.0.1:8765/`에서 `lms-agent-token`을 찾고,
+  있으면 브라우저만 열고 끝, 없으면 `serve --port 8765`. Windows 작업 "LMS Agent App"(로그온 10초 뒤). macOS는 plist만 쓰고 `launchctl load` 안 함(다음 로그인부터), 끌 때도 파일만 지움(돌던 앱을 죽이지 않게).
+  **앱 끄기**(리드 추가): `POST /api/app/quit` → 응답 뒤 0.6초 있다가 서버를 멈추고 프로세스 종료(테스트는 `App(..., quit=가짜)`). 창 없이 켜진 앱을 끌 방법 — 설정 → 컴퓨터를 켜면 앱 열기의 [앱 끄기], 에이전트 "앱 꺼줘"(액션 `app_quit`).
+- **액션(S)**: 목록 `setting, auto_download, background, autostart, sync, google_push, course_mode, item_decision, item_submitted, update_check, update_apply, mascot, materials_folder, app_quit, coach_dismiss,
+  plan_apply, plan_remove, checklist_toggle`(서버) + `open_view, tutorial, download_calendar`(화면). 금지 id(logout·wipe_data·student_id·ai_enable·ai_provider·google_connect·google_disconnect·token)와
+  금지 설정 키(ai_cli·ai_auto_triage·ai_provider/custom/model·student_id·token·canvas_url)는 거절하고 그 설정 칸 열기만 제안. 제목·client·undoable은 늘 목록에서(AI 입력을 믿지 않음), 모르는 params는 버림, '이미 그 상태'도 거절.
+  run은 실패를 예외로 낸다(`ok: false`를 돌려주지 않음). undo는 `_undo`(없으면 `result.undo`)로, 실행 뒤 사용자가 값을 바꿨으면 409(사용자가 이김). 항목·과목 결정은 기존 경로를 지나므로 `decided_by: "user"`(사용자가 그 동작에 [실행]을 누름), plan_apply만 "ai".
+  `/api/agent/apply`·`undo`는 action일 때 `actions.run/undo`를 **잠금 밖에서** 부른다(안쪽 경로가 app.lock·파일 잠금을 직접 잡음). 409: 이미 실행·실행 전·되돌릴 수 없음·다른 동작 실행 중, 400: 화면 액션·거절·다시 검사 실패.
+- **화면(U)**: `#pane-autostart`(설정), `#mail-dlg`(항목의 [문의 메일]), 공부 계획 목록은 학기 화면 오른쪽, 코치 카드는 대시보드 맨 위·바뀐 마감은 옆 칸. [문의 메일]은 확인함 카드·과목 상세에서만(대시보드 날짜 목록은 체크리스트 칩만).
+  튜토리얼 `TOUR_VERSION` 3: 판 2를 본 사람에게는 3에서 늘어난 단계(물어보면 답해요·브리핑)만.
+- **함께 고친 것**: `extract.EMAIL_ADDR`를 ASCII로(주소 바로 뒤 한국어 조사 '로'가 주소에 붙던 문제 — 'x.test로'), `RULES_VERSION` 2026.11.13-5.
+- **확인 안 된 것**: 실제 로그온 트리거·LaunchAgent·XDG 자동 시작(스크립트만 실행해 봄), 실제 클립보드 복사·메일 앱 열기, 캘린더 파일 받기 화면 액션, 실제 Windows 알림 표시.

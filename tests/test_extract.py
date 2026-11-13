@@ -43,6 +43,14 @@ def test_easy_full_date_and_email_address():
     assert f.title_hint == "과제 3"
 
 
+def test_email_address_stops_before_korean_particle():
+    """주소 바로 뒤에 붙은 한국어 조사('로', '으로 보내')는 주소가 아니다(단어 문자 패턴이 한글도 받아 'x.test로'가 되던 문제)."""
+    f = one("보고서는 2026.11.20 18:00까지 thermo.box@example.test로 보내 주세요")
+    assert (f.method, f.email_to) == ("email", "thermo.box@example.test")
+    f = one("과제 4는 11월 21일 23:59까지 hw4.ta@x.ac.kr으로 제출")
+    assert f.email_to == "hw4.ta@x.ac.kr"
+
+
 def test_easy_english():
     f = one("Please email your final report to cap@x.edu by Nov 30, 11:59 PM.")
     assert f.due == at(2026, 11, 30)

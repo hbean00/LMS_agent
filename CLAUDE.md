@@ -23,6 +23,7 @@ python scripts/build_exe.py                        # PyInstaller로 dist/lms-age
 - 데이터 모양(화면 API, Item, 학기, 구글, 성적)은 `docs/CONTRACTS.md`가 기준. 바꾸면 그 문서와 `web/index.html`을 같이 고친다.
 - `mock_canvas.py`·`mock_google.py`는 데모와 테스트가 함께 쓴다. 시나리오를 바꾸면 e2e 기대값도 바뀐다.
 - 업데이트: `updater.py`(GitHub 릴리스 확인·SHA256SUMS 확인·exe 교체/pip/git·다시 시작), `migrate.py`(`state.json`의 `app_version` 기준 단계). 테스트는 가짜 fetch·runner·relaunch만 쓴다(conftest가 실제 네트워크를 막음). 계약 19장.
+- 에이전트(계약 20~22장): `agent.py`가 묻기를 갈래로 나눈다(`actions`·`maildraft`·`plan`·`whatif`의 `handle` → 놓친 것·질문). 상태를 바꾸는 것은 제안 → [실행]/[반영] → 되돌리기, 액션은 화면 단추와 같은 API 경로를 앱 안에서 부른다(`actions.py`). 코치 카드 `coach.py`, 체크리스트 `checklist.py`, 자동 실행 `autostart.py`.
 - 진행 상황·확인 안 된 것·사용자 결정: `docs/PROGRESS.md`.
 
 ## Rules

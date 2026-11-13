@@ -7,4 +7,5 @@
 
 def load_all() -> None:
     from . import account, agent, ai, background, celebrate, core, google, grades, mascot, materials, update  # noqa: F401
+    from . import autostart, checklist, coach, plan  # noqa: F401  (계약 22장)
     # 기능마다 경로·상태 칸 이름이 달라 불러오는 순서는 상관없다. 같은 경로를 여럿이 받으면 priority로 정한다.

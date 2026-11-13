@@ -178,6 +178,30 @@ def _toast_reward(store) -> None:
         pass
 
 
+def _toast_briefing(store) -> bool:
+    """백그라운드 동기화: 이번 주 작전(코치 브리핑, 계약 22-4)을 주 1회 Windows 알림으로 — 그 주 첫 백그라운드 동기화에서
+    (신규 마감 알림에 밀리면 다음 백그라운드 동기화에서). 이번 주에 앱·CLI로 동기화했거나 카드를 닫았으면 알리지 않는다
+    (coach.toast_card). 마감·시험 줄만 쓰고 성적은 넣지 않는다. 알린 주는 state의 coach.toasted. 알렸으면 True."""
+    from . import coach
+    from .notify import briefing_message, toast
+    try:
+        card = coach.toast_card(store)
+    except Exception:   # 브리핑 계산이 실패해도 동기화 결과는 그대로(보상 알림으로 넘어간다)
+        return False
+    msg = briefing_message(card)
+    if not msg or not toast(msg[0], msg[1]):
+        return False
+    _out(f"  알림: {msg[0]}")
+    try:
+        with store.locked():
+            store.reload_if_changed()
+            coach.mark_toasted(store.data, card["created_for"])
+            store.write()
+    except (OSError, TimeoutError):
+        pass
+    return True
+
+
 def cmd_sync(args) -> None:
     home = data_dir()
     cfg = load_config(home)
@@ -207,8 +231,8 @@ def cmd_sync(args) -> None:
         msg = new_deadlines_message(r, view)
         if msg and toast(*msg):
             _out(f"  알림: {msg[0]}")
-        else:   # 알림은 한 번에 하나: 마감 알림이 없을 때만 보상을 알린다(못 알린 보상은 다음 동기화 때)
-            _toast_reward(store)
+        elif not _toast_briefing(store):   # 알림은 한 번에 하나: 신규 마감 > 주간 브리핑(주 1회) > 보상
+            _toast_reward(store)           # (못 알린 브리핑·보상은 다음 동기화 때)
     if args.push:  # 구글 캘린더에 반영(연결돼 있을 때만)
         from .config import google_client
         from .gcal import GoogleError

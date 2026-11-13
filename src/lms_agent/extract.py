@@ -14,7 +14,7 @@ from datetime import date, datetime, time, timedelta
 # -3: 제목이 종류·이름을(결과 제목 제외), 다음 줄 "시간:", 통계 소수는 날짜 아님
 # -4: 일반화(docs/CORNER_CASES.md) — 마침표 모양으로 문장 나누기, 이름 덩어리의 머리 낱말이 종류를 정함, 칸 줄(공백·'|'),
 #     앞 줄 '시간:', 번호·버전·그림 번호·점수의 점 숫자는 날짜 아님, 앞에 쓴 영어 요일 확인, 점으로 쓴 시각
-RULES_VERSION = "2026.11.13-4"
+RULES_VERSION = "2026.11.13-5"
 
 KO_WD = "월화수목금토일"
 EN_WD = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -136,7 +136,8 @@ NEGATIVE = re.compile(r"(?i)휴강|보강|강의실\s*변경|수업\s*없|수업
                       r"class(?:es)?\s+(?:is\s+|are\s+)?cancel|(?<![a-z])no\s+(?:class|classes|lecture|lectures)(?![a-z])|"
                       r"class(?:es)?\s+will\s+not\s+(?:be\s+held|meet)")
 
-EMAIL_ADDR = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# 주소는 ASCII만: 바로 뒤 한국어 조사('ta@x.ac.kr로')가 주소에 붙지 않게(\w는 한글도 받는다)
+EMAIL_ADDR = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", re.ASCII)
 EMAIL_KW = re.compile(r"(?i)이메일|메일|e-?mail")
 LMS_KW = re.compile(r"(?i)canvas|캔버스|lms|과제\s*게시판|과제함|e-?class|이클래스")
 PAPER_KW = re.compile(r"(?i)출력|프린트|인쇄|하드\s*카피|hard\s*copy|오프라인\s*제출|직접\s*제출|조교실|과사무실|우편함")

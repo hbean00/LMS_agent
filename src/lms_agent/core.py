@@ -919,15 +919,57 @@ def review_reminder(store, now: datetime | None = None) -> list[dict]:
                             + "\n".join(lines)}]
 
 
+STUDY_REMINDER = 30   # 공부 블록 알림(분 전)
+
+
+def study_events(store, view: list[dict] | None = None) -> list[dict]:
+    """저장된 공부 계획(계약 22-5, store.data["plans"])의 블록 → 길이가 있는 일정.
+    UID study-<계획 id>-<n>@lms-agent(n은 1부터, 블록 순서), 제목 앞 "[공부] ", 알림 30분 전, kind "study".
+    제외(hidden)한 과목의 계획은 빼고, 모양이 깨진 블록은 건너뛴다. 계획을 지우면 다음 반영에서 구글 일정도 지워진다."""
+    from .store import hidden_courses
+
+    hidden = hidden_courses(store.data)
+    by_id = {v["id"]: v for v in (view if view is not None else store.view())}
+    out = []
+    for p in store.data.get("plans") or []:
+        if not isinstance(p, dict) or not isinstance(p.get("id"), str) or not isinstance(p.get("blocks"), list):
+            continue
+        if p.get("course_id") is not None and str(p["course_id"]) in hidden:
+            continue
+        target = by_id.get(p.get("item_id")) if p.get("item_id") else None
+        head = [str(p.get("title") or "공부 계획")]
+        if target:
+            d = parse_iso(target.get("due"))
+            when = f" — {d.month}/{d.day}({KO_WD[d.weekday()]}) {d:%H:%M}" if d else ""
+            head.append(f"대상: [{short_course_name(target.get('course_name'))}] {target.get('title')}{when}")
+        if p.get("decided_by") == "ai":
+            head.append("에이전트가 넣은 계획" + (f": {p['reason']}" if p.get("reason") else ""))
+        url = (target or {}).get("url") or None
+        for n, b in enumerate(p["blocks"], 1):
+            start, end = parse_iso((b or {}).get("start")), parse_iso((b or {}).get("end"))
+            if not start or not end or end <= start:
+                continue
+            tail = [url] if url else []
+            out.append({"uid": f"study-{p['id']}-{n}@lms-agent", "start": start, "end": end,
+                        "summary": "[공부] " + str(b.get("title") or p.get("title") or "공부"),
+                        "description": "\n".join(head + tail + ["LMS Agent 공부 계획 — 앱에서 계획을 지우면 이 일정도 사라져요"]),
+                        "kind": "study", "categories": "공부", "reminders": [STUDY_REMINDER], "url": url,
+                        "plan_id": p["id"]})
+    return out
+
+
 def calendar_payload(store) -> tuple[list[dict], list[dict]]:
-    """내보낼 일정: (승인된 마감 + 설정에 따라 Canvas 과제, 주간 요약·확인 알림). .ics와 구글 반영이 함께 쓴다."""
+    """내보낼 일정: (승인된 마감 + 설정에 따라 Canvas 과제, 주간 요약·확인 알림·공부 블록). .ics와 구글 반영이 함께 쓴다.
+    두 번째 목록의 일정은 {uid, start, end, summary, description}이고, 공부 블록은 kind "study"·categories·reminders·url이 더 있다."""
     cache = store.data.get("cache")
     items = store.calendar_items()
-    sem = semester_info(cache, store.view())
+    view = store.view()
+    sem = semester_info(cache, view)
     annotate(items, sem, cache)
     summaries = weekly_summaries(items, sem) if store.data["settings"].get("weekly_summary", True) else []
     if store.data["settings"].get("review_reminder", False):
         summaries += review_reminder(store)
+    summaries += study_events(store, view)
     return items, summaries
 
 

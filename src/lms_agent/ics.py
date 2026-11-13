@@ -61,7 +61,8 @@ def event_description(item: dict) -> str:
 
 
 def build_ics(items: list[dict], now: datetime | None = None, summaries: list[dict] | None = None) -> str:
-    """items: 마감 일정. summaries: 주간 요약 {uid, start, end, summary, description} (알림 없음)."""
+    """items: 마감 일정. summaries: 주간 요약·확인 알림·공부 블록 {uid, start, end, summary, description}
+    (+ 있으면 categories, url, reminders(분 전 목록) — 공부 블록만 쓴다)."""
     stamp = to_utc_stamp(now or now_local())
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LMS Agent//lms-agent//KO",
              "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:LMS 마감"]
@@ -86,7 +87,13 @@ def build_ics(items: list[dict], now: datetime | None = None, summaries: list[di
         lines += ["BEGIN:VEVENT", f"UID:{s['uid']}", f"DTSTAMP:{stamp}",
                   f"DTSTART:{to_utc_stamp(s['start'])}", f"DTEND:{to_utc_stamp(s['end'])}",
                   f"SUMMARY:{_esc(s['summary'])}", f"DESCRIPTION:{_esc(s['description'])}",
-                  "CATEGORIES:주간 요약", "TRANSP:TRANSPARENT", "END:VEVENT"]
+                  f"CATEGORIES:{_esc(s.get('categories') or '주간 요약')}", "TRANSP:TRANSPARENT"]
+        if s.get("url"):
+            lines.append(f"URL:{s['url']}")
+        for m in s.get("reminders") or []:   # 공부 블록(계약 22-5)은 30분 전 알림. 주간 요약·확인 알림은 없음
+            lines += ["BEGIN:VALARM", "ACTION:DISPLAY", f"TRIGGER:-PT{int(m)}M",
+                      f"DESCRIPTION:{_esc(s['summary'])}", "END:VALARM"]
+        lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     out: list[str] = []
     for ln in lines:

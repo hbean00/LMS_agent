@@ -6,7 +6,7 @@
   재시도(검사 오류를 그대로 인용해 고쳐 달라고 한 번 더), 시간 제한.
   작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
   map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장),
-  assist(에이전트에게 묻기 — 계약 20장).
+  assist(에이전트에게 묻기 — 계약 20장, 앱 동작 제안 type "action" — 22-9), answer(과목 질문에 인용으로 답하기 — 22-2).
 - 실행(run_task): 고른 실행기로. claude는 `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·
   세션 저장 안 함 — 옛 버전이 모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
@@ -1483,19 +1483,25 @@ register(AiTask(
 
 ASSIST_MAX_PROPOSALS = 6
 ASSIST_STATE_BUDGET = 4_000
-ASSIST_TYPES = ["add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note"]
+ASSIST_TYPES = ["add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note", "action"]
+ASSIST_MARK = "사용자 요청 / user request:"
+ANSWER_MARK = "학생 질문 / student question:"
+ACTIONS_MARK = "앱 동작 / app actions (type action — action = id, params = 모양 그대로):"
+CATALOG_MAX = 2_000
 
 
-def _assist_build(inputs: dict) -> tuple[str, list]:
-    """사용자 요청 + 과목 목록 + 지금 상태 요약 + 찾은 글(source_key마다 한 덩어리), 모두 가려서 12,000자 안에.
-    보낸 글 덩어리는 inputs["_sent_snippets"]에 남는다(화면의 '보낸 글')."""
+def _bundle(inputs: dict, mark: str, extra: str = "") -> tuple[str, list]:
+    """메시지(mark 아래) + 과목 목록 + extra(예: 앱 동작 목록) + 지금 상태 요약 + 찾은 글(source_key마다 한 덩어리), 모두 가려서
+    12,000자 안에. 보낸 글 덩어리는 inputs["_sent_snippets"](원문)·inputs["_sent_texts"]([(source_key, 가린 글)])에 남는다."""
     names = inputs.get("names")
     notes, red = [], 0
     msg, n = redact(_flat(str(inputs.get("message") or ""))[:500], names)
     red += bool(n)
-    head = ["사용자 요청 / user request:", msg, "", "과목 / courses (course_id: 이름):"]
+    head = [mark, msg, "", "과목 / courses (course_id: 이름):"]
     for c in list(inputs.get("courses") or [])[:40]:
         head.append(f"- {c.get('id')}: {redact(_flat(str(c.get('short') or '')), names)[0][:80]}")
+    if extra:
+        head += ["", extra]
     state, n = redact(str(inputs.get("state_text") or ""), names)
     red += bool(n)
     state, cut = cap_text(state, ASSIST_STATE_BUDGET)
@@ -1504,7 +1510,7 @@ def _assist_build(inputs: dict) -> tuple[str, list]:
     out = ("\n".join(head) + "\n\n지금 상태 / current state:\n" + (state or "(없음 / none)")
            + "\n\n찾은 글 / found texts (근거는 여기서 그대로 인용 / quote evidence verbatim from here):\n")
     budget = MAX_TEXT - len(out)
-    sent = []
+    sent, texts = [], []
     for sn in inputs.get("snippets") or []:
         text, n = redact(str(sn.get("text") or ""), names)
         title, n2 = redact(_flat(str(sn.get("title") or ""))[:120], names)
@@ -1518,12 +1524,31 @@ def _assist_build(inputs: dict) -> tuple[str, list]:
         budget -= len(block)
         out += block
         sent.append(sn)
+        texts.append((str(sn.get("source_key") or ""), text))
     if not sent:
         out += "(찾은 글 없음 / no matching texts)\n"
     if red:
         notes.append("보내기 전에 이메일·학번·이름 등을 가림")
     inputs["_sent_snippets"] = sent
+    inputs["_sent_texts"] = texts
     return out, notes
+
+
+def _catalog() -> str:
+    """앱 동작 목록(actions.catalog_text, 계약 22-9) — 없거나 고장 나면 빈 글(assist는 동작 제안 없이 돈다)."""
+    try:
+        from . import actions
+        text = str(actions.catalog_text() or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    return text[:CATALOG_MAX]
+
+
+def _assist_build(inputs: dict) -> tuple[str, list]:
+    """사용자 요청 + 과목 목록 + 앱 동작 목록 + 지금 상태 요약 + 찾은 글, 모두 가려서 12,000자 안에(_bundle)."""
+    cat = _catalog()
+    extra = (ACTIONS_MARK + "\n" + redact(cat, inputs.get("names"))[0]) if cat else ""
+    return _bundle(inputs, ASSIST_MARK, extra)
 
 
 def _assist_validate(obj: dict, sent: str, inputs: dict, final: bool):
@@ -1540,7 +1565,7 @@ def _assist_validate(obj: dict, sent: str, inputs: dict, final: bool):
             continue
         ev = _flat(str(p.get("evidence") or ""))
         why = None
-        if (p.get("type") != "note" or ev) and not _quoted(ev, sent):
+        if (p.get("type") not in ("note", "action") or ev) and not _quoted(ev, sent):   # 앱 동작은 근거 글 없이도(22-9)
             why = "근거(evidence)가 보낸 글에 그대로 없어요 / evidence is not verbatim in the input"
         q = check(p, why) if check else {**p, "rejected_reason": why}
         if q.get("rejected_reason"):
@@ -1564,7 +1589,9 @@ register(AiTask(
         "- proposals[].type: add_deadline(새 마감·시험: title, due, kind 과제|시험, method?), fix_due(item_id, due), "
         "link_score(key = 점수 후보 key, component = 평가 항목 이름), set_count(component, n = 학기 전체 개수), "
         "set_weights(components = [{name, weight}], 합 100), set_dist(groups = [{grades, pct 또는 low·high, cumulative}] "
-        "또는 dist_kind 'absolute' + cutoffs = [{grade, min_score}]), note(반영할 것 없이 설명만).\n"
+        "또는 dist_kind 'absolute' + cutoffs = [{grade, min_score}]), note(반영할 것 없이 설명만), "
+        "action(action = '앱 동작' 목록의 id, params = 그 모양 — 학생이 앱에서 할 일(켜기·끄기·동기화·화면 열기 등)을 시켰을 때만, "
+        "evidence 없이 / only when the student asked the app to do something; ids and params exactly from the list).\n"
         "- course_id·item_id·key·component는 '지금 상태'에 적힌 값 그대로 / copy ids and names exactly from the state.\n"
         "- due: ISO 8601(예: 2026-12-17T10:30:00+09:00), 근거 문장에 적힌 날짜 그대로. 연도가 없으면 게시일 뒤 가장 가까운 날, "
         "시간이 없으면 23:59 / due must match a date written in the evidence.\n"
@@ -1605,9 +1632,138 @@ register(AiTask(
                 "cutoffs": {"type": "array", "maxItems": 9, "items": {
                     "type": "object", "required": ["grade", "min_score"], "properties": {
                         "grade": {"type": "string", "enum": list(GRADES)},
-                        "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}}}}}}},
+                        "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}},
+                "action": {"type": "string", "maxLength": 80},
+                "params": {"type": "object"}}}}}},
     build_input=_assist_build,
     post_validate=_assist_validate,
+))
+
+
+# ---- answer: 과목 질문에 답하기(계약 22-2) — 찾은 글을 그대로 인용하고, 답의 날짜·숫자는 인용 안에 있는 것만
+
+ANSWER_MAX_CITATIONS = 4
+ANSWER_QUOTE_MAX = 500
+ANSWER_QUOTE_MIN = 8
+_NOT_FOUND = re.compile(
+    r"찾지\s*못|못\s*찾|찾을\s*수\s*없|확인(?:할\s*수\s*없|되지\s*않)|(?:나와|적혀|쓰여|언급되어|언급돼)\s*있지\s*않|언급(?:이|은)\s*없|"
+    r"없는\s*것\s*같|(?<![a-z])(?:not\s+found|(?:couldn'?t|could\s+not|cannot|can'?t)\s+find|no\s+mention|"
+    r"not\s+mentioned|does(?:n'?t|\s+not)\s+say)(?![a-z])", re.I)
+_NUM = re.compile(r"\d+(?:[.:]\d+)*")
+
+
+def _num_norm(t: str) -> str:
+    return re.sub(r"(?<!\d)0+(?=\d)", "", t)
+
+
+def _num_tokens(text: str) -> set:
+    """글의 숫자들(앞의 0을 뗀 것) — '10:30'은 '10:30'·'10'·'30', '60.2'는 '60.2'·'60'·'2'."""
+    out = set()
+    for m in _NUM.finditer(text or ""):
+        out.add(_num_norm(m.group(0)))
+        out.update(_num_norm(x) for x in re.split(r"[.:]", m.group(0)) if x)
+    return out
+
+
+def _unsupported(answer: str, quotes: list[tuple[str, str | None]], inputs: dict, titles: list[str]) -> list[str]:
+    """답에 있는 날짜·숫자 중 인용(quotes = [(인용, 게시 시각)]) 안에 없는 것. 날짜는 같은 월·일이거나 같은 말이면 있음(인용이
+    'Dec. 15', 답이 '12월 15일'이어도 됨). 질문·과목 이름·인용한 글 제목의 숫자('LAB4')는 써도 된다."""
+    joined = _flat(" ".join(q for q, _ in quotes))
+    allowed_text = joined + " " + _flat(" ".join(titles))
+    days = set()
+    for q, posted in quotes:
+        ref = (_as_dt(posted) or now_local()).date()
+        for h in find_dates(q, ref):
+            days.add((h.day.month, h.day.day))
+    allowed = _num_tokens(allowed_text) | _num_tokens(str(inputs.get("message") or ""))
+    allowed |= _num_tokens(" ".join(str(c.get("short") or "") for c in inputs.get("courses") or []))
+    allowed |= {str(x) for d in days for x in d}
+    bad, chars = [], list(answer)
+    for h in find_dates(answer, now_local().date()):
+        phrase = _flat(answer[h.start:h.end])
+        if (h.day.month, h.day.day) not in days and phrase not in allowed_text:
+            bad.append(phrase)
+        for i in range(h.start, h.end):
+            chars[i] = " "
+    for m in _NUM.finditer("".join(chars)):
+        if _num_norm(m.group(0)) not in allowed:
+            bad.append(m.group(0))
+    return list(dict.fromkeys(bad))
+
+
+def _answer_build(inputs: dict) -> tuple[str, list]:
+    """학생 질문 + 과목 목록 + 지금 상태 요약 + 찾은 글(assist와 같은 묶음, 가려서 12,000자 안에)."""
+    return _bundle(inputs, ANSWER_MARK)
+
+
+def _answer_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    """답과 인용. 인용(quote)은 보낸 '찾은 글'에 그대로 있어야 하고(아니면 다시 묻기, 마지막 시도면 그 인용을 뺌), 인용이 하나도
+    없으면 '글에서 찾지 못했어요' 같은 답만 된다. 답의 날짜·숫자는 남은 인용 안에 있어야 한다(아니면 다시 묻기, 마지막 시도면 실패 →
+    규칙 답). 결과 {"answer", "citations": [{"source_key", "quote"(가린 글의 인용)}]} — 원문 인용으로 바꾸기는 agent가 한다."""
+    answer = unplace(_flat(str(obj.get("answer") or "")))[:1200]
+    if len(answer) < 2:
+        raise _Invalid("answer가 비어 있습니다 / answer is empty")
+    texts = inputs.get("_sent_texts") or []
+    meta = {str(sn.get("source_key") or ""): sn for sn in inputs.get("_sent_snippets") or []}
+    good, problems = [], []
+    for i, c in enumerate((obj.get("citations") or [])[:ANSWER_MAX_CITATIONS]):
+        if not isinstance(c, dict):
+            continue
+        q, key = _flat(str(c.get("quote") or "")), str(c.get("source_key") or "")
+        if len(q) < ANSWER_QUOTE_MIN:
+            problems.append(f"citations[{i}]: 인용이 너무 짧습니다 / quote is too short")
+            continue
+        home = (next((k for k, t in texts if k == key and q in _flat(t)), None)
+                or next((k for k, t in texts if q in _flat(t)), None))
+        if home is None:
+            problems.append(f"citations[{i}]: quote가 '찾은 글'에 그대로 없습니다 — 한 글자도 바꾸지 말고 복사하세요 "
+                            "/ quote is not verbatim in the found texts")
+            continue
+        if not any(g["source_key"] == home and g["quote"] == q for g in good):
+            good.append({"source_key": home, "quote": q[:ANSWER_QUOTE_MAX]})
+    if problems and not final:
+        raise _Invalid("; ".join(problems[:4]))
+    if not good and not _NOT_FOUND.search(answer):
+        raise _Invalid("인용(citations)이 없으면 '글에서 찾지 못했어요'라고만 답할 수 있습니다 "
+                       "/ without citations, only say that the texts do not answer it")
+    quotes = [(g["quote"], (meta.get(g["source_key"]) or {}).get("posted_at")) for g in good]
+    titles = [str((meta.get(g["source_key"]) or {}).get("title") or "") for g in good]
+    bad = _unsupported(answer, quotes, inputs, titles)
+    if bad:
+        raise _Invalid("답의 날짜·숫자가 인용한 문장에 없습니다: " + ", ".join(bad[:6])
+                       + " — 인용한 문장에 있는 날짜·숫자만 쓰세요 / every date and number in the answer must appear in a "
+                         "cited quote")
+    return {"answer": answer, "citations": good}
+
+
+register(AiTask(
+    name="answer",
+    purpose="과목에 대한 학생의 질문(범위·제출 형식·규정·장소 등)에 이 PC의 글을 그대로 인용해 답한다(제안 없음)",
+    instructions=(
+        "작업: 학생이 LMS Agent 앱에 과목에 대해 물었습니다(아래 '학생 질문'). 아래 '찾은 글'에 적힌 내용만으로 한국어로 답하고, "
+        "답의 근거가 된 문장을 그대로 인용하세요. 글에 없는 것은 지어내지 말고, 글이 답하지 않으면 '글에서 찾지 못했어요'라고 "
+        "답하세요.\n"
+        "Task: a student asked the LMS Agent app a question about a course (the 'student question' below). Answer in "
+        "Korean using ONLY the 'found texts' below and quote the sentences your answer is based on. Never invent "
+        "anything; if the texts do not answer it, say so ('글에서 찾지 못했어요').\n"
+        "- answer: 한국어 2~6문장 / 2-6 Korean sentences.\n"
+        "- citations: 근거 1~4개. quote는 '찾은 글'에서 한 글자도 바꾸지 말고 그대로 복사(500자 이내), source_key는 그 글의 값 "
+        "/ 1-4 citations; copy each quote verbatim from the found texts (max 500 chars) with that text's source_key.\n"
+        "- 답에 쓰는 날짜·시각·숫자(점수·%·쪽수·주차 등)는 인용한 문장에 있는 것만. 날짜를 계산하거나 숫자를 더하지 말고, "
+        "글 개수 같은 다른 숫자도 쓰지 마세요 / every date, time and number in the answer must appear in a cited quote; "
+        "never compute dates or add numbers of your own.\n"
+        "- '지금 상태'는 참고용이에요 — 인용하지 마세요 / the current state is context only; never cite it.\n"
+        "- 찾지 못했으면 citations는 빈 목록 / if not found, return an empty citations list.\n"
+        "- [이메일] 같은 자리 표시는 그대로 두고, 다른 개인 정보(이름, 학번, 연락처)는 넣지 마세요 / keep placeholders as they "
+        "are and add no personal data."),
+    schema={"type": "object", "required": ["answer", "citations"], "properties": {
+        "answer": {"type": "string", "minLength": 2, "maxLength": 1500},
+        "citations": {"type": "array", "maxItems": ANSWER_MAX_CITATIONS, "items": {
+            "type": "object", "required": ["source_key", "quote"], "properties": {
+                "source_key": {"type": "string", "maxLength": 200},
+                "quote": {"type": "string", "minLength": 1, "maxLength": ANSWER_QUOTE_MAX}}}}}},
+    build_input=_answer_build,
+    post_validate=_answer_validate,
 ))
 
 

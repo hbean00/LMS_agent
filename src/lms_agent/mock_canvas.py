@@ -112,8 +112,12 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                  enrollments=[{"type": "student", "role": "StudentEnrollment", "enrollment_state": "active",
                                "computed_current_score": scores[c["id"]]}])
 
+    # 뒤의 세 문단은 날짜 없는 제출 요건(계약 22-6 체크리스트 데모: 형식·파일 이름·분량·포함할 것·개인 과제·지각 규정)
     lab4_desc = ('<p>LAB4 보고서는 조교 이메일(<a href="mailto:asic.ta@example.ac.kr">asic.ta@example.ac.kr</a>)'
-                 '로 제출합니다.</p><p>마감은 공지사항을 확인하세요.</p>')
+                 '로 제출합니다.</p><p>마감은 공지사항을 확인하세요.</p>'
+                 '<p>보고서는 PDF 한 파일로 만들고, 파일 이름은 Report_Lab4_이름_학번.pdf 형식으로 해 주세요.</p>'
+                 '<p>분량은 A4 10쪽 이내이며, 시뮬레이션 파형 스크린샷과 Verilog 코드를 보고서에 포함해야 합니다.</p>'
+                 '<p>개인 과제입니다. 늦게 제출하면 감점됩니다.</p>')
     assignments = {
         "101": [
             assignment(101, 1011, "LAB3 보고서", at(-5, 23, 59), ["online_upload"], "graded", -19,

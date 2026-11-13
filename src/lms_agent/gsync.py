@@ -32,16 +32,22 @@ def desired_events(store) -> list[dict]:
         it = {**it, "course_name": it.get("course_short") or it.get("course_name")}
         out.append({"lms_id": it["id"], "summary": event_summary(it), "description": event_description(it),
                     "start": start, "end": end, "url": it.get("url"), "reminders": [1440, 180]})
-    for s in summaries:
+    for s in summaries:   # 주간 요약·확인 알림(알림 없음)과 공부 블록(길이 있음, 30분 전 알림 — 계약 22-5)
         out.append({"lms_id": s["uid"].split("@")[0], "summary": s["summary"], "description": s["description"],
-                    "start": s["start"], "end": s["end"], "url": None, "reminders": []})
+                    "start": s["start"], "end": s["end"], "url": s.get("url") or None,
+                    "reminders": list(s.get("reminders") or [])})
     return out
 
 
 def desired_counts(store) -> dict:
-    """구글에 있어야 할 일정 수(계약 13-5): {"deadlines": 마감, "summaries": 주간 요약·확인 알림} — desired_events와 같은 대상."""
+    """구글에 있어야 할 일정 수(계약 13-5): {"deadlines": 마감, "summaries": 주간 요약·확인 알림} — desired_events와 같은 대상.
+    공부 블록(계약 22-5)이 있으면 "study": 블록 수가 더 붙는다(합 = desired_events 수)."""
     items, summaries = core.calendar_payload(store)
-    return {"deadlines": sum(1 for it in items if parse_iso(it.get("due"))), "summaries": len(summaries)}
+    study = sum(1 for s in summaries if s.get("kind") == "study")
+    out = {"deadlines": sum(1 for it in items if parse_iso(it.get("due"))), "summaries": len(summaries) - study}
+    if study:
+        out["study"] = study
+    return out
 
 
 class GoogleLink:

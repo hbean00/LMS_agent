@@ -83,6 +83,7 @@ def _decide(text: str) -> dict:
 # 이유는 정직하게: 무엇을 보고 그렇게 봤는지만 말하고, 상대 날짜는 계산했다고 한다.
 
 ASSIST_MARK = "사용자 요청 / user request:"
+ANSWER_MARK = "학생 질문 / student question:"   # agent_cli.ANSWER_MARK(계약 22-2 작업 answer)
 _ITEM = re.compile(r"^- item_id (\S+) \| (.*?) \| (\S+) \| due (\S+) \| (\S+)")
 _COMP = re.compile(r"^- (.+?) ([\d.]+)% \| 일정/dates: (\w+)")
 _CAND = re.compile(r"^- key (\S+) \| 라벨/label: (.*?) \| 출처/source: (.*?) \| 연결/linked: (.*?)(?: \| 글/text: (.*))?$")
@@ -90,8 +91,8 @@ _WEEK = re.compile(r"\(주차/week (\d+)\)")
 _TERM = re.compile(r"^학기 / term: (\d+)주차 / (\d+)주")
 
 
-def _parse_assist(text: str) -> dict:
-    msg = text.split(ASSIST_MARK, 1)[1].split("\n", 2)[1].strip()
+def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
+    msg = text.split(mark, 1)[1].split("\n", 2)[1].strip()
     state_part = text.split("지금 상태 / current state:", 1)[-1].split("찾은 글 / found texts", 1)[0]
     found_part = text.split("찾은 글 / found texts", 1)[-1].split("=== 입력 글 끝", 1)[0]
     courses: dict = {}
@@ -245,10 +246,48 @@ def _assist(text: str) -> dict:
     return {"answer": " ".join([head] + said[:3] + tail), "proposals": props[:6]}
 
 
+# ---------------------------------------------------------------- answer(과목 질문에 답하기, 계약 22-2)
+# 보낸 '찾은 글'에서 질문의 주제(범위·형식 …)와 평가 낱말(기말·LAB …)이 맞는 문장 하나를 골라 그대로 인용한다(검증을 통과해야
+# 하므로 한 글자도 바꾸지 않음). 답에는 그 문장과 글 제목만 쓴다(다른 숫자를 지어내지 않음). 맞는 문장이 없으면 찾지 못했다고 한다.
+
+def _answer(text: str) -> dict:
+    from . import links as lk
+    from .agent import SCORE_WORDS, TOPICS, question_topics, tokens
+    p = _parse_assist(text, ANSWER_MARK)
+    msg = p["message"]
+    topics = question_topics(msg)
+    fam_q = lk.families(msg)
+    keys = [t.lower() for t in tokens(msg) if not lk.families(t) and not any(q.search(t) for q, _ in TOPICS.values())]
+    best, best_score = None, 0.0
+    for sn in p["snippets"]:          # 보낸 순서 = 검색 점수 순(같은 점수면 앞의 것)
+        t_fam = lk.families(sn["title"])
+        for line in sn["text"].split("\n"):   # 한 줄(문장 몇 개)을 그대로 인용
+            s = line.strip()
+            if len(s) < 8:
+                continue
+            hit = [t for t in topics if TOPICS[t][1].search(s)]
+            if (topics and not hit) or (fam_q and not fam_q & (lk.families(s) | t_fam)):
+                continue
+            score = (2.0 * len(hit) + len(fam_q & lk.families(s)) + sum(k in s.lower() for k in keys)
+                     + (1.0 if SCORE_WORDS.search(msg) and SCORE_WORDS.search(s) else 0.0))
+            if not topics and not fam_q and score == 0:
+                continue
+            if score + 0.5 > best_score:
+                best, best_score = (sn, s[:500]), score + 0.5
+    if best is None:
+        return {"answer": "보내 준 글에서 질문에 대한 내용을 찾지 못했어요. 과목 이름이나 다른 낱말로 다시 물어봐 주세요.",
+                "citations": []}
+    sn, quote = best
+    return {"answer": f"'{sn['title']}' 글에 이렇게 적혀 있어요: “{quote}” 원문에서 한 번 더 확인해 주세요.",
+            "citations": [{"source_key": sn["key"], "quote": quote}]}
+
+
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """triage_review·assist만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지 못함'으로 답한다
-    (데모는 규칙이 찾는다)."""
-    if ASSIST_MARK in (input or ""):   # assist(에이전트에게 묻기)
+    """triage_review·assist·answer만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지 못함'으로
+    답한다(데모는 규칙이 찾는다)."""
+    if ANSWER_MARK in (input or ""):   # answer(과목 질문 — 계약 22-2)
+        model = json.dumps(_answer(input), ensure_ascii=False)
+    elif ASSIST_MARK in (input or ""):   # assist(에이전트에게 묻기)
         model = json.dumps(_assist(input), ensure_ascii=False)
     elif "### id: " in (input or ""):
         model = json.dumps(_decide(input), ensure_ascii=False)

@@ -78,3 +78,28 @@ def reward_message(pending: list[dict], told) -> tuple[str, str, str] | None:
             body = "확인할 마감 후보를 다 정리했어요."
         return f"LMS Agent · {e.get('title') or '보상'}", body + " 앱을 열면 메달을 걸어 드려요.", e["id"]
     return None
+
+
+# 주간 브리핑(계약 22-4): 마감·시험 줄만 — 공부 우선순위(성적에서 나옴)·페이스 줄은 알림에 넣지 않는다(잠금 화면)
+BRIEFING_TONES = ("deadline", "exam", "cheer")
+
+
+def briefing_message(card: dict | None) -> tuple[str, str] | None:
+    """코치의 주간 브리핑 카드 → (제목, 본문). 예: ("LMS Agent · 11주차 작전", "마감 4개, 목요일이 고비예요 · 시험 D-5 …").
+    카드가 아니거나 알릴 줄이 없으면 None."""
+    if not isinstance(card, dict) or card.get("kind") != "briefing":
+        return None
+    texts = []
+    for ln in card.get("lines") or []:
+        if isinstance(ln, dict) and ln.get("tone") in BRIEFING_TONES and ln.get("text"):
+            t = str(ln["text"])
+            texts.append(t[len("이번 주 "):] if t.startswith("이번 주 마감") else t)   # 제목에 주차가 있다
+    if not texts:
+        return None
+    week = card.get("week")
+    title = f"LMS Agent · {week}주차 작전" if isinstance(week, int) and not isinstance(week, bool) and week > 0 \
+        else "LMS Agent · 이번 주 작전"
+    body = " · ".join(texts)
+    if len(body) > 190:
+        body = body[:189] + "…"
+    return title, body

@@ -1091,6 +1091,82 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   .ag-spin { animation: none; border-right-color: var(--burgundy); }
   .drawer[open] { animation: none; }
 }
+
+/* ---------- 에이전트 확장(계약 22): 브리핑·바뀐 마감·체크리스트·메일 초안·만약에·공부 계획 ---------- */
+/* 코치 카드(대시보드 맨 위, 모달 아님). 이번 주 작전만 버건디 줄, 지난 일(회고·리포트)은 먹색 줄 */
+.coach-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--panel-gap); margin-bottom: var(--panel-gap); }
+.coach { min-width: 0; padding: 14px 12px 16px 20px; border: 1px solid var(--panel-line); border-left: 4px solid var(--burgundy); border-radius: var(--r-panel); background: var(--paper); }
+.coach.is-retro, .coach.is-report { border-left-color: var(--ink); }
+.coach-head { display: flex; align-items: flex-start; gap: 8px; }
+.coach-head > div { flex: 1; min-width: 0; }
+.coach-kind { font-size: 13.5px; font-weight: 700; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.coach-title { margin-top: 2px; font-size: 18px; font-weight: 800; line-height: 1.4; letter-spacing: -.015em; }
+.coach-head .icon-btn { flex: none; margin: -4px -2px 0 0; }
+.coach-lines { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; font-size: 15.5px; }
+.coach-line { position: relative; padding-left: 15px; }
+.coach-line::before { content: ""; position: absolute; left: 1px; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--rule-strong); }
+.coach-line.is-deadline::before, .coach-line.is-exam::before, .coach-line.is-warn::before { background: var(--burgundy); }
+.coach-line.is-exam::before { border-radius: 1px; transform: rotate(45deg); }
+.coach-line.is-warn > span:first-child { color: var(--burgundy); font-weight: 600; }
+.coach-refs { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; margin-left: 8px; }
+.coach-refs .linkish { font-size: 14.5px; }
+/* 바뀐 마감(대시보드 옆 칸) */
+.chg-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; font-size: 14.5px; font-variant-numeric: tabular-nums; }
+.chg-from { color: var(--graphite); text-decoration: line-through; text-decoration-color: var(--rule-strong); }
+.chg-q { margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--rule-strong); font-size: 14.5px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; max-height: 7.5em; overflow: auto; }
+.chg .side-meta { margin-top: 4px; }
+.chg .side-meta .linkish { font-size: 14.5px; }
+/* 항목 카드의 체크리스트·문의 메일 */
+.it-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 14.5px; }
+.it-tools .linkish, .arow-meta .linkish { font-size: 14.5px; }
+.ck-chip { height: 28px; font-variant-numeric: tabular-nums; }
+.ck-chip[aria-expanded="true"] { border-color: var(--ink); color: var(--ink); }
+.ck-chip.is-done { color: var(--graphite); }
+.ck-chip .ico { width: 14px; height: 14px; }
+.ck-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; padding: 6px 0 4px 12px; border-left: 2px solid var(--rule-strong); }
+.arow .ck-panel { grid-column: 3 / -1; margin: 2px 0 6px; }
+.ck-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.ck-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: start; gap: 2px 10px; min-height: 34px; padding: 4px 0; font-size: 15px; }
+.ck-row input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--burgundy); cursor: pointer; }
+.ck-row label { min-width: 0; cursor: pointer; overflow-wrap: anywhere; word-break: normal; }
+.ck-row.is-done .ck-t { color: var(--graphite); text-decoration: line-through; text-decoration-color: var(--rule-strong); }
+.ck-q { display: block; margin-top: 1px; font-size: 13.5px; color: var(--graphite); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-row a { margin-top: 2px; font-size: 13.5px; white-space: nowrap; }
+.ck-row .icon-btn { width: 30px; height: 30px; margin-top: -4px; }
+.ck-add { display: flex; gap: 6px; }
+.ck-add .input { flex: 1 1 auto; min-width: 0; height: 36px; font-size: 15px; }
+/* 문의 메일 초안(채팅·창 같이 씀). 보내지 않고 복사하거나 메일 앱으로 연다 */
+.dlg.maildlg { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 24px); overflow-y: auto; }
+.mail-top { display: grid; gap: 8px; margin-top: 14px; }
+.mail-pur { flex-wrap: wrap; }
+.mail-state { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-top: 10px; font-size: 15px; }
+.mail-ed { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; margin-top: 4px; }
+.mail-ed .field { min-width: 0; }
+.mail-ed .input { height: 38px; font-size: 15px; }
+.mail-ed textarea.input { height: auto; min-height: 220px; font-size: 15px; line-height: 1.65; }
+.mail-lbl { display: flex; align-items: baseline; gap: 10px; }
+.mail-lbl .linkish { font-size: 13.5px; font-weight: 400; }
+.mail-src { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; color: var(--graphite); }
+.mail-src li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.mail-src .email { color: var(--ink); }
+.mail-q { flex-basis: 100%; padding-left: 8px; border-left: 2px solid var(--rule-strong); overflow-wrap: anywhere; word-break: normal; }
+.mail-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mail-notes { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: 14px; color: var(--graphite); }
+/* 성적 만약에(채팅): 숫자는 앱 계산 그대로 */
+.wi-tbl { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.wi-tbl th { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--rule); text-align: left; font-weight: 600; color: var(--graphite); }
+.wi-tbl td { padding: 7px 0 7px 8px; border-bottom: 1px solid var(--rule); text-align: right; font-weight: 700; }
+.ag-lines { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; font-size: 15.5px; }
+.ag-basis { margin: 0; padding-left: 16px; display: grid; gap: 2px; font-size: 13.5px; color: var(--graphite); }
+/* 공부 계획(채팅 미리 보기·학기 화면 목록) */
+.plan-blocks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--rule); }
+.plan-blocks li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 7px 2px; border-bottom: 1px solid var(--rule); font-size: 15px; }
+.plan-blocks .tnum { min-width: 10em; font-weight: 700; }
+.plan-blocks .help { font-size: 13.5px; }
+.sem-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--panel-gap); min-width: 0; }
+.sem-side > aside, .sem-side > section { background: var(--paper); border: 1px solid var(--panel-line); border-radius: var(--r-panel); padding: var(--panel-y) var(--panel-x); }
+.plan-list .excl { margin-top: 6px; }
+.plan-list li.is-past .side-title { color: var(--graphite); }
 </style>
 </head>
 <body>
@@ -1262,7 +1338,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
             </section>
             <section id="pane-tour" class="pane" aria-labelledby="h-tour">
               <h2 id="h-tour" class="sec-h">튜토리얼</h2>
-              <p class="help">화면마다 무엇을 하는지 차례로 짚어 줘요. 1분이면 끝나요. ‘달라진 점’은 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외만 짚어요.</p>
+              <p class="help">화면마다 무엇을 하는지 차례로 짚어 줘요. 1분이면 끝나요. ‘달라진 점’은 물어보면 답해요(질문·만약에·메일·계획·명령)·주간 브리핑·시험 일정·점수 연결·P/NP·제외만 짚어요.</p>
               <div class="form-actions" style="margin-top:12px">
                 <button id="tour-replay" class="btn btn-line" type="button" data-key="tour-replay">튜토리얼 다시 보기</button>
                 <button id="tour-whatsnew" class="btn btn-line" type="button" data-key="tour-whatsnew">달라진 점 보기</button>
@@ -1297,6 +1373,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
             <section id="pane-bg" class="pane" aria-labelledby="h-bg" hidden>
               <h2 id="h-bg" class="sec-h">백그라운드 동기화</h2>
               <div id="bg-box" aria-live="polite"></div>
+            </section>
+            <section id="pane-autostart" class="pane" aria-labelledby="h-autostart" hidden>
+              <h2 id="h-autostart" class="sec-h">컴퓨터를 켜면 앱 열기</h2>
+              <div id="autostart-box" aria-live="polite"></div>
             </section>
             <section id="pane-materials" class="pane" aria-labelledby="h-materials" hidden>
               <h2 id="h-materials" class="sec-h">첨부 자료</h2>
@@ -1371,13 +1451,13 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     <button id="agent-close" class="icon-btn" type="button" aria-label="닫기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
   </div>
   <form id="agent-form" class="ag-compose" novalidate>
-    <p id="agent-desc" class="help">규칙이 놓친 마감·점수·평가 비중을 말로 짚어 주세요. 이 PC에 모아 둔 공지·게시판·메시지·강의계획서에서 근거를 찾아 제안해요.</p>
+    <p id="agent-desc" class="help">과목 질문, 성적 ‘만약에’, 문의 메일, 공부 계획, 앱 설정까지 말로 해 주세요. 이 PC에 모아 둔 공지·게시판·메시지·강의계획서에서 근거를 찾아 답하고, 바꾸는 건 직접 눌러야 해요.</p>
     <div class="ag-row">
       <label class="ag-lbl" for="agent-course">과목</label>
       <select id="agent-course" class="input ag-course"></select>
     </div>
     <label class="sr-only" for="agent-text">에이전트에게 물을 내용</label>
-    <textarea id="agent-text" class="input ag-input" rows="3" maxlength="500" placeholder="예) 기말고사 날짜가 안 보여요" autocomplete="off" aria-describedby="agent-keys agent-count"></textarea>
+    <textarea id="agent-text" class="input ag-input" rows="3" maxlength="500" placeholder="예) 기말 범위 어디까지야?" autocomplete="off" aria-describedby="agent-keys agent-count"></textarea>
     <div id="agent-chips" class="ag-chips" role="group" aria-label="예시 질문(누르면 칸에 채워져요)"></div>
     <div class="ag-bar">
       <span id="agent-keys" class="ag-keys"><kbd>Enter</kbd> 보내기 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈</span>
@@ -1389,6 +1469,19 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   </form>
   <div id="agent-list" class="ag-list" role="region" aria-label="대화 기록" tabindex="0"></div>
   <div id="agent-live" class="sr-only" role="status" aria-live="polite"></div>
+</dialog>
+
+<!-- 문의 메일 초안(계약 22-7): 보내지 않는다. 고쳐서 복사하거나 메일 앱으로 연다 -->
+<dialog id="mail-dlg" class="dlg maildlg" aria-labelledby="mail-title" aria-describedby="mail-desc">
+  <h2 id="mail-title" class="dlg-title">문의 메일 초안</h2>
+  <p id="mail-desc" class="dlg-body"></p>
+  <div class="mail-top">
+    <span id="mail-pur-l" class="lbl">무엇을 물을까요?</span>
+    <div id="mail-pur" class="seg mail-pur" role="group" aria-labelledby="mail-pur-l"></div>
+  </div>
+  <div id="mail-state" class="mail-state" role="status" aria-live="polite"></div>
+  <div id="mail-body"></div>
+  <div id="mail-actions" class="dlg-actions"></div>
 </dialog>
 
 <div id="tour" class="tour" hidden>
@@ -1439,7 +1532,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   const DYN = {
     dash: ['dash-body'], semester: ['sem-body'], courses: ['courses-body'], materials: ['materials-body'], grades: ['grades-body'],
     inbox: ['ai-bar', 'review-list', 'review-past', 'approved-box', 'nodl-box', 'inbox-groups'],
-    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'materials-box', 'ai-box', 'mascot-box', 'grades-box', 'update-box']
+    settings: ['google-box', 'settings-report', 'runs-box', 'bg-box', 'autostart-box', 'materials-box', 'ai-box', 'mascot-box', 'grades-box', 'update-box']
   };
   const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -2205,9 +2298,12 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
           it.kind === '시험' ? h('span', null, '시험' + (it.component ? ' · ' + compName(it.course_id, it.component) : '')) : null,
           methodTag(it, false),
           isReview ? h('span', { class: it.conflict ? 'warn' : null }, it.conflict ? '마감이 둘로 적혀 있어요' : '아직 확인 전') : null,
-          missed ? h('span', { class: 'warn' }, '제출 표시 없음') : null)),
+          missed ? h('span', { class: 'warn' }, '제출 표시 없음') : null,
+          ckChip(it, wide ? '-w' : ''),
+          wide ? mailBtn(it, '-w') : null)),   // 대시보드 날짜 목록은 붐비지 않게 체크리스트만, [문의 메일]은 확인함 카드·과목 상세에서
       h('div', { class: 'arow-side' }, side),
-      errLine(it, 'arow-error'));
+      errLine(it, 'arow-error'),
+      ckPanel(it, wide ? '-w' : ''));
   }
   function dayAgenda(items, emptyText) {
     if (!items.length) return h('p', { class: 'empty' }, emptyText);
@@ -2580,7 +2676,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
   function maybePopups() {
     // 에이전트 서랍이 열려 있으면 소식은 닫은 뒤에(창은 한 번에 하나)
-    if (cele.open || !state || !state.configured || setupPhase || syncing || state.syncing || tour.open || $('agent-dlg').open) return;
+    if (cele.open || !state || !state.configured || setupPhase || syncing || state.syncing || tour.open || $('agent-dlg').open || $('mail-dlg').open) return;
     const c = cel();
     if (!c) return;
     const key = String(state.last_sync || '');
@@ -3012,6 +3108,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
             h('span', null, '앞으로 ' + span + '일'))),
         seg),
       buildAxis(win, t0, span, urgent));
+    // 코치 카드(계약 22-4): 이번 주 작전·지난주 돌아보기·학기 리포트. 모달이 아니라 맨 위 줄에(닫으면 그 주에는 안 보임)
+    const coach = coachRow();
+    if (coach) body.appendChild(coach);
     body.appendChild(hero);
     const race = raceSection();
     if (race) body.appendChild(race);
@@ -3162,6 +3261,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
           (groups.length ? '그 밖에 ' : '') + '찾았지만 아직 일정에 넣지 않은 마감 ' + plain + '개. ', h('a', { href: '#inbox' }, '확인함에서 보기')) : null));
     }
 
+    const chg = changesSection();
+    if (chg) side.appendChild(chg);
+
     const overdue = state.items.filter((i) => i.status === 'scheduled' && i.kind !== '시험' && !i.submitted && dueMs(i) !== null && dueMs(i) < nowMs()).sort((a, b) => byDue(b, a));
     if (overdue.length) {
       side.appendChild(h('section', { 'aria-labelledby': 'ds-over' },
@@ -3191,7 +3293,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
         h('p', { class: 'side-line', style: 'font-size:15.5px' }, h('span', { class: 'mk mk-sched', 'aria-hidden': 'true' }),
           g.pushing ? '구글 캘린더에 반영하는 중…' : '구글 캘린더에 자동으로 반영해요'),
         g.last_push ? h('p', { class: 'help', style: 'margin-top:4px' }, '마지막 반영 ', relEl(g.last_push), res ? ': ' + resultText(res) : '') : null,
-        res && !g.pushing && kept !== want.deadlines + want.summaries ? h('p', { class: 'help', style: 'margin-top:2px' }, '그 뒤 바뀐 ' + Math.abs(want.deadlines + want.summaries - kept) + '개는 다음 반영 때 맞춰요.') : null,
+        res && !g.pushing && kept !== wantTotal(want) ? h('p', { class: 'help', style: 'margin-top:2px' }, '그 뒤 바뀐 ' + Math.abs(wantTotal(want) - kept) + '개는 다음 반영 때 맞춰요.') : null,
         g.error ? h('p', { class: 'inline-error', style: 'margin-top:4px' }, g.error) : null
       ];
     } else {
@@ -3281,10 +3383,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function resultText(r) {
     return '추가 ' + num(r.created) + ' · 수정 ' + num(r.updated) + ' · 유지 ' + num(r.unchanged) + ' · 삭제 ' + num(r.deleted);
   }
-  // 캘린더에 있어야 할 일정 수: 서버(13-5)의 google.desired, 없으면 화면에서 센다(마감 + 일정이 있는 주의 주간 요약)
+  // 캘린더에 있어야 할 일정 수: 서버(13-5)의 google.desired, 없으면 화면에서 센다(마감 + 일정이 있는 주의 주간 요약 + 공부 시간(22-5))
   function desiredCounts() {
     const g = gstate();
-    if (g.desired && typeof g.desired === 'object' && typeof g.desired.deadlines === 'number') return { deadlines: g.desired.deadlines, summaries: num(g.desired.summaries) };
+    if (g.desired && typeof g.desired === 'object' && typeof g.desired.deadlines === 'number') return { deadlines: g.desired.deadlines, summaries: num(g.desired.summaries), study: num(g.desired.study) };
     const cal = calendarItems();
     let summaries = 0;
     if (state.settings.weekly_summary) {
@@ -3292,9 +3394,11 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       for (const i of cal) { const d = parseDate(i.due); if (d) weeks.add(dayKey(addDays(startOfDay(d), -((d.getDay() + 6) % 7)))); }
       summaries = weeks.size;
     }
-    return { deadlines: cal.length, summaries };
+    const study = (plansList() || []).filter((p) => !p.hidden).reduce((a, p) => a + planBlocks(p).length, 0);
+    return { deadlines: cal.length, summaries, study };
   }
-  const wantText = (w) => '마감 ' + w.deadlines + '개' + (w.summaries ? ' + 주간 요약 ' + w.summaries + '개' : '');
+  const wantTotal = (w) => w.deadlines + w.summaries + num(w.study);
+  const wantText = (w) => '마감 ' + w.deadlines + '개' + (w.summaries ? ' + 주간 요약 ' + w.summaries + '개' : '') + (num(w.study) ? ' + 공부 ' + num(w.study) + '개' : '');
   // 설정의 한 칸으로 가서 그 칸을 보여 준다(버튼을 대신 누르지는 않음)
   function goSettings(paneId, focusSel) {
     const show = () => {
@@ -3387,7 +3491,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     else if (s.source === 'items') notes.push('Canvas에 학기 날짜가 없어 항목 날짜로 학기 범위를 잡았어요.');
     if (s.note) notes.push(String(s.note));
     const right = h('aside', { 'aria-labelledby': 'flow-h' }, h('h2', { class: 'sec-h', id: 'flow-h' }, '학기 흐름'), h('ul', { class: 'sem-notes' }, notes.map((t) => h('li', null, t))));
-    body.appendChild(h('div', { class: 'sem-grid' }, left, right));
+    // 공부 계획(계약 22-5): 서버가 state.plans를 줄 때만 오른쪽 칸 아래에
+    const plans = plansPanel();
+    body.appendChild(h('div', { class: 'sem-grid' }, left, plans ? h('div', { class: 'sem-side' }, right, plans) : right));
   }
 
   function weekChart(weeks, byWeek, wn) {
@@ -4737,6 +4843,8 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       linked ? h('p', { class: 'rc-note', title: 'Canvas 과제 ‘' + (linked.title || '') + '’' }, 'Canvas 과제 ', h('b', null, '‘' + (linked.title || '') + '’'),
         linked.due ? '의 마감으로 보여요' : '의 마감으로 보여요(Canvas에는 마감 없음)',
         linked.url ? [' ', extLink(linked.url, 'Canvas에서 보기')] : null) : null,
+      itemTools(it, '-r'),
+      ckPanel(it, '-r'),
       errLine(it),
       h('div', { class: 'rc-foot' },
         trailBtn,
@@ -5468,11 +5576,16 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   // ---------------------------------------------------------------- 에이전트에게 묻기(채팅, 계약 20장)
   // 서버가 state.agent를 주지 않으면(예전 서버) 입구와 서랍을 숨기고 아무것도 하지 않는다
   const agState = () => (state && state.agent && typeof state.agent === 'object' ? state.agent : null);
-  const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', note: '설명' };
-  const AG_EXAMPLES = ['기말고사 날짜가 안 보여요', 'LAB 점수가 성적에 안 들어가요', '이 과목 평가 비중이 이상해요', '마감 하나가 빠진 것 같아요'];
+  const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', action: '앱 동작', note: '설명' };
+  const AG_EXAMPLES = ['기말 범위 어디까지야?', '기말에서 몇 점 받아야 A?', 'LAB4 연장 문의 메일 써줘', '기말 전 2주 공부 계획 세워줘', '컴퓨터 켤 때 자동 실행해줘', '기말고사 날짜가 안 보여요'];
   const AG_MAX = 500;
+  // 대화 갈래(계약 22-1 kind). 옛 대화는 kind가 없으면 'missing'(놓친 것 찾기, 20장 모양 그대로)
+  const AG_KINDS = { missing: '놓친 것 찾기', question: '질문', whatif: '만약에', mail: '메일 초안', plan: '공부 계획', action: '앱 동작' };
+  const AG_EMPTY = { question: '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.', whatif: '계산할 재료가 부족해요. 성적 화면에서 평가 비중을 먼저 넣어 주세요.',
+    mail: '초안을 만들지 못했어요. 과목과 과제 이름을 함께 적어 다시 물어봐 주세요.', plan: '계획을 세울 시험·마감을 찾지 못했어요. 과목을 고르고 다시 물어봐 주세요.', action: '할 수 있는 동작을 찾지 못했어요.' };
   const ag = { opener: null, noRestore: false, sending: false, pending: null, job: null, busy: new Set(), errs: new Map(), applied: new Map(),
-    seen: new Map(), unread: false, confirmClear: false, clearing: false, clearErr: '', sig: '', courseSig: '', timer: 0, downOut: false };
+    seen: new Map(), unread: false, confirmClear: false, clearing: false, clearErr: '', sig: '', courseSig: '', timer: 0, downOut: false,
+    drafts: new Map(), clientDone: new Map(), planIds: new Map() };
   const agentOpen = () => $('agent-dlg').open;
   function agThreads() {
     const A = agState();
@@ -5485,7 +5598,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function agSay(text) { const l = $('agent-live'); l.textContent = ''; setTimeout(() => { l.textContent = text; }, 80); }
   function openAgent(pre) {
     if (!agState() || agentOpen() || !state.configured || setupPhase) return;
-    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open) return;   // 창은 한 번에 하나
+    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('mail-dlg').open) return;   // 창은 한 번에 하나
     pre = pre || {};
     const ta = $('agent-text'), sel = $('agent-course');
     ag.opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
@@ -5641,10 +5754,10 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function agAnnounce(t) {
     const props = Array.isArray(t.proposals) ? t.proposals : [];
     const ok = props.filter((p) => p && p.type !== 'note' && !p.rejected_reason && p.ok !== false).length;
-    const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (ok ? ' 반영할 수 있는 제안 ' + ok + '개.' : '');
+    const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (ok ? ' 누를 수 있는 제안 ' + ok + '개.' : '');
     if (agentOpen()) { agSay(head + (t.status !== 'error' && t.answer ? ' ' + String(t.answer).slice(0, 160) : '')); return; }
     ag.unread = true;
-    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open) return;   // 모서리 카드는 알림이 비켜 감(has-corner)
+    if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('mail-dlg').open) return;   // 모서리 카드는 알림이 비켜 감(has-corner)
     toast('에이전트가 ' + (t.status === 'error' ? '답을 못 찾았어요' : '답했어요') + (ok ? ' · 제안 ' + ok + '개' : ''));
     $('toast').appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => { hideToast(); openAgent(); } } }, '보기'));
     toastMs = 8000;
@@ -5678,13 +5791,17 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     agHead(A);
     agBar(A);
     agCourseOptions();
+    // 메일 초안을 고치는 중인 글자(ag.drafts)는 sig에 넣지 않는다(칠 때마다 다시 그리지 않게)
+    const plansSig = (plansList() || []).map((p) => String(p.id) + ':' + (Array.isArray(p.blocks) ? p.blocks.length : 0));
     const sig = JSON.stringify([threads, ag.pending, A.enabled, [...ag.busy], [...ag.errs], [...ag.applied], ag.confirmClear, ag.clearing, ag.clearErr,
-      state.last_sync, state.items.length, ag.courseSig]);
+      state.last_sync, state.items.length, ag.courseSig, [...ag.clientDone], [...ag.planIds], plansSig, !!state.grades]);
     if (sig !== ag.sig) {
       ag.sig = sig;
       const list = $('agent-list');
       const a = document.activeElement;
       const fk = a && list.contains(a) ? a.getAttribute('data-ak') : null;
+      let selr = null;
+      try { if (fk && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && typeof a.selectionStart === 'number') selr = [a.selectionStart, a.selectionEnd]; } catch (e) { selr = null; }
       const top = list.scrollTop;
       list.replaceChildren();
       add(list, [agListBody(A, threads)]);
@@ -5692,6 +5809,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       if (fk) {
         const el = list.querySelector('[data-ak="' + CSS.escape(fk) + '"]');
         (el || list).focus({ preventScroll: true });
+        if (el && selr && el.setSelectionRange) { try { el.setSelectionRange(selr[0], selr[1]); } catch (e) { /* 무시 */ } }
       }
     }
     agTick();
@@ -5700,8 +5818,9 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const all = ag.pending ? [ag.pending].concat(threads) : threads;
     if (!all.length) {
       return h('div', { class: 'ag-empty' }, mascot('start', 64, { slot: 'agent' }),
-        h('div', null, h('p', { class: 'ag-empty-t' }, '놓친 구간이 있으면 말로 짚어 주세요'),
-          h('p', { class: 'help' }, '‘기말고사 날짜가 안 보여요’처럼 적으면 지나온 코스(이 PC에 모아 둔 공지·게시판·메시지·강의계획서)를 다시 달려 근거를 찾아 올게요. 일정이나 성적에 넣는 건 [반영]을 직접 눌러야만 해요.')));
+        h('div', null, h('p', { class: 'ag-empty-t' }, '물어보면 답해요'),
+          h('p', { class: 'help' }, '‘기말 범위 어디까지야?’처럼 물으면 지나온 코스(이 PC에 모아 둔 공지·게시판·메시지·강의계획서)에서 근거를 붙여 답해요. 몇 점 받아야 하는지는 성적 화면과 같은 계산으로, 문의 메일·공부 계획은 초안으로 보여 드려요. 놓친 마감도 찾아요.'),
+          h('p', { class: 'help', style: 'margin-top:4px' }, '일정·성적·설정을 바꾸는 건 [반영]·[실행]을 직접 눌러야만 해요. 메일은 보내지 않아요.')));
     }
     const head = threads.length ? h('div', { class: 'ag-lhead' },
       h('span', null, '최근 질문 ' + threads.length + '개'),
@@ -5742,13 +5861,17 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
   const agSnips = (t) => { const x = t.results || t.snippets || t.sources || t.hits; return Array.isArray(x) ? x.filter((s) => s && typeof s === 'object') : []; };
   function agAnswer(A, t) {
+    // 갈래(계약 22-1): 질문·만약에·메일·계획·명령은 따로 그린다. kind가 없거나 'missing'이면 20장 모양 그대로
+    const kind = typeof t.kind === 'string' && AG_KINDS[t.kind] ? t.kind : 'missing';
+    if (kind !== 'missing') return agAnswerKind(A, t, kind);
     const rules = t.by === 'rules';
     const props = Array.isArray(t.proposals) ? t.proposals.filter((p) => p && typeof p === 'object') : [];
     const snips = rules ? agSnips(t) : [];
     const toAi = h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id, on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기');
     return h('div', { class: 'ag-a' },
       h('div', { class: 'ag-ahead' }, rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai'), num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
-      rules ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : 'AI 도움이 꺼져 있어 규칙으로 찾았어요.', ' ', A.enabled ? null : toAi) : null,
+      // AI가 꺼져 있으면 답 끝에 서버가 'AI CLI를 켜면…' 안내를 붙이므로 여기서는 단추만(같은 말을 두 번 하지 않게)
+      rules ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : toAi) : null,
       t.answer ? h('p', { class: 'ag-answer' }, String(t.answer))
         : !props.length && !snips.length ? h('p', { class: 'ag-answer' }, '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.') : null,
       props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null,
@@ -5763,6 +5886,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   }
   const agUndone = (t, p, i) => !agApplied(t, p, i) && (!!p.undone_at || ag.applied.get(agKey(t, i)) === false);
   function agProp(t, p, i) {
+    if (p.type === 'action') return agAction(t, p, i);
     const key = agKey(t, i);
     const type = AG_TYPE[p.type] ? p.type : 'note';
     const rej = p.rejected_reason ? String(p.rejected_reason) : '';
@@ -5932,11 +6056,23 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       applyState(s);
       const p = Array.isArray(t.proposals) ? t.proposals[i] : null;
       const rules = !!p && p.type === 'add_deadline' && (p.by || t.by) === 'rules';
+      if (p && p.type === 'action') {
+        // 실행 결과 문장은 새 state의 같은 제안에서(서버가 result.message를 남김)
+        const nt = agThreads().find((x) => String(x.id) === String(t.id));
+        const np = nt && Array.isArray(nt.proposals) ? nt.proposals[i] : null;
+        const res = np && np.result && typeof np.result === 'object' ? np.result : null;
+        agSay(undo ? '되돌렸어요.' : res && res.ok === false ? '실행하지 못했어요. ' + String(res.message || '') : '실행했어요.' + (res && res.message ? ' ' + String(res.message) : ''));
+        if (!undo && p.action === 'app_quit' && !(res && res.ok === false)) setTimeout(appQuitDone, 400);   // 서버가 곧 꺼진다
+        return;
+      }
       agSay(undo ? '되돌렸어요. 반영 전 값으로 돌아갔어요.' : rules ? '확인함에 후보로 넣었어요. 날짜·제목을 확인하고 일정에 넣어 주세요.' : '반영했어요. 표시가 남고 되돌릴 수 있어요.');
     }, (err) => {
       ag.busy.delete(key);
-      ag.errs.set(key, (undo ? '되돌리지 못했어요. ' : '반영하지 못했어요. ') + err.message);
+      const p = Array.isArray(t.proposals) ? t.proposals[i] : null;
+      const act = !!p && p.type === 'action';
+      ag.errs.set(key, (undo ? '되돌리지 못했어요. ' : act ? '실행하지 못했어요. ' : '반영하지 못했어요. ') + err.message);
       renderAgent();
+      if (act) refresh();   // 실패한 실행도 서버가 결과를 대화에 남긴다(다시 누를 수 있게)
     });
   }
   function agClear() {
@@ -6014,6 +6150,747 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       h('p', { class: 'help', style: 'flex-basis:100%' }, '에이전트 제안을 반영하면 규칙이 놓친 문장을 이 PC에 모아 둬요(이름·이메일·학번은 가림). 파일을 개발자에게 보내 주시면 규칙이 좋아져요. 저절로 보내지 않아요.'));
   }
 
+  // ---------------------------------------------------------------- 묻기 갈래(계약 22-1·22-10): 질문·만약에·메일·계획·명령
+  // 서버가 칸을 아직 주지 않으면(빈 모듈) 답 문장만 보이고 아무것도 던지지 않는다
+  const arr = (x) => (Array.isArray(x) ? x : []);
+  function agAnswerKind(A, t, kind) {
+    const props = arr(t.proposals).filter((p) => p && typeof p === 'object');
+    const rules = t.by === 'rules';
+    const extra = kind === 'question' ? agQuestion(t) : kind === 'whatif' ? agWhatif(t) : kind === 'mail' ? agMailThread(t) : kind === 'plan' ? agPlan(t) : null;
+    const toAi = h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id, on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기');
+    return h('div', { class: 'ag-a' },
+      h('div', { class: 'ag-ahead' }, tag(AG_KINDS[kind], 'quiet'),
+        kind === 'question' ? (rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai')) : null,
+        kind === 'question' && num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
+      kind === 'question' && rules && !A.enabled ? h('p', { class: 'ag-rules' }, 'AI 도움이 꺼져 있어 찾은 문장을 그대로 보여 드려요. ', toAi) : null,
+      t.answer ? h('p', { class: 'ag-answer' }, String(t.answer)) : !extra && !props.length ? h('p', { class: 'ag-answer' }, AG_EMPTY[kind] || '답을 찾지 못했어요.') : null,
+      extra,
+      props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null);
+  }
+  // A. 과목 질문: 답 + 그대로 인용한 문장(글 제목·날짜·원문)
+  function agQuestion(t) {
+    const cits = arr(t.citations).filter((c) => c && typeof c === 'object' && (c.quote || c.title));
+    if (!cits.length) return null;
+    return h('ul', { class: 'ag-snips', 'aria-label': '근거 글 ' + cits.length + '개' }, cits.map((c) => {
+      const co = c.course_id !== null && c.course_id !== undefined ? courseById(c.course_id) : null;
+      const cs = co ? courseShort(co) : c.course_short ? String(c.course_short) : '';
+      return h('li', { class: 'ag-snip' },
+        cs ? h('span', { class: 'ag-pcourse' }, cs) : null,
+        c.quote ? h('blockquote', { class: 'ag-quote' }, String(c.quote)) : null,
+        srcLine({ source_type: c.type || c.source_type, source_title: c.title || c.source_title, posted_at: c.posted_at, url: c.url }));
+    }));
+  }
+  // B. 성적 만약에: 숫자는 앱 계산(whatif) 그대로, 근거(basis)는 작은 글씨로. 이 화면 밖으로 보내지 않는다
+  const WI_KIND = { needed: '필요한 점수', scenario: '가정해 보기', pass_fail: 'P/NP 기준', current: '지금 추정', ask_course: '과목 고르기' };
+  function agWhatif(t) {
+    const w = t.whatif && typeof t.whatif === 'object' ? t.whatif : null;
+    if (!w) return null;
+    const lines = arr(w.lines).filter((x) => x !== null && x !== undefined && x !== '').map(String);
+    const rows = arr(w.rows).filter((r) => r && typeof r === 'object' && (r.label || (r.value !== null && r.value !== undefined && r.value !== '')));
+    const basis = arr(w.basis).filter(Boolean).map(String);
+    const cid = w.course_id !== null && w.course_id !== undefined && w.course_id !== '' ? String(w.course_id) : '';
+    const co = cid ? courseById(cid) : null;
+    const cs = w.course_short ? String(w.course_short) : co ? courseShort(co) : '';
+    // 과목을 못 정했으면(ask_course) 성적이 있는 과목을 눌러 같은 질문을 다시 보낸다
+    const G = state.grades;
+    const pick = w.kind === 'ask_course' && G && Array.isArray(G.courses) ? G.courses.filter((c) => c && c.course_id !== null && c.course_id !== undefined) : [];
+    return h('section', { class: 'ag-prop', 'aria-label': '성적 만약에' },
+      h('div', { class: 'ag-ptop' }, tag(WI_KIND[w.kind] || '만약에', 'accent'), cs ? h('span', { class: 'ag-pcourse' }, cs) : null,
+        w.target ? tag('목표 ' + String(w.target), 'quiet') : null, w.component ? h('span', { class: 'ag-cur' }, String(w.component)) : null),
+      lines.length ? h('div', { class: 'ag-lines' }, lines.map((x) => h('p', null, x))) : null,
+      rows.length ? h('table', { class: 'wi-tbl' }, h('tbody', null, rows.map((r) => h('tr', null,
+        h('th', { scope: 'row' }, String(r.label || '')),
+        h('td', null, r.value === null || r.value === undefined || r.value === '' ? '-' : String(r.value)))))) : null,
+      basis.length ? h('ul', { class: 'ag-basis', 'aria-label': '계산 근거' }, basis.map((b) => h('li', null, b))) : null,
+      pick.length ? h('div', { class: 'ag-acts' }, h('span', { class: 'help' }, '어느 과목인가요?'),
+        pick.map((c) => h('button', { type: 'button', class: 'ag-chip', 'data-ak': 'ag-wic-' + t.id + '-' + c.course_id, on: { click: () => agResend(t, String(c.course_id)) } },
+          c.short_name || courseShort(courseById(c.course_id))))) : null,
+      cid && gradeCourse(cid) ? h('div', { class: 'ag-acts' },
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-wi-' + t.id, on: { click: () => { selGrade = cid; agLeave(); go('#grades')(); } } }, '성적에서 보기'),
+        h('span', { class: 'help' }, '성적 화면과 같은 계산이에요. 밖으로 보내지 않아요.')) : null);
+  }
+  // 같은 질문을 과목만 정해 다시 보낸다
+  function agResend(t, courseId) {
+    const ta = $('agent-text'), sel = $('agent-course');
+    ta.value = String(t.message || '').slice(0, AG_MAX);
+    sel.value = courseId && Array.prototype.some.call(sel.options, (o) => o.value === courseId) ? courseId : '';
+    agCount();
+    agSend();
+  }
+  // H. 문의 메일: 받는 사람(근거 인용)·제목·본문을 고칠 수 있게. 고친 글은 대화마다 이 화면에 기억(다시 그려도 남음)
+  function agMailThread(t) {
+    const d = t.draft && typeof t.draft === 'object' ? t.draft : null;
+    if (!d) return null;
+    const id = String(t.id);
+    if (!ag.drafts.has(id)) ag.drafts.set(id, {});
+    const co = d.course_id !== null && d.course_id !== undefined ? courseById(d.course_id) : null;
+    return h('section', { class: 'ag-prop', 'aria-label': '문의 메일 초안' },
+      h('div', { class: 'ag-ptop' }, tag(PURPOSE_WORD[d.purpose] || '문의 메일', 'accent'), co ? h('span', { class: 'ag-pcourse' }, courseShort(co)) : null),
+      mailEditor(d, ag.drafts.get(id), 'ag-mail-' + id + '-', 'data-ak'));
+  }
+  // F. 공부 계획: 미리 보기(저장 안 됨) → [캘린더에 넣기]. 넣은 뒤에는 학기 화면 목록에서 지운다
+  const planBlocks = (p) => arr(p && p.blocks).filter((b) => b && typeof b === 'object' && parseDate(b.start));
+  const plansList = () => (state && Array.isArray(state.plans) ? state.plans.filter((p) => p && p.id !== null && p.id !== undefined) : null);
+  function samePlan(a, b) {
+    const x = planBlocks(a).map((k) => parseDate(k.start).getTime()).sort((m, n) => m - n);
+    const y = planBlocks(b).map((k) => parseDate(k.start).getTime()).sort((m, n) => m - n);
+    return x.length > 0 && x.length === y.length && x.every((v, i) => v === y[i]);
+  }
+  function savedPlanFor(t, p) {
+    const P = plansList() || [];
+    const id = ag.planIds.get(String(t.id));
+    return (id && P.find((x) => String(x.id) === id)) || P.find((x) => samePlan(x, p)) || null;
+  }
+  function blockLine(b, planTitle) {
+    const s = parseDate(b.start), e = parseDate(b.end);
+    const mins = e ? Math.round((e.getTime() - s.getTime()) / 60000) : 0;
+    return h('li', null, h('span', { class: 'tnum' }, fmtShort(s) + ' ' + fmtTime(s) + (e ? '–' + fmtTime(e) : '')),
+      b.title && b.title !== planTitle ? h('span', null, String(b.title)) : null,
+      mins > 0 ? h('span', { class: 'help' }, mins + '분') : null);
+  }
+  function agPlan(t) {
+    const p = t.plan && typeof t.plan === 'object' ? t.plan : null;
+    if (!p) return null;
+    const bl = planBlocks(p);
+    const notes = arr(p.notes).filter(Boolean).map(String);
+    const key = 'plan:' + t.id;
+    const busy = ag.busy.has(key);
+    const err = ag.errs.get(key);
+    const saved = bl.length ? savedPlanFor(t, p) : null;
+    const co = p.course_id !== null && p.course_id !== undefined ? courseById(p.course_id) : null;
+    const cs = co ? courseShort(co) : p.course_short ? String(p.course_short) : '';
+    // 무엇을 위한 계획인지(target)와 짠 방식(하루 몇 분·몇 시)
+    const tg = p.target && typeof p.target === 'object' ? p.target : null;
+    const tgDue = tg ? parseDate(tg.due) : null;
+    const how = [isNum(p.minutes) ? '하루 ' + num(p.minutes) + '분' : '', isNum(p.hour) ? num(p.hour) + '시부터' : '', isNum(p.days) ? num(p.days) + '일 동안' : ''].filter(Boolean).join(' · ');
+    const ak = 'ag-plan-' + t.id;
+    let acts = null;
+    if (saved) {
+      acts = h('p', { class: 'ag-done' }, h('b', null, icon('check'), '캘린더에 넣었어요'),
+        h('button', { type: 'button', class: 'linkish', 'data-ak': ak, 'aria-disabled': planBusy.has(String(saved.id)) ? 'true' : null, on: { click: () => removePlan(saved, true) } }, '되돌리기'),
+        h('button', { type: 'button', class: 'linkish', 'data-ak': ak + '-go', on: { click: () => { agLeave(); go('#semester')(); } } }, '학기에서 보기'));
+    } else if (bl.length) {
+      acts = h('div', { class: 'ag-acts' },
+        h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agPlanApply(t, p) } },
+          busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '넣는 중…'] : '캘린더에 넣기'),
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': ak + '-re', on: { click: () => agRetry(t) } }, '다시 짜기'),
+        h('span', { class: 'help' }, '‘하루 90분’, ‘밤 9시’처럼 고쳐 다시 물을 수 있어요'));
+    }
+    return h('section', { class: 'ag-prop' + (saved ? ' is-done' : bl.length ? ' is-ok' : ''), 'aria-label': '공부 계획 미리 보기' },
+      h('div', { class: 'ag-ptop' }, tag('공부 계획', saved || bl.length ? 'accent' : 'quiet'), cs ? h('span', { class: 'ag-pcourse' }, cs) : null,
+        bl.length ? h('span', { class: 'ag-cur tnum' }, '공부 시간 ' + bl.length + '개') : null),
+      p.title ? h('span', { class: 'ag-vt' }, String(p.title)) : null,
+      tg && (tg.title || tgDue) ? h('p', { class: 'ag-cur' }, '대상: ' + [tg.title ? String(tg.title) : '', tgDue ? fmtShortDT(tgDue) : ''].filter(Boolean).join(' ') +
+        (tg.status === 'review' ? ' (아직 확인 전)' : ''), ' ', extLink(tg.url, '원문')) : null,
+      how ? h('p', { class: 'ag-cur tnum' }, how) : null,
+      bl.length ? h('ul', { class: 'plan-blocks', 'aria-label': '공부 시간' }, bl.map((b) => blockLine(b, p.title))) : h('p', { class: 'help' }, '넣을 공부 시간이 없어요.'),
+      notes.length ? h('ul', { class: 'ag-basis' }, notes.map((x) => h('li', null, x))) : null,
+      !saved && bl.length ? h('p', { class: 'help' }, '넣으면 캘린더에 ‘[공부]’ 일정으로 들어가요. 학기 화면에서 언제든 지울 수 있어요.') : null,
+      acts,
+      err ? h('p', { class: 'inline-error', role: 'alert' }, err) : null);
+  }
+  function agPlanApply(t, p) {
+    const key = 'plan:' + t.id;
+    if (ag.busy.has(key)) return;
+    const bl = planBlocks(p);
+    ag.busy.add(key);
+    ag.errs.delete(key);
+    renderAgent();
+    const before = new Set((plansList() || []).map((x) => String(x.id)));
+    post('/api/plan/apply', planBody(p, bl)).then((s) => {
+      ag.busy.delete(key);
+      const pid = s && s.plan_id !== undefined && s.plan_id !== null ? String(s.plan_id) : null;   // 서버가 저장한 계획 id(22-5)
+      applyState(s);
+      const np = pid ? { id: pid } : (plansList() || []).find((x) => !before.has(String(x.id)));
+      if (np) ag.planIds.set(String(t.id), String(np.id));
+      renderAgent();
+      agSay('공부 시간 ' + bl.length + '개를 캘린더에 넣었어요. 학기 화면에서 지울 수 있어요.');
+    }, (err) => {
+      ag.busy.delete(key);
+      ag.errs.set(key, '캘린더에 넣지 못했어요. ' + err.message);
+      renderAgent();
+    });
+  }
+  // 명령(계약 22-9): 서버 액션은 /api/agent/apply·undo, 화면 액션(client)은 화면이 바로 한다(서버 기록 없음)
+  function agAction(t, p, i) {
+    const key = agKey(t, i);
+    const rej = p.rejected_reason ? String(p.rejected_reason) : '';
+    const client = p.client === true;
+    const busy = ag.busy.has(key);
+    const err = ag.errs.get(key);
+    const res = p.result && typeof p.result === 'object' ? p.result : null;
+    const failed = !client && !!res && res.ok === false;
+    const applied = !rej && !failed && (client ? ag.clientDone.has(key) : agApplied(t, p, i));
+    const can = !rej && p.ok !== false && (client || typeof p.can_apply !== 'boolean' || p.can_apply || applied);
+    const undoable = !client && p.undoable === true;
+    const title = String(p.title || p.action || '앱 동작');
+    const c = p.course_id !== null && p.course_id !== undefined ? courseById(p.course_id) : null;
+    const ak = 'ag-act-' + key;
+    let acts = null;
+    if (applied) {
+      const msg = client ? ag.clientDone.get(key) : res && res.message ? String(res.message) : '';
+      acts = h('p', { class: 'ag-done' }, h('b', null, icon('check'), client ? '했어요' : '실행했어요'), msg ? h('span', null, msg) : null,
+        undoable ? h('button', { type: 'button', class: 'linkish', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agApply(t, i, true) } }, busy ? '되돌리는 중…' : '되돌리기') : null,
+        client ? h('button', { type: 'button', class: 'linkish', 'data-ak': ak, on: { click: () => agClientRun(t, p, i) } }, '한 번 더') : null);
+    } else if (can) {
+      acts = h('div', { class: 'ag-acts' },
+        h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => (client ? agClientRun(t, p, i) : agApply(t, i, false)) } },
+          busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '실행하는 중…'] : '실행'),
+        h('span', { class: 'help' }, agUndone(t, p, i) ? '되돌렸어요' : client ? '화면에서 바로 해요' : undoable ? '실행한 뒤 되돌릴 수 있어요' : '되돌리기가 없는 동작이에요'));
+    }
+    return h('section', { class: 'ag-prop' + (rej ? ' is-rej' : applied ? ' is-done' : can ? ' is-ok' : ''), 'aria-label': title + ' 제안' },
+      h('div', { class: 'ag-ptop' }, tag(AG_TYPE.action, can || applied ? 'accent' : 'quiet'), c ? h('span', { class: 'ag-pcourse' }, courseShort(c)) : null),
+      h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vt' }, title)),
+      p.reason ? h('p', { class: 'ag-why' }, h('b', null, (p.by || t.by) === 'ai' ? 'AI 이유' : '이유'), String(p.reason)) : null,
+      failed && !err ? h('p', { class: 'inline-error' }, '실행하지 못했어요' + (res.message ? ' · ' + String(res.message) : '')) : null,
+      rej ? h('p', { class: 'ag-rej' }, '할 수 없어요 · ' + rej) : null,
+      acts,
+      err ? h('p', { class: 'inline-error', role: 'alert' }, err) : null);
+  }
+  function agClientRun(t, p, i) {
+    const key = agKey(t, i);
+    const r = clientAction(p);
+    if (!r.ok) { ag.errs.set(key, r.message); renderAgent(); agSay(r.message); return; }
+    ag.errs.delete(key);
+    ag.clientDone.set(key, r.message);
+    if (r.leave) { agLeave(); setTimeout(r.run, 0); return; }
+    renderAgent();
+    agSay(r.message);
+    r.run();
+  }
+  // 화면 액션 이름은 서버 목록(actions.CATALOG)을 따르되, 이름이 조금 달라도 params(view·pane·course_id·item_id)로 알아듣는다
+  const VIEW_WORDS = { dash: 'dash', dashboard: 'dash', home: 'dash', week: 'dash', inbox: 'inbox', review: 'inbox', semester: 'semester', map: 'semester',
+    courses: 'courses', course: 'courses', grades: 'grades', grade: 'grades', materials: 'materials', material: 'materials', files: 'materials', settings: 'settings', setting: 'settings' };
+  const PANE_WORDS = { account: 'pane-account', canvas: 'pane-account', google: 'pane-google', gcal: 'pane-google', grades: 'pane-grades', tour: 'pane-tour', tutorial: 'pane-tour',
+    update: 'pane-update', updates: 'pane-update', options: 'pane-options', calendar: 'pane-options', include: 'pane-options', background: 'pane-bg', bg: 'pane-bg',
+    autostart: 'pane-autostart', startup: 'pane-autostart', materials: 'pane-materials', attachments: 'pane-materials', ai: 'pane-ai', agent: 'pane-ai',
+    file: 'pane-file', ics: 'pane-file', mascot: 'pane-mascot', character: 'pane-mascot', runs: 'pane-runs', history: 'pane-runs' };
+  const idHas = (id, w) => new RegExp('(^|[_.:-])' + w + '($|[_.:-])').test(id);
+  function clientAction(p) {
+    const id = String(p.action || '').toLowerCase();
+    const P = p.params && typeof p.params === 'object' ? p.params : {};
+    const str = (x) => (x === null || x === undefined ? '' : String(x));
+    const later = (f) => () => setTimeout(() => { if (!modalOpen()) f(); }, 80);
+    const mode = str(P.which || P.mode).toLowerCase();   // actions.CATALOG: tutorial {which: tour|whatsnew}
+    if (/whats_?new|whatsnew|new_features|tour_new/.test(id) || (/tour|tutorial/.test(id) && /new/.test(id + ' ' + mode))) {
+      return newSteps(true).length ? { ok: true, message: '달라진 점을 보여 드릴게요', leave: true, run: later(() => openTour('new', 'all')) } : { ok: false, message: '지금 보여 드릴 달라진 점이 없어요' };
+    }
+    if (/tour|tutorial/.test(id)) return { ok: true, message: '튜토리얼을 시작할게요', leave: true, run: later(() => openTour('core')) };
+    if (idHas(id, 'ics') || idHas(id, 'download') || /calendar_?file/.test(id)) return { ok: true, message: '캘린더 파일을 받았어요. 캘린더 앱에서 가져오세요', run: downloadIcs };
+    const itemId = str(P.item_id || P.item);
+    if (itemId) return findItem(itemId) ? { ok: true, message: '그 항목으로 갔어요', leave: true, run: () => openItemAnywhere(itemId) } : { ok: false, message: '그 항목을 찾지 못했어요. 동기화 뒤 바뀌었을 수 있어요' };
+    let v = VIEW_WORDS[str(P.view || P.screen || P.page).toLowerCase()] || null;
+    if (!v) for (const w of Object.keys(VIEW_WORDS)) if (idHas(id, w)) { v = VIEW_WORDS[w]; break; }
+    // 설정 칸(pane)은 설정 화면일 때만(actions.CATALOG open_view: pane은 '설정일 때, 선택')
+    const pw = !v || v === 'settings' ? str(P.pane || P.section || P.panel).toLowerCase().replace(/^pane-/, '') : '';
+    const pane = PANE_WORDS[pw] || (pw && $('pane-' + pw) ? 'pane-' + pw : null);
+    if (pane) return $(pane) && !$(pane).hidden ? { ok: true, message: '설정의 그 칸을 열었어요', leave: true, run: () => goSettings(pane) } : { ok: true, message: '설정을 열었어요', leave: true, run: () => go('#settings')() };
+    const cid = str(P.course_id || P.course);
+    if (cid) {
+      if (!courseById(cid)) return { ok: false, message: '그 과목을 찾지 못했어요' };
+      if (v === 'grades') return { ok: true, message: '그 과목 성적을 열었어요', leave: true, run: () => { selGrade = cid; go('#grades')(); } };
+      return { ok: true, message: '그 과목을 열었어요', leave: true, run: () => { selCourse = cid; go('#courses')(); } };
+    }
+    if (v) {
+      if (v === 'materials' && !matState()) return { ok: false, message: '자료 화면이 아직 없어요' };
+      return { ok: true, message: TITLES[v] + ' 화면을 열었어요', leave: true, run: () => go('#' + v)() };
+    }
+    return { ok: false, message: '이 화면에서 할 수 없는 동작이에요' };
+  }
+  function downloadIcs() {
+    const a = h('a', { href: '/calendar.ics', download: 'lms-deadlines.ics', hidden: true });
+    ($('agent-dlg').open ? $('agent-dlg') : document.body).appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(refresh, 1200);   // 파일을 받으면 서버가 '파일 포함' 기록을 남긴다
+  }
+  // 항목 하나로 가기: 확인 대기면 확인함(고르기), 지금 화면에 줄이 있으면 그 줄, 아니면 그 과목 상세의 줄
+  function openItemAnywhere(id) {
+    const it = findItem(id);
+    if (!it) { toast('그 항목을 찾지 못했어요. 동기화 뒤 바뀌었을 수 있어요.'); return; }
+    if (it.status === 'review') { if (choiceGroup(it)) openPick(it); else goInbox(it.id); return; }
+    if (it.status !== 'scheduled' && it.origin === 'found') { goInbox(it.id); return; }
+    const row = document.querySelector('[data-row="' + CSS.escape(String(id)) + '"]');
+    if (row && row.getClientRects().length) { showRow(id); return; }
+    if (it.course_id !== null && it.course_id !== undefined && courseById(it.course_id) && modeOf(it.course_id) !== 'hidden') {
+      selCourse = String(it.course_id);
+      const after = () => setTimeout(() => showRow(id), 0);
+      if (view === 'courses') { render(); after(); } else { pendingAfterNav = after; location.hash = '#courses'; }
+      return;
+    }
+    goInbox(it.id);
+  }
+
+  // ---------------------------------------------------------------- 문의 메일 초안(계약 22-7): 보내지 않는다. 고쳐서 복사하거나 메일 앱으로
+  const PURPOSES = [['extension', '연장'], ['absence', '결석·공결'], ['grade', '성적 문의'], ['submission', '제출 확인'], ['question', '일반 질문']];
+  const PURPOSE_WORD = { extension: '연장 문의', absence: '결석·공결', grade: '성적 문의', submission: '제출 확인', question: '일반 질문' };
+  const EMAIL_RE = /^[^\s@,;:<>()"'?&\\]+@[^\s@,;:<>()"'?&\\]+\.[^\s@,;:<>()"'?&\\]+$/;
+  // 클립보드: 되면 navigator.clipboard, 아니면 그 칸을 골라 복사한다(모달 창 밖 요소는 고를 수 없어서 칸 자체를 쓴다)
+  function copyText(field) {
+    const fallback = () => {
+      let s = null, e = null, ok = false;
+      try { s = field.selectionStart; e = field.selectionEnd; } catch (x) { /* 무시 */ }
+      try { field.focus(); field.select(); ok = document.execCommand('copy'); } catch (x) { ok = false; }
+      try { if (s !== null) field.setSelectionRange(s, e); } catch (x) { /* 무시 */ }
+      return ok;
+    };
+    if (navigator.clipboard && window.isSecureContext && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(field.value).then(() => true, () => fallback());
+    }
+    return Promise.resolve(fallback());
+  }
+  // 초안 칸(채팅·창 같이 씀). ed = {to, subject, body} 사용자가 고친 값(처음엔 초안 값), kp = 칸 이름 앞부분, attr = 다시 그린 뒤 포커스를 찾을 속성
+  function mailEditor(d, ed, kp, attr) {
+    const toList = arr(d.to).filter((x) => x && typeof x === 'object' && x.email);
+    if (typeof ed.to !== 'string') ed.to = toList.map((x) => String(x.email)).join(', ');
+    if (typeof ed.subject !== 'string') ed.subject = String(d.subject || '');
+    if (typeof ed.body !== 'string') ed.body = String(d.body || '');
+    const uid = kp.replace(/[^A-Za-z0-9_-]/g, '_');
+    const k = (name) => ({ [attr]: kp + name });
+    const toIn = h('input', Object.assign({ class: 'input', type: 'text', id: uid + 'to', value: ed.to, autocomplete: 'off', spellcheck: 'false', inputmode: 'email',
+      placeholder: '예) ta@school.ac.kr (여럿이면 쉼표로)', 'aria-describedby': uid + 'to-src' }, k('to')));
+    const subIn = h('input', Object.assign({ class: 'input', type: 'text', id: uid + 'sub', value: ed.subject, maxlength: '300', autocomplete: 'off' }, k('sub')));
+    const bodyIn = h('textarea', Object.assign({ class: 'input', id: uid + 'body', rows: '10', value: ed.body }, k('body')));
+    toIn.addEventListener('input', () => { ed.to = toIn.value; });
+    subIn.addEventListener('input', () => { ed.subject = subIn.value; });
+    bodyIn.addEventListener('input', () => { ed.body = bodyIn.value; });
+    const status = h('p', { class: 'help', role: 'status', 'aria-live': 'polite' });
+    const say = (text) => { status.textContent = ''; setTimeout(() => { status.textContent = text; }, 60); };
+    const copy = (field, what) => copyText(field).then((ok) => say(ok ? what + '을 복사했어요. 메일 앱에 붙여 넣어 주세요.' : '복사하지 못했어요. 칸을 누르고 Ctrl+C로 직접 복사해 주세요.'));
+    const openApp = () => {
+      const addrs = toIn.value.split(/[\s,;]+/).filter(Boolean);
+      const bad = addrs.filter((a) => !EMAIL_RE.test(a));
+      if (bad.length) { say('이메일 주소를 확인해 주세요: ' + bad.join(', ')); toIn.focus(); return; }
+      const url = 'mailto:' + addrs.join(',') + '?subject=' + encodeURIComponent(subIn.value) + '&body=' + encodeURIComponent(bodyIn.value.replace(/\r?\n/g, '\r\n'));
+      const a = h('a', { href: url, hidden: true });
+      (bodyIn.closest('dialog') || document.body).appendChild(a);
+      a.click();
+      a.remove();
+      say((addrs.length ? '' : '받는 사람이 비어 있어요. ') + (url.length > 1800 ? '메일 앱을 열었어요. 본문이 길어 잘렸으면 [본문 복사]로 붙여 넣어 주세요.' : '메일 앱을 열었어요. 보내기 전에 한 번 더 읽어 주세요.'));
+    };
+    // '주소를 못 찾았어요'는 받는 사람 칸 아래 안내와 겹치므로 뺀다
+    const notes = arr(d.notes).filter(Boolean).map(String).filter((n) => toList.length || !/주소를\s*못\s*찾/.test(n));
+    // 서버 안내(notes)가 이미 말한 것은 되풀이하지 않는다
+    const holes = /\[(이름|학번)\]/.test(ed.body) && !notes.some((n) => /채우|채운|\[\s*\]/.test(n));
+    const noSendSaid = notes.some((n) => /보내지\s*않/.test(n));
+    return h('div', { class: 'mail-ed' },
+      h('div', { class: 'field' },
+        h('label', { class: 'lbl', for: uid + 'to' }, '받는 사람'),
+        toIn,
+        h('div', { id: uid + 'to-src' }, toList.length
+          ? h('ul', { class: 'mail-src', 'aria-label': '주소를 찾은 글' }, toList.map((x) => h('li', null,
+            h('span', { class: 'email' }, String(x.email)), x.source_title ? h('span', null, '‘' + String(x.source_title) + '’에서 찾음') : null,
+            x.quote ? h('span', { class: 'mail-q' }, String(x.quote)) : null)))
+          : h('p', { class: 'help' }, '글에서 주소를 못 찾았어요. 강의계획서·공지에 적힌 조교·교수 주소를 직접 넣어 주세요.'))),
+      h('div', { class: 'field' },
+        h('div', { class: 'mail-lbl' }, h('label', { class: 'lbl', for: uid + 'sub' }, '제목'),
+          h('button', Object.assign({ type: 'button', class: 'linkish', on: { click: () => copy(subIn, '제목') } }, k('copy-sub')), '제목 복사')),
+        subIn),
+      h('div', { class: 'field' }, h('label', { class: 'lbl', for: uid + 'body' }, '본문'), bodyIn,
+        holes ? h('p', { class: 'help' }, '[이름]·[학번] 자리는 직접 채워 주세요.') : null),
+      h('div', { class: 'mail-acts' },
+        h('button', Object.assign({ type: 'button', class: 'btn btn-primary btn-sm', on: { click: () => copy(bodyIn, '본문') } }, k('copy')), '본문 복사'),
+        h('button', Object.assign({ type: 'button', class: 'btn btn-line btn-sm', on: { click: openApp } }, k('open')), icon('ext'), '메일 앱으로 열기')),
+      status,
+      notes.length ? h('ul', { class: 'mail-notes', 'aria-label': '확인할 것' }, notes.map((x) => h('li', null, x))) : null,
+      noSendSaid ? null : h('p', { class: 'help' }, '이 앱은 메일을 보내지 않아요. 초안만 만들어요.'));
+  }
+  // 항목 카드의 [문의 메일] → 초안 창(POST /api/mail/draft, 저장 안 함)
+  const mail = { it: null, purpose: 'question', busy: false, err: '', note: '', seq: 0, drafts: new Map(), eds: new Map(), last: new Map(), opener: null };
+  const mailOk = () => !!agState();
+  const mailKey = () => (mail.it ? String(mail.it.id) + '|' + mail.purpose : '');
+  function defaultPurpose(it) {
+    if (it.kind === '시험') return 'absence';
+    if (it.submitted) return 'submission';
+    const t = dueMs(it);
+    if (t !== null && t >= nowMs() && it.status === 'scheduled') return 'extension';
+    return 'question';
+  }
+  function mailBtn(it, sfx) {
+    if (!mailOk() || !it || it.course_id === null || it.course_id === undefined || it.course_id === '') return null;
+    return h('button', { type: 'button', class: 'linkish', 'data-key': 'mail-' + it.id + (sfx || ''), 'aria-haspopup': 'dialog',
+      'aria-label': (it.title || '이 항목') + ' 문의 메일 초안 만들기', on: { click: () => openMail(it) } }, '문의 메일');
+  }
+  function openMail(it) {
+    const d = $('mail-dlg');
+    // 창은 한 번에 하나(모서리의 튜토리얼 제안은 막지 않는다)
+    if (!it || modalOpen()) return;
+    mail.it = it;
+    mail.purpose = mail.last.get(it.id) || defaultPurpose(it);
+    mail.err = '';
+    mail.note = '';
+    mail.opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const pur = $('mail-pur');
+    pur.replaceChildren(...PURPOSES.map(([v, l]) => h('button', { type: 'button', 'data-mp': v, 'aria-pressed': 'false', on: { click: () => setMailPurpose(v) } }, l)));
+    renderMailDlg();
+    d.showModal();
+    const cur = pur.querySelector('[aria-pressed="true"]');
+    if (cur) cur.focus();
+    fetchMail(false);
+  }
+  function setMailPurpose(v) {
+    if (!mail.it || mail.purpose === v) return;
+    mail.purpose = v;
+    mail.last.set(mail.it.id, v);
+    fetchMail(false);
+  }
+  function renderMailDlg() {
+    const it = mail.it;
+    if (!it) return;
+    const fresh = findItem(it.id) || it;
+    const c = courseById(fresh.course_id);
+    const due = parseDate(fresh.due);
+    $('mail-desc').textContent = [c ? courseShort(c) : courseLabel(fresh), fresh.title || ''].filter(Boolean).join(' · ') + (due ? ' (마감 ' + fmtShortDT(due) + ')' : '') + '. 보내지 않고 초안만 만들어요.';
+    $('mail-pur').querySelectorAll('[data-mp]').forEach((b) => b.setAttribute('aria-pressed', String(b.getAttribute('data-mp') === mail.purpose)));
+    const st = $('mail-state');
+    st.replaceChildren();
+    if (mail.busy) add(st, [h('span', { class: 'spin', 'aria-hidden': 'true' }), '과목 글에서 받는 사람을 찾아 초안을 만드는 중…']);
+    else if (mail.err) st.appendChild(h('span', { class: 'inline-error' }, mail.err));
+    else if (mail.note) st.appendChild(h('span', { class: 'help' }, mail.note));
+    const k = mailKey();
+    const dr = mail.busy ? null : mail.drafts.get(k) || null;
+    if (dr && !mail.eds.has(k)) mail.eds.set(k, {});
+    const body = $('mail-body');
+    const keep = document.activeElement && body.contains(document.activeElement) ? document.activeElement.getAttribute('data-mk') : null;
+    body.replaceChildren();
+    if (dr) body.appendChild(mailEditor(dr, mail.eds.get(k), 'mail-' + k + '-', 'data-mk'));
+    if (keep) { const el = body.querySelector('[data-mk="' + CSS.escape(keep) + '"]'); if (el) el.focus({ preventScroll: true }); }
+    const acts = $('mail-actions');
+    acts.replaceChildren();
+    if (dr) acts.appendChild(h('button', { type: 'button', class: 'btn btn-quiet', title: '고친 글을 버리고 다시 만들어요', on: { click: () => { mail.eds.delete(k); fetchMail(true); } } }, '처음 초안으로'));
+    if (mail.err && !mail.busy) acts.appendChild(h('button', { type: 'button', class: 'btn btn-line', on: { click: () => fetchMail(true) } }, '다시 시도'));
+    acts.appendChild(h('button', { type: 'button', class: 'btn btn-line', on: { click: () => $('mail-dlg').close() } }, '닫기'));
+  }
+  function fetchMail(force) {
+    const it = mail.it;
+    if (!it) return;
+    const k = mailKey();
+    if (!force && mail.drafts.has(k)) { mail.busy = false; mail.err = ''; mail.note = ''; renderMailDlg(); return; }
+    const seq = ++mail.seq;
+    mail.busy = true;
+    mail.err = '';
+    mail.note = '';
+    renderMailDlg();
+    const body = { course_id: it.course_id, purpose: mail.purpose, item_id: it.id };
+    post('/api/mail/draft', body).then((r) => {
+      if (seq !== mail.seq) return;
+      const dr = r && r.draft && typeof r.draft === 'object' ? r.draft : null;
+      if (!dr) throw new Error('초안을 받지 못했어요.');
+      mail.drafts.set(k, dr);
+      mail.eds.set(k, {});
+      mail.busy = false;
+      mail.note = '초안을 만들었어요. 고친 뒤 복사하거나 메일 앱으로 여세요.';
+      renderMailDlg();
+    }).catch((err) => {
+      if (seq !== mail.seq) return;
+      mail.busy = false;
+      mail.err = err && err.status === 404 ? '이 버전에서는 아직 메일 초안을 만들 수 없어요.' : '초안을 만들지 못했어요. ' + (err && err.message ? err.message : '');
+      renderMailDlg();
+    });
+  }
+  $('mail-dlg').addEventListener('close', () => {
+    mail.seq++;   // 늦게 온 응답은 버린다
+    mail.busy = false;
+    const o = mail.opener;
+    mail.opener = null;
+    if (o && document.contains(o) && o.getClientRects().length) o.focus({ preventScroll: true });
+    setTimeout(() => { maybePopups(); maybeOfferTour(); maybeHandoff(); }, 0);
+  });
+
+  // ---------------------------------------------------------------- 과제 체크리스트(계약 22-6): 칩 "체크리스트 m/n" → 펼치기(체크·추가·지우기·근거)
+  const ckState = () => (state && state.checklists && typeof state.checklists === 'object' ? state.checklists : null);
+  function ckOf(id) {
+    const C = ckState();
+    const c = C ? C[id] : null;
+    return c && typeof c === 'object' && Array.isArray(c.items) ? c : null;
+  }
+  const ckItems = (c) => c.items.filter((x) => x && typeof x === 'object' && x.id !== null && x.id !== undefined);
+  const openChecks = new Set();
+  const ckBusy = new Set();
+  const ckErr = new Map();
+  function ckChip(it, sfx) {
+    const c = ckOf(it.id);
+    if (!c) return null;
+    const list = ckItems(c);
+    if (!list.length && !openChecks.has(it.id)) return null;
+    const done = list.filter((x) => x.done).length;
+    const all = list.length > 0 && done === list.length;
+    return h('button', { type: 'button', class: 'link-chip ck-chip' + (all ? ' is-done' : ''), 'aria-expanded': String(openChecks.has(it.id)), 'aria-controls': 'ck-' + it.id + sfx,
+      'data-key': 'ckc-' + it.id + sfx, title: '제출 요건 체크리스트',
+      on: { click: () => { if (openChecks.has(it.id)) openChecks.delete(it.id); else openChecks.add(it.id); render(); } } },
+      all ? icon('check') : null, '체크리스트 ' + done + '/' + list.length);
+  }
+  function ckPanel(it, sfx) {
+    if (!openChecks.has(it.id)) return null;
+    const c = ckOf(it.id);
+    if (!c) return null;
+    const list = ckItems(c);
+    const busy = ckBusy.has(it.id);
+    const err = ckErr.get(it.id);
+    const inp = h('input', { class: 'input', type: 'text', maxlength: '200', autocomplete: 'off', placeholder: '할 일 추가 (예: 보고서를 PDF로 바꾸기)',
+      'aria-label': (it.title || '') + ' 체크리스트에 추가', 'data-key': 'cka-' + it.id + sfx });
+    const addIt = (e) => {
+      e.preventDefault();
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); return; }
+      ckOp(it, { op: 'add', text: v }, 'cka-' + it.id + sfx).then((ok) => { if (ok) { const el = byKey('cka-' + it.id + sfx); if (el) el.value = ''; } });
+    };
+    return h('div', { class: 'ck-panel', id: 'ck-' + it.id + sfx, role: 'group', 'aria-label': (it.title || '') + ' 체크리스트', 'aria-busy': busy ? 'true' : null },
+      list.length ? h('ul', { class: 'ck-list' }, list.map((x) => {
+        const cid = 'ckx-' + it.id + '-' + x.id + sfx;
+        const src = [x.source_title ? '‘' + String(x.source_title) + '’' : '', x.quote ? '“' + String(x.quote) + '”' : ''].filter(Boolean).join(' ');
+        return h('li', { class: 'ck-row' + (x.done ? ' is-done' : '') },
+          h('input', { type: 'checkbox', id: cid, 'data-key': cid, checked: !!x.done, on: { change: () => ckOp(it, { op: 'toggle', id: x.id }) } }),
+          h('label', { for: cid }, h('span', { class: 'ck-t' }, String(x.text || '')),
+            src ? h('span', { class: 'ck-q', title: src }, src) : x.by === 'user' ? h('span', { class: 'ck-q' }, '직접 넣음') : null),
+          x.url ? extLink(x.url, '원문') : h('span'),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': String(x.text || '이 줄') + ' 지우기', title: '지우기', 'data-key': 'ckd-' + it.id + '-' + x.id + sfx,
+            on: { click: () => ckOp(it, { op: 'remove', id: x.id }, 'cka-' + it.id + sfx, x) } }, icon('x')));
+      })) : h('p', { class: 'help' }, '남은 할 일이 없어요. 필요한 걸 직접 넣어 두세요.'),
+      h('form', { class: 'ck-add', novalidate: true, on: { submit: addIt } }, inp, h('button', { type: 'submit', class: 'btn btn-line btn-sm' }, icon('plus'), '추가')),
+      list.some((x) => x.by !== 'user') ? h('p', { class: 'help', style: 'font-size:13.5px' }, '과제 설명·공지의 제출 요건 문장에서 뽑았어요. 체크와 직접 넣은 줄은 다시 동기화해도 남아요.') : null,
+      err ? h('p', { class: 'inline-error', role: 'alert' }, err) : null);
+  }
+  function ckOp(it, body, keyAfter, removed) {
+    if (ckBusy.has(it.id)) return Promise.resolve(false);
+    ckBusy.add(it.id);
+    ckErr.delete(it.id);
+    return post('/api/checklist/' + encodeURIComponent(it.id), body).then((s) => {
+      ckBusy.delete(it.id);
+      if (keyAfter && body.op !== 'toggle') focusKey = keyAfter;
+      applyState(s);
+      if (removed) toast('체크리스트에서 지웠어요 · ' + String(removed.text || ''), () => ckOp(it, { op: 'add', text: String(removed.text || '') }));
+      return true;
+    }, (err) => {
+      ckBusy.delete(it.id);
+      ckErr.set(it.id, (err.status === 404 ? '이 버전에서는 체크리스트를 고칠 수 없어요. ' : '저장하지 못했어요. ') + err.message);
+      render();
+      return false;
+    });
+  }
+  // 항목 카드 한 줄: [체크리스트 m/n] [문의 메일]
+  function itemTools(it, sfx) {
+    const chip = ckChip(it, sfx);
+    const mb = mailBtn(it, sfx);
+    return chip || mb ? h('div', { class: 'it-tools' }, chip, mb) : null;
+  }
+
+  // ---------------------------------------------------------------- 코치 카드(계약 22-4): 주간 브리핑·회고·학기 리포트(대시보드 위) + 바뀐 마감(옆 칸)
+  const coachState = () => (state && state.coach && typeof state.coach === 'object' ? state.coach : null);
+  const coachHidden = new Set();   // [닫기]를 누른 카드(응답 전에도 바로 숨김)
+  const COACH_KIND = { briefing: '이번 주 작전', retro: '지난주 돌아보기', report: '학기 리포트' };
+  const coachCardOf = (kind) => {
+    const C = coachState();
+    const c = C ? C[kind] : null;
+    return c && typeof c === 'object' && c.id !== null && c.id !== undefined && !coachHidden.has(String(c.id)) ? c : null;
+  };
+  const briefingShown = () => !!coachCardOf('briefing');
+  function coachLine(l, kind, idx) {
+    const text = typeof l === 'string' ? l : String(l.text || '');
+    const ids = typeof l === 'object' ? arr(l.item_ids) : [];
+    const all = ids.map((id) => findItem(id)).filter(Boolean);
+    const refs = all.slice(0, 2);   // 줄마다 항목 링크는 둘까지(나머지는 수만)
+    const tone = typeof l === 'object' && typeof l.tone === 'string' ? l.tone : '';
+    const short = (s) => (s.length > 24 ? s.slice(0, 23) + '…' : s);
+    return h('li', { class: 'coach-line' + (tone ? ' is-' + tone : '') }, h('span', null, text),
+      refs.length ? h('span', { class: 'coach-refs' }, refs.map((it) => h('button', { type: 'button', class: 'linkish', 'data-key': 'cref-' + kind + '-' + idx + '-' + it.id,
+        'aria-label': courseLabel(it) + ' ' + (it.title || '') + ' 보기', on: { click: () => openItemAnywhere(it.id) } }, short((it.course_short ? it.course_short + ' ' : '') + (it.title || '')))),
+        all.length > refs.length ? h('span', { class: 'help' }, '외 ' + (all.length - refs.length) + '개') : null) : null);
+  }
+  function coachCard(kind) {
+    const card = coachCardOf(kind);
+    if (!card) return null;
+    const lines = arr(card.lines).filter((l) => l && (typeof l === 'string' || l.text));
+    if (!card.title && !lines.length) return null;
+    const hid = 'coach-h-' + kind;
+    return h('section', { class: 'coach is-' + kind, id: 'coach-' + kind, 'aria-labelledby': hid },
+      h('div', { class: 'coach-head' },
+        h('div', null, h('p', { class: 'coach-kind' }, COACH_KIND[kind]), h('h2', { class: 'coach-title', id: hid }, String(card.title || COACH_KIND[kind]))),
+        h('button', { type: 'button', class: 'icon-btn', 'aria-label': COACH_KIND[kind] + ' 닫기', title: '닫기', 'data-key': 'coach-x-' + kind, on: { click: () => dismissCoach(card, kind) } }, icon('x'))),
+      lines.length ? h('ul', { class: 'coach-lines' }, lines.map((l, i) => coachLine(l, kind, i))) : null);
+  }
+  function coachRow() {
+    const cards = ['briefing', 'retro', 'report'].map(coachCard).filter(Boolean);
+    return cards.length ? h('div', { class: 'coach-row' }, cards) : null;
+  }
+  function dismissCoach(card, kind) {
+    const id = String(card.id);
+    coachHidden.add(id);
+    render();
+    $('page-title').focus({ preventScroll: true });
+    const msg = kind === 'briefing' ? '이번 주 브리핑을 닫았어요. 다음 주 월요일에 다시 와요.' : kind === 'retro' ? '지난주 돌아보기를 닫았어요.' : '학기 리포트를 닫았어요.';
+    // 400 = 지금 보이는 카드가 아님(다른 창에서 이미 닫았거나 주가 바뀜): 새 상태로 다시 맞춘다
+    post('/api/coach/dismiss', { id: card.id }).then((s) => { applyState(s); toast(msg); },
+      (err) => { coachHidden.delete(id); if (err.status === 400) { refresh(); return; } render(); toast('닫지 못했어요. ' + err.message); });
+  }
+  function changesSection() {
+    const C = coachState();
+    const list = C ? arr(C.changes).filter((x) => x && typeof x === 'object' && (x.to || x.from)) : [];
+    if (!list.length) return null;
+    const shown = list.slice(0, 5);
+    return h('section', { 'aria-labelledby': 'ds-chg' },
+      h('h2', { class: 'sec-h', id: 'ds-chg' }, '바뀐 마감', h('span', { class: 'sec-n' }, '최근 2주 ' + list.length + '개')),
+      h('ul', { class: 'side-list' }, shown.map((x) => {
+        const f = parseDate(x.from), to = parseDate(x.to);
+        const later = x.direction === 'later' || (x.direction !== 'earlier' && !!f && !!to && to.getTime() > f.getTime());
+        const it = x.item_id ? findItem(x.item_id) : null;
+        const pd = parseDate(x.posted_at);
+        return h('li', { class: 'chg' },
+          h('div', { class: 'side-title' }, [x.course_short || (it && it.course_short), x.title || (it && it.title)].filter(Boolean).join(' ')),
+          h('div', { class: 'chg-dates' },
+            h('span', { class: 'chg-from' }, f ? fmtShortDT(f) : '마감 없음'), h('span', { 'aria-hidden': 'true' }, '→'), h('span', { class: 'sr-only' }, '에서'),
+            h('b', null, to ? fmtShortDT(to) : '마감 없음'), tag(later ? '늦춰짐' : '앞당겨짐', later ? 'quiet' : 'accent'),
+            x.status === 'review' ? tag('확인 전', 'dash', '바뀐 날짜가 아직 일정에 들어가지 않았어요. 확인함에서 골라 주세요') : null),
+          x.quote ? h('blockquote', { class: 'chg-q' }, String(x.quote)) : null,
+          h('div', { class: 'side-meta' },
+            x.source_type && SOURCE[x.source_type] ? h('span', null, SOURCE[x.source_type]) : null,
+            x.source_title ? h('span', null, '‘' + String(x.source_title) + '’') : null, pd ? h('span', null, fmtShortDT(pd) + ' 글') : null,
+            extLink(x.url, '원문'),
+            it ? h('button', { type: 'button', class: 'linkish', 'data-key': 'chg-' + it.id, 'aria-label': (it.title || '') + ' 보기', on: { click: () => openItemAnywhere(it.id) } }, '보기') : null));
+      })),
+      list.length > shown.length ? h('p', { class: 'help', style: 'margin-top:6px' }, '그 밖에 ' + (list.length - shown.length) + '개 더 있어요.') : null);
+  }
+
+  // ---------------------------------------------------------------- 공부 계획 목록(계약 22-5): 학기 화면. [지우기] → 다음 반영 때 캘린더에서도 빠짐
+  const planBusy = new Set();
+  const planErr = new Map();
+  function planBody(p, bl) {
+    const b = { title: String(p.title || '공부 계획'), blocks: bl.map((x) => ({ start: x.start, end: x.end, title: x.title, course_id: x.course_id, item_id: x.item_id })) };
+    if (p.course_id !== null && p.course_id !== undefined) b.course_id = p.course_id;
+    if (p.item_id !== null && p.item_id !== undefined) b.item_id = p.item_id;
+    return b;
+  }
+  // fromAgent: 서랍에서 눌렀으면 알림 대신 서랍 안에서 알린다(서랍이 열려 있는 동안 알림은 가려진다)
+  function removePlan(p, fromAgent) {
+    const id = String(p.id);
+    if (planBusy.has(id)) return;
+    planBusy.add(id);
+    planErr.delete(id);
+    if (fromAgent) renderAgent(); else render();
+    post('/api/plan/remove', { id: p.id }).then((s) => {
+      planBusy.delete(id);
+      for (const [k, v] of ag.planIds) if (v === id) ag.planIds.delete(k);
+      applyState(s);
+      const future = planBlocks(p).filter((b) => parseDate(b.start).getTime() > nowMs());
+      if (fromAgent) { agSay('공부 계획을 지웠어요. 다음 반영 때 캘린더에서도 빠져요.'); return; }
+      toast('공부 계획을 지웠어요 · ' + String(p.title || ''), future.length ? () => restorePlan(p, future) : null);
+    }, (err) => {
+      planBusy.delete(id);
+      planErr.set(id, '지우지 못했어요. ' + err.message);
+      if (fromAgent) { agSay(planErr.get(id)); renderAgent(); } else render();
+    });
+  }
+  function restorePlan(p, bl) {
+    post('/api/plan/apply', planBody(p, bl)).then((s) => { applyState(s); toast('되돌렸어요 · ' + String(p.title || '공부 계획')); },
+      (err) => toast('되돌리지 못했어요. ' + err.message));
+  }
+  function plansPanel() {
+    const P = plansList();
+    if (!P) return null;
+    // 서버가 첫 공부 시간 순으로 준다. past(모두 지남)는 '지난 계획'으로 흐리게, hidden(제외한 과목)은 캘린더에 안 들어간다고 밝힌다
+    const isPast = (p) => (typeof p.past === 'boolean' ? p.past : !planBlocks(p).some((b) => (parseDate(b.end) || parseDate(b.start)).getTime() > nowMs()));
+    const row = (p) => {
+      const id = String(p.id);
+      const past = isPast(p);
+      const bl = planBlocks(p).slice().sort((a, b) => parseDate(a.start) - parseDate(b.start));
+      const first = bl.length ? parseDate(bl[0].start) : null, last = bl.length ? parseDate(bl[bl.length - 1].start) : null;
+      const next = bl.map((b) => parseDate(b.start)).find((d) => d.getTime() >= nowMs()) || null;
+      const co = p.course_id !== null && p.course_id !== undefined ? courseById(p.course_id) : null;
+      const cs = co ? courseShort(co) : p.course_short ? String(p.course_short) : '';
+      const blKey = 'plan-bl-' + id;
+      const det = bl.length ? h('details', { class: 'excl' }, h('summary', { 'data-key': 'grp-' + blKey }, '공부 시간 ' + bl.length + '개 보기'),
+        h('ul', { class: 'plan-blocks', style: 'margin-top:6px' }, bl.map((b) => blockLine(b, p.title)))) : null;
+      if (det) { det.open = openGroups.has(blKey); det.addEventListener('toggle', () => { if (det.open) openGroups.add(blKey); else openGroups.delete(blKey); }); }
+      return h('li', { class: past ? 'is-past' : null, 'data-plan': id },
+        h('div', { class: 'side-title' }, String(p.title || '공부 계획')),
+        h('div', { class: 'side-meta' }, cs ? h('span', null, cs) : null,
+          first ? h('span', { class: 'tnum' }, fmtShort(first) + (last && dayKey(last) !== dayKey(first) ? ' – ' + fmtShort(last) : '')) : null,
+          h('span', null, past ? '모두 지남' : next ? '다음 ' + whenText(next) : '진행 중'),
+          p.decided_by === 'ai' ? tag('에이전트가 넣음', 'quiet', p.reason ? String(p.reason) : null) : null,
+          p.hidden ? tag('제외한 과목 · 캘린더에 안 들어가요', 'dash') : null),
+        det,
+        h('div', { class: 'pick' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'plan-rm-' + id, 'aria-label': String(p.title || '공부 계획') + ' 지우기',
+          'aria-disabled': planBusy.has(id) ? 'true' : null, on: { click: () => removePlan(p, false) } }, planBusy.has(id) ? '지우는 중…' : '지우기')),
+        planErr.has(id) ? h('p', { class: 'inline-error', role: 'alert' }, planErr.get(id)) : null);
+    };
+    const live = P.filter((p) => !isPast(p)), old = P.filter(isPast);
+    return h('section', { 'aria-labelledby': 'plans-h' },
+      h('h2', { class: 'sec-h', id: 'plans-h' }, '공부 계획', live.length ? h('span', { class: 'sec-n' }, live.length + '개') : null),
+      live.length ? h('ul', { class: 'side-list plan-list', style: 'margin-top:10px' }, live.map(row))
+        : h('p', { class: 'help', style: 'margin-top:6px' }, (old.length ? '앞으로 남은 계획이 없어요. ' : '아직 넣은 계획이 없어요. '),
+          agState() ? h('button', { type: 'button', class: 'linkish', 'data-key': 'plan-ask', on: { click: () => openAgent({ text: '기말 전 2주 공부 계획 세워줘' }) } }, '에이전트에게 계획 부탁하기') : null),
+      old.length ? [h('h3', { class: 'sub-h', style: 'margin-top:16px;color:var(--graphite)' }, '지난 계획 ' + old.length + '개'),
+        h('ul', { class: 'side-list plan-list', style: 'margin-top:8px' }, old.map(row))] : null,
+      P.length ? h('p', { class: 'help', style: 'margin-top:12px' }, '공부 시간은 캘린더에 ‘[공부]’ 일정으로 들어가요. 지우면 다음 반영 때 캘린더에서도 빠져요.') : null);
+  }
+
+  // ---------------------------------------------------------------- 컴퓨터를 켜면 앱 열기(계약 22-8)
+  let asBusy = false, asError = '', asBrowser = null;   // asBrowser: 꺼져 있을 때 고른 '브라우저도 열기'(켤 때 보낸다)
+  const AS_HOW = { 'windows-task': 'Windows 작업 스케줄러가 로그인할 때 켜요', 'macos-launchagent': 'macOS 로그인 항목(LaunchAgent)으로 켜요', 'linux-autostart': '데스크톱 자동 시작(.desktop)으로 켜요' };
+  function renderAutostart() {
+    const pane = $('pane-autostart');
+    const box = $('autostart-box');
+    box.replaceChildren();
+    const a = state.autostart;
+    pane.hidden = !a || typeof a !== 'object';
+    if (pane.hidden) return;
+    const sup = a.supported === true;
+    const ob = asBrowser !== null ? asBrowser : a.open_browser !== false;
+    const on = h('input', { type: 'checkbox', id: 'as-enabled', 'data-key': 'as-enabled', checked: !!a.enabled, disabled: !sup,
+      on: { change: (e) => { if (asBusy) { e.target.checked = !e.target.checked; return; } setAutostart(e.target.checked, ob); } } });
+    const br = h('input', { type: 'checkbox', id: 'as-browser', 'data-key': 'as-browser', checked: ob, disabled: !sup,
+      on: { change: (e) => {
+        if (asBusy) { e.target.checked = !e.target.checked; return; }
+        if (a.enabled) setAutostart(true, e.target.checked);
+        else { asBrowser = e.target.checked; renderAutostart(); }
+      } } });
+    add(box, [
+      h('p', { class: 'help' }, 'PC에 로그인하면 LMS Agent가 창 없이 켜지고, 원하면 이 화면을 브라우저로 열어 줘요. 백그라운드 동기화는 캘린더만 맞추고, 이건 앱 화면을 바로 쓸 수 있게 켜 둬요.'),
+      h('label', { class: 'toggle' }, on,
+        h('span', null, h('b', null, '컴퓨터를 켜면 앱 열기'),
+          h('small', null, !sup ? (state.demo ? '데모에서는 등록하지 않아요. 실제 앱에서 켤 수 있어요.' : '이 PC에서는 아직 지원하지 않아요.')
+            : asBusy ? '등록하는 중…' : a.enabled ? '켜짐. ' + (AS_HOW[a.how] || '로그인할 때 켜요') + '.' : '꺼짐. 앱은 직접 켤 때만 열려요.'))),
+      h('label', { class: 'toggle' }, br,
+        h('span', null, h('b', null, '브라우저도 열기'),
+          h('small', null, ob ? '켜질 때 이 화면을 브라우저로 열어요.' : '앱만 켜 두고, 화면은 필요할 때 직접 열어요.'))),
+      sup && a.command ? h('div', { class: 'bg-meta' }, h('p', { class: 'cmd', title: '로그인할 때 실행하는 명령' }, String(a.command))) : null,
+      state.demo ? null : h('div', { class: 'form-actions', style: 'margin-top:12px;align-items:center' },
+        h('button', { type: 'button', class: 'btn btn-line', 'data-key': 'app-quit', disabled: asBusy, on: { click: quitApp } }, '앱 끄기'),
+        h('small', { class: 'help', style: 'margin:0' }, '창 없이 켜진 앱도 여기서 끌 수 있어요. 에이전트에게 “앱 꺼줘”라고 해도 돼요.')),
+      a.error ? h('p', { class: 'inline-error', style: 'margin-top:8px' }, String(a.error)) : null,
+      asError ? h('p', { class: 'inline-error', role: 'alert', style: 'margin-top:8px' }, asError) : null
+    ]);
+  }
+  // 앱 끄기(계약 22-8): 창 없이 켜진 앱을 끌 방법. 끈 뒤에는 서버가 없으므로 안내 화면만 남긴다
+  function quitApp() {
+    if (!window.confirm('앱을 끌까요? 끈 뒤에는 이 화면이 연결되지 않아요.')) return;
+    post('/api/app/quit', {}).then(() => appQuitDone(), (e) => { asError = '앱을 끄지 못했어요. ' + e.message; renderAutostart(); });
+  }
+  function appQuitDone() {
+    document.title = 'LMS Agent (꺼짐)';
+    document.body.replaceChildren(h('main', { style: 'max-width:560px;margin:18vh auto 0;padding:0 16px' },
+      h('h1', { class: 'sec-h', style: 'font-size:24px' }, '앱을 껐어요'),
+      h('p', { class: 'help', style: 'margin-top:8px' }, '이 탭은 닫아도 돼요. 다시 열려면 LMS Agent를 실행하세요. ‘컴퓨터를 켜면 앱 열기’를 켜 두었다면 다음 로그인 때 저절로 열려요.')));
+  }
+  function setAutostart(enabled, ob) {
+    if (asBusy) return;
+    asBusy = true;
+    asError = '';
+    asBrowser = ob;
+    renderAutostart();
+    post('/api/autostart', { enabled, open_browser: ob }).then((s) => {
+      asBusy = false;
+      asBrowser = null;
+      applyState(s);
+      toast(!enabled ? '컴퓨터를 켤 때 앱 열기를 껐어요' : ob ? 'PC에 로그인하면 앱을 켜고 이 화면을 열어요' : 'PC에 로그인하면 앱을 창 없이 켜 둬요');
+    }, (err) => {
+      asBusy = false;
+      asBrowser = null;
+      asError = err.message;
+      render();
+    });
+  }
+
   // ---------------------------------------------------------------- 설정
   const acct = () => (state && state.account && typeof state.account === 'object' ? state.account : null);
   const userName = () => { const a = acct(); return a && a.user_name ? String(a.user_name) : ''; };
@@ -6036,7 +6913,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     renderFirstSync();
     $('canvas-conf').hidden = !conf || reconfiguring;
     for (const id of ['pane-google', 'pane-options', 'pane-file', 'pane-runs', 'pane-tour']) $(id).hidden = !conf;
-    if (!conf) { for (const id of ['pane-bg', 'pane-materials', 'pane-ai', 'pane-mascot', 'pane-grades', 'pane-update']) $(id).hidden = true; return; }
+    if (!conf) { for (const id of ['pane-bg', 'pane-autostart', 'pane-materials', 'pane-ai', 'pane-mascot', 'pane-grades', 'pane-update']) $(id).hidden = true; return; }
     renderAccount();
     $('include-canvas').checked = !!state.settings.include_canvas;
     const hasWeekly = Object.prototype.hasOwnProperty.call(state.settings, 'weekly_summary');
@@ -6074,6 +6951,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
           h('ul', null, errs.map((e) => h('li', null, String(e))))] : null));
     }
     renderBackground();
+    renderAutostart();
     renderUpdatePane();
     renderGoogle();
     renderRuns();
@@ -6612,7 +7490,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   const TOUR_KEY = 'lms-agent.tour';
   const TIP_KEY = 'lms-agent.tip.';
   const TIP_VIEWS = ['semester', 'courses', 'grades', 'settings'];
-  const TOUR_VERSION = 2;   // 1: 핵심 4단계(~v0.5) · 2: 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외(v0.6.3)
+  const TOUR_VERSION = 3;   // 1: 핵심 4단계(~v0.5) · 2: 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외(v0.6.3) · 3: 물어보면 답해요(질문·만약에·메일·계획·명령)·주간 브리핑(v0.7.0)
   const KO_COUNT = ['', '한', '두', '세', '네', '다섯', '여섯'];
   const tour = { open: false, mode: 'core', i: 0, steps: [], startView: 'dash', opener: null, raf: 0, offered: false, offerMode: 'core', pendingNav: false, openedChain: null, returnTo: null };
   const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -6645,7 +7523,8 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     post('/api/settings', { tutorial_version: TOUR_VERSION }).then(applyState, () => {});
   }
   // 지금 다른 창(소식 카드·고르기·튜토리얼·제안)이 떠 있는지: 창은 한 번에 하나만
-  const overlayOpen = () => cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('agent-dlg').open || !$('tour-offer').hidden;
+  const modalOpen = () => cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('agent-dlg').open || $('mail-dlg').open;
+  const overlayOpen = () => modalOpen() || !$('tour-offer').hidden;
   // 이번 동기화의 소식 카드가 아직 남았는지(제안은 소식을 다 본 뒤에)
   function newsPending() {
     const c = cel();
@@ -6774,19 +7653,28 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (ask) steps.push(ask);
     return steps;
   }
-  // 규칙이 놓친 것은 말로: 핵심 투어 마지막 단계이자 '달라진 점' 첫 단계. 에이전트 기능이 없는 서버면 뺀다
-  function askStep() {
+  // 물어보면 답해요: 핵심 투어 마지막 단계이자 '달라진 점' 첫 단계. 에이전트 기능이 없는 서버면 뺀다
+  // inNew: '달라진 점'에서는 이름을 '물어보면 답해요'로(무엇이 늘었는지 보이게)
+  function askStep(inNew) {
     if (!agState()) return null;
-    return { label: '에이전트에게 묻기', view: null, sel: ['#ask-btn'], where: '메뉴', title: '놓친 건 말로 물어보세요', prefer: 'right',
+    return { label: inNew ? '물어보면 답해요' : '에이전트에게 묻기', view: null, sel: ['#ask-btn'], where: '메뉴', title: '물어보면 답해요', prefer: 'right',
       body: () => (railNav() ? '왼쪽 말풍선 아이콘이에요. ' : '') +
-        '‘기말고사 날짜가 안 보여요’처럼 물으면 모아 둔 공지·자료에서 찾아 근거와 함께 제안해요. 반영은 직접 누르고, 언제든 되돌릴 수 있어요.' +
-        (agState() && agState().enabled ? '' : ' 설정 → AI에서 Claude Code·Codex 같은 에이전트를 연결하면 더 잘 찾아요.') };
+        '‘기말 범위 어디까지야?’(질문), ‘기말에서 몇 점 받아야 A?’(만약에), ‘LAB4 연장 문의 메일 써줘’, ‘기말 전 2주 공부 계획 세워줘’, ‘컴퓨터 켤 때 자동 실행해줘’(명령)처럼 말로 하세요. ' +
+        '답에는 근거가 붙고, 바꾸는 건 직접 눌러야 해요.' +
+        (agState() && agState().enabled ? '' : ' 설정 → AI에서 Claude Code·Codex 같은 에이전트를 연결하면 더 잘 답해요.') };
   }
-  // 튜토리얼을 마친 뒤 늘어난 것(TOUR_VERSION 2): 지금 이 사용자에게 보일 곳만 고른다
-  function newSteps() {
+  // 튜토리얼을 마친 뒤 늘어난 것: 지금 이 사용자에게 보일 곳만 고른다.
+  // all = 설정의 [달라진 점 보기](전부). 아니면 그 사람이 본 판 다음 것만(판 2를 본 사람에게는 판 3의 '물어보면 답해요'·브리핑만)
+  function newSteps(all) {
     const steps = [];
-    const ask = askStep();
+    const ask = askStep(true);
     if (ask) steps.push(ask);
+    if (briefingShown()) {
+      steps.push({ label: '주간 브리핑', view: 'dash', sel: ['#coach-briefing'], where: '대시보드', title: '한 주 작전은 브리핑 카드에',
+        body: '이번 주 마감이 몰린 요일, 다가오는 시험, 어느 과목부터 할지를 한 장에 모아요. 줄 옆의 항목을 누르면 그 마감으로 가고, 다 봤으면 닫아 두세요. 다음 주에는 그 주 카드가 와요.' });
+    }
+    const seen = tourVer();
+    if (!all && seen !== null && seen >= 2) return steps;
     const ex = examsData();
     if (ex.up.length || ex.na.length) {
       steps.push({ label: '시험 일정', view: 'dash', sel: ['section[aria-labelledby="ds-exam"]'], where: '대시보드', title: '시험 일정은 대시보드에',
@@ -6864,7 +7752,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function openTour(mode, v) {
     if (tour.open || !state || !state.configured) return;
     hideOffer();
-    const steps = mode === 'tip' ? [tipStep(v)].filter(Boolean) : mode === 'new' ? newSteps() : coreSteps();
+    const steps = mode === 'tip' ? [tipStep(v)].filter(Boolean) : mode === 'new' ? newSteps(v === 'all') : coreSteps();
     if (!steps.length) return;
     tour.mode = mode;
     tour.steps = steps;
@@ -7089,7 +7977,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     for (const v of TIP_VIEWS) if (v !== view) store(TIP_KEY + v, null);   // 화면별 팁도 다시 보여 준다
     openTour('core');
   });
-  $('tour-whatsnew').addEventListener('click', () => openTour('new'));
+  $('tour-whatsnew').addEventListener('click', () => openTour('new', 'all'));
 
   // ---------------------------------------------------------------- 틀
   function pageSub(v) {

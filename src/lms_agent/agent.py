@@ -1,20 +1,28 @@
-"""에이전트에게 묻기(채팅) — 계약 20장.
+"""에이전트에게 묻기(채팅) — 계약 20장·22-1·22-2.
 
-규칙이 놓친 것을 사용자가 말로 짚으면("기말고사 날짜가 안 보여요", "성적이 안 들어와요") 이 PC에 모아 둔 글
+메시지를 갈래(kind)로 나눈다(22-1, answer): 명령(actions) → 메일 초안(maildraft) → 공부 계획(plan) → 성적 '만약에'(whatif)
+→ 놓친 것(missing, 20장) → 그 밖의 질문(question, 22-2). 앞의 넷은 각 모듈의 handle이 맡고, 첫 번째로 None이 아닌 결과를 대화에 합친다.
+
+놓친 것(missing): 규칙이 놓친 것을 사용자가 말로 짚으면("기말고사 날짜가 안 보여요", "성적이 안 들어와요") 이 PC에 모아 둔 글
 (공지·게시판·메시지·강의계획서·과제 설명·첨부 PDF 글·직접 붙여 넣은 글)에서 관련 문단을 찾고(search),
 AI가 켜져 있으면 AI CLI 작업 `assist`(agent_cli)에 보내 근거 있는 제안을 받는다. 하네스가 검증한 제안만 반영할 수 있고
 (check_proposal), 반영한 것은 decided_by "ai"·이유·되돌리기가 남는다(apply/undo). AI가 꺼져 있으면 같은 창이 규칙 검색으로
 답한다(by "rules"). 특정 과목·문장에 맞추지 않는다: 평가 낱말 계열(links.families), 날짜(extract.find_dates),
 점수 문장(grades.find_scores)처럼 일반 구조로 점수를 매긴다.
 
+질문(question): 같은 검색(질문 낱말 — 범위·형식·규정·출석·장소 … — 로 점수 보강)으로 찾은 문단을 그대로 인용해 답한다(citations).
+AI가 켜져 있으면 작업 `answer`(인용이 보낸 글에 그대로 있고 답의 날짜·숫자가 인용 안에 있는 것만), 아니면 규칙으로 문단 1~3개 인용.
+
 저장 칸(store.data):
-- "agent": {"threads": [대화, 최근 20개]} — 대화 = {id, at, message, course_id, status, answer, proposals, searched,
-  results, error, by, finished_at}. 제안의 "_"로 시작하는 칸(되돌리기 기록)은 화면에 내보내지 않는다.
+- "agent": {"threads": [대화, 최근 20개]} — 대화 = {id, at, message, course_id, status, kind, answer, proposals, citations,
+  searched, results, error, by, finished_at, …갈래별 칸(whatif·draft·plan)}. 제안의 "_"로 시작하는 칸(되돌리기 기록)은
+  화면에 내보내지 않는다.
 - "agent_items": [반영한 마감 기록] — core.build_items가 함께 합친다(다음 동기화에도 남게, 규칙이 같은 마감을 찾으면 하나로).
 - "missed_cases": [규칙이 놓친 사례(가린 문장)] — 사용자가 원할 때만 파일로 저장(자동으로 보내지 않음).
 """
 from __future__ import annotations
 
+import copy
 import re
 from datetime import datetime, timedelta
 
@@ -42,7 +50,90 @@ _STOP = {"안", "왜", "좀", "또", "꼭", "더", "제", "내", "저", "나", "
          "나오지", "찾아", "찾", "알려", "주세", "확인", "과목", "수업", "강의", "어떻게", "해주", "됐", "되", "돼", "안돼",
          "같아", "같은", "대한", "관련", "있는", "없는", "the", "a", "an", "is", "are", "was", "not", "no", "i", "my",
          "me", "where", "why", "what", "how", "can", "cannot", "see", "find", "missing", "problem", "there", "it",
-         "of", "for", "in", "on", "to", "and", "or", "do", "does", "don't", "doesn't", "show", "shown", "please"}
+         "of", "for", "in", "on", "to", "and", "or", "do", "does", "don't", "doesn't", "show", "shown", "please",
+         "어디까지", "어디까지야", "뭐야", "뭔가", "뭐예", "알려줘", "알려주", "있어", "있나", "있나요", "되나", "되나요",
+         "하나", "하나요", "해야", "인가", "인가요", "언제야", "몇", "어때", "어떤", "will", "be", "should", "about"}
+
+# 묻기 갈래(계약 22-1): 놓친 것을 짚는 말 — '안 보여요'·'안 들어와요'·'빠졌어요'·'없어요'·'놓친'·'못 찾'·'이상해' …
+MISSING_WORDS = re.compile(
+    r"안\s*(?:보|들어|나와|나오|떠|뜨|잡혀|잡히)|빠졌|빠져\s*있|빠진|없어요|없네|없습니다|없는데|놓친|놓쳤|못\s*찾|못\s*읽|"
+    r"이상해|이상하|이상한|누락|틀렸|틀린|잘못\s*(?:들어|나와|나오|됐|되어|돼)|"
+    r"(?<![a-z])(?:missing|not\s+(?:showing|shown|there)|can'?t\s+(?:find|see)|cannot\s+(?:find|see)|"
+    r"don'?t\s+see|do\s+not\s+see|doesn'?t\s+show|where\s+can\s+i\s+find)(?![a-z])", re.I)
+
+# 질문 낱말(계약 22-2): 주제마다 (질문 쪽 낱말, 글 쪽 낱말). 질문 쪽에 있으면 글 쪽이 맞는 문단에 점수를 더 준다.
+_TOPIC_SRC = {
+    "scope": (r"범위|어디까지|진도|출제|챕터|단원|(?<![a-z])(?:scope|coverage|covers?|covered|chapters?|ch\.)(?![a-z])",
+              r"범위|진도|출제|챕터|단원|강의\s*자료|복습|(?<![a-z])(?:scope|coverage|covers?|covered|covering|chapters?|"
+              r"review|lecture\s+(?:slides|materials|notes))(?![a-z])|(?:from|through|until|up\s+to)\s+(?:week|chapter|"
+              r"lecture|ch\.?)\s*\d+|\d+\s*(?:주차|장|단원|챕터)\s*(?:부터|까지|~|-)"),
+    "format": (r"형식|양식|포맷|파일\s*(?:명|이름|형식)|확장자|분량|몇\s*(?:쪽|페이지|장)|어떻게\s*(?:제출|내)|"
+               r"제출\s*(?:방법|형식|양식|처|할\s*곳)|어디(?:로|에)\s*(?:제출|내)|(?<![a-z])(?:format|file\s*(?:name|type|"
+               r"format)|naming|page\s*limit|how\s+to\s+submit|submission\s+format)(?![a-z])",
+               r"형식|양식|포맷|파일\s*(?:명|이름)|확장자|분량|첨부|제출|업로드|\d+\s*(?:쪽|페이지|매|pages?|words?)|"
+               r"(?<![a-z])(?:format|file\s*name|naming|pdf|zip|docx?|hwp|pptx?|attach(?:ed|ment)?|upload|"
+               r"submit(?:ted)?|submission)(?![a-z])"),
+    "policy": (r"감점|지각\s*(?:제출|하면|시)|늦게|늦으면|규정|정책|부정\s*행위|표절|재시험|연장\s*(?:되|가능|해\s*주|신청)|"
+               r"(?<![a-z])(?:late|penalt(?:y|ies)|polic(?:y|ies)|rules?|cheat(?:ing)?|plagiari[sz]m|make-?up|"
+               r"extensions?)(?![a-z])",
+               r"감점|지각|늦게|늦은|규정|정책|부정\s*행위|표절|재시험|연장|불인정|인정하지\s*않|받지\s*않|(?<!\d)0\s*점|"
+               r"(?<![a-z])(?:late|penalt(?:y|ies)|deduct(?:ed|ion)?|polic(?:y|ies)|rules?|cheat(?:ing)?|plagiari[sz]m|"
+               r"make-?up|extensions?|not\s+accepted)(?![a-z])"),
+    "attendance": (r"출석|출결|결석|공결|(?<![a-z])(?:attendance|absen(?:t|ce|ces))(?![a-z])",
+                   r"출석|출결|결석|공결|호명|(?<![a-z])(?:attendance|absen(?:t|ce|ces))(?![a-z])"),
+    "room": (r"시험장|강의실|고사장|장소|어디서|어디에서|어느\s*(?:건물|방|교실|강의실)|대면|비대면|"
+             r"(?<![a-z])(?:room|location|venue|building|zoom|in\s+person)(?![a-z])|"
+             r"where\s+(?:is|will)\s+(?:the\s+)?(?:exam|final|midterm|quiz|test|class|lecture)",
+             r"시험장|강의실|고사장|장소|공학관|(?<!\d)\d{2,4}\s*호(?!\d)|대면|비대면|온라인|"
+             r"(?<![a-z])(?:room|location|venue|building|hall|zoom|online|in\s+person|classroom)(?![a-z])"),
+    "materials": (r"오픈\s*북|클로즈드\s*북|계산기|지참|준비물|가져가|가져와|치트\s*시트|노트북|"
+                  r"(?<![a-z])(?:open[\s-]*book|closed[\s-]*book|calculators?|bring|cheat[\s-]*sheets?|laptops?|"
+                  r"allowed)(?![a-z])",
+                  r"오픈\s*북|클로즈드\s*북|계산기|지참|준비물|치트\s*시트|노트북|허용|A4|"
+                  r"(?<![a-z])(?:open[\s-]*book|closed[\s-]*book|calculators?|bring|cheat[\s-]*sheets?|laptops?|"
+                  r"allowed|permitted)(?![a-z])"),
+    "grading": (r"비중|배점|반영\s*비율|평가\s*(?:방법|기준|비율|항목)|학점\s*(?:비율|분포|기준)|상대\s*평가|절대\s*평가|"
+                r"(?<![a-z])(?:weights?|weighting|grading|grade\s+(?:distribution|scale|cutoffs?)|curve)(?![a-z])",
+                r"비중|배점|반영|평가|학점|\d+(?:\.\d+)?\s*%|"
+                r"(?<![a-z])(?:weights?|grading|grades?|distribution|curve)(?![a-z])"),
+    "contact": (r"연락처|이메일\s*주소|메일\s*주소|오피스\s*아워|면담|상담|"
+                r"(?<![a-z])(?:contact|office\s*hours?|e-?mail\s+address)(?![a-z])",
+                r"@|연락|이메일|메일|오피스\s*아워|면담|상담|(?<![a-z])(?:contact|office\s*hours?|e-?mail)(?![a-z])"),
+}
+TOPICS = {k: (re.compile(q, re.I), re.compile(p, re.I)) for k, (q, p) in _TOPIC_SRC.items()}
+TOPIC_LABELS = {"scope": "범위", "format": "제출 형식·방법", "policy": "규정(감점·지각·연장 등)", "attendance": "출석",
+                "room": "장소", "materials": "준비물·시험 규칙", "grading": "평가 비중·학점 기준", "contact": "연락처·면담"}
+TOPIC_WEIGHT = 4.0     # 질문 주제가 문단에 있으면(제목에만 있으면 TOPIC_TITLE_WEIGHT)
+TOPIC_TITLE_WEIGHT = 1.5
+
+
+def question_topics(message: str) -> list[str]:
+    """질문이 묻는 주제(범위·형식·규정·출석·장소·준비물·평가 비중·연락처) — 계약 22-2."""
+    return [k for k, (q, _) in TOPICS.items() if q.search(message or "")]
+
+
+def topic_in(topic: str, text) -> bool:
+    """그 주제의 글 쪽 낱말이 text에 있는지."""
+    return bool(TOPICS[topic][1].search(str(text or "")))
+
+
+def classify(message: str) -> str:
+    """'missing'(놓친 것을 짚음 — 20장 assist·규칙) 또는 'question'(22-2). 명령·메일·계획·만약에는 각 모듈의 handle이 먼저 본다.
+    - 놓친 것을 짚는 말(MISSING_WORDS)이 있으면 missing — 단 범위·형식 같은 질문 주제만 있고 앱이 고칠 수 있는 것(날짜·점수·평가
+      비중)이 없으면 question('제출 형식이 안 보여요'는 글을 인용해 답하는 게 맞다).
+    - 질문 주제가 있으면 question.
+    - 날짜를 묻는 말('LAB4 마감 언제야?')은 missing — 마감 찾기 흐름이라야 규칙이 놓친 날짜를 [반영]으로 넣을 수 있다.
+    - 그 밖은 question."""
+    msg = message or ""
+    topics = question_topics(msg)
+    fixable = bool(DATE_WORDS.search(msg) or SCORE_WORDS.search(msg) or "grading" in topics)
+    if MISSING_WORDS.search(msg):
+        return "missing" if (not topics or fixable) else "question"
+    if topics:
+        return "question"
+    if DATE_WORDS.search(msg):
+        return "missing"
+    return "question"
 
 
 # ---------------------------------------------------------------- 낱말
@@ -81,8 +172,9 @@ def course_variants(c: dict) -> list[str]:
 def mentioned_courses(message: str, courses: list[dict]) -> list[str]:
     """질문에 이름(짧은 이름·괄호 뗀 이름·과목 코드, 또는 그 안의 두 글자 이상 낱말)이 나온 과목 id들."""
     msg = (message or "").lower()
+    # 평가·날짜·점수 낱말과 질문 주제 낱말 자체('형식', '범위')는 과목 이름 조각으로 보지 않는다('형식언어'는 그대로)
     toks = [t.lower() for t in tokens(message) if not lk.families(t) and not DATE_WORDS.search(t)
-            and not SCORE_WORDS.search(t)]
+            and not SCORE_WORDS.search(t) and not any(q.fullmatch(t) for q, _ in TOPICS.values())]
     out = []
     for c in courses:
         names = [v.lower() for v in course_variants(c)]
@@ -181,6 +273,7 @@ def _search(store, message, course_id=None, limit=SEARCH_LIMIT, items=None) -> t
     keys = [k.lower() for k in _keywords(toks)]
     want_date = bool(DATE_WORDS.search(message or ""))
     want_score = bool(SCORE_WORDS.search(message or ""))
+    topics = question_topics(message)
     known = _known_days(items if items is not None else store.view())
     from .grades import find_scores
     scored = []
@@ -214,6 +307,11 @@ def _search(store, message, course_id=None, limit=SEARCH_LIMIT, items=None) -> t
                     score += 2.0
                 if SCORE_WORDS.search(title):   # 'Lab0, Lab1 Score Announcement'처럼 제목이 점수 글이라고 말할 때
                     score += 3.0
+            for tp in topics:   # 질문 낱말(범위·형식·규정·출석·장소 …, 계약 22-2): 그 주제가 적힌 문단이 먼저
+                if topic_in(tp, par):
+                    score += TOPIC_WEIGHT
+                elif topic_in(tp, title):
+                    score += TOPIC_TITLE_WEIGHT
             for k in keys:
                 if k in low:
                     score += 2.0
@@ -243,7 +341,7 @@ def _search(store, message, course_id=None, limit=SEARCH_LIMIT, items=None) -> t
 
 KINDS = ("과제", "시험")
 METHODS = ("lms", "email", "paper", "unknown")
-TYPES = ("add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note")
+TYPES = ("add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note", "action")
 _KO_WD = "월화수목금토일"
 
 
@@ -373,6 +471,8 @@ def check_proposal(ctx: Ctx, p: dict, by: str = "ai", why: str | None = None, or
     from . import agent_cli
     p = p if isinstance(p, dict) else {}
     typ = str(p.get("type") or "")
+    if typ == "action":   # 앱 동작(계약 22-9) — 근거 글 대신 actions.check가 id·params를 검사한다
+        return check_action(ctx.store, p, by=by, why=why, shorts=ctx.shorts)
     errs: list[str] = [why] if why else []
     if typ not in TYPES:
         errs.append(f"모르는 제안 종류 '{typ[:20]}' / unknown proposal type")
@@ -547,6 +647,52 @@ def _check_dist(ctx, p, out, errs, quote, home, short):
 
 _CHECKS = {"add_deadline": _check_add, "fix_due": _check_fix, "link_score": _check_link, "set_count": _check_count,
            "set_weights": _check_weights, "set_dist": _check_dist}
+
+
+def check_action(store, p: dict, by: str = "rules", why: str | None = None, shorts: dict | None = None) -> dict:
+    """액션 제안(계약 22-9)을 화면용 모양으로: actions.check(store, p)가 id·params를 검사(모르는 것·금지 목록은 rejected_reason).
+    결과 칸: 제안 공통 칸(근거 칸은 None) + action, params, title, client, undoable. 서버 동작만 [실행] 가능(client는 화면이 직접)."""
+    from . import actions
+    from .agent_cli import unplace
+    p = p if isinstance(p, dict) else {}
+    raw = {"type": "action", "action": str(p.get("action") or "")[:80],
+           "params": copy.deepcopy(p["params"]) if isinstance(p.get("params"), dict) else {}}
+    for k in ("title", "reason"):
+        if p.get(k):
+            raw[k] = str(p[k])
+    try:
+        q = actions.check(store, dict(raw))
+        if not isinstance(q, dict):
+            raise TypeError("check는 dict를 돌려줘야 해요")
+    except Exception as e:  # noqa: BLE001 — 확인하지 못한 동작은 실행 단추 없이 보여 준다
+        q = {**raw, "rejected_reason": f"동작을 확인하지 못했어요({type(e).__name__})"}
+    entry = next((c for c in getattr(actions, "CATALOG", None) or []
+                  if isinstance(c, dict) and c.get("id") == (q.get("action") or raw["action"])), {})
+
+    def pick(key):   # check 결과 → handle이 준 값 → 목록(CATALOG) 순
+        for src in (q, p, entry):
+            if key in src and src[key] is not None:
+                return src[key]
+        return None
+
+    errs = [why] if why else []
+    if q.get("rejected_reason"):
+        errs.append(_flat(q["rejected_reason"]))
+    reason = _flat(unplace(str(p.get("reason") or q.get("reason") or "")))[:300]
+    if not reason and by == "ai":
+        errs.append("이유(reason)가 없어요 / reason is required")
+    params = q.get("params") if isinstance(q.get("params"), dict) else raw["params"]
+    title = _flat(pick("title") or raw["action"])[:120]
+    cid = params.get("course_id")
+    cid = str(cid) if cid not in (None, "") else None
+    out = {"type": "action", "by": by, "action": str(q.get("action") or raw["action"]), "params": params,
+           "title": title, "summary": title, "client": bool(pick("client")), "undoable": bool(pick("undoable")),
+           "course_id": cid, "course_short": (shorts or {}).get(cid) if cid else None, "evidence": None,
+           "source_key": None, "source_type": None, "source_title": None, "posted_at": None, "url": None,
+           "reason": reason, "rejected_reason": "; ".join(dict.fromkeys(e for e in errs if e))[:400] or None,
+           "applied": False, "applied_at": None, "undone_at": None, "result": None,
+           "notes": [str(n) for n in q.get("notes") or [] if n][:5], "date_basis": None}
+    return out
 
 
 def _current_count(ctx: Ctx, cid, comp: str) -> dict | None:
@@ -804,31 +950,225 @@ def rules_answer(ctx: Ctx, message: str, results: list[dict], searched: int, cid
     return " ".join(parts), props
 
 
+# ---------------------------------------------------------------- 과목 질문에 답하기(22-2)
+
+QUOTE_MAX = 500
+MAX_CITATIONS = 3
+MIN_AI_SCORE = 1.0     # 검색 점수가 이보다 큰 문단이 하나도 없으면(날짜 가산 0.5뿐) AI에게 보낼 글이 없는 것
+EXCERPT = 120
+
+
+def relevant(message: str, r: dict) -> bool:
+    """검색 결과 문단이 질문에 답이 될 만한지(규칙 모드 인용): 질문이 평가 낱말(기말·LAB…)을 말하면 그 낱말이 문단이나 글 제목에
+    (번호가 있으면 — 'LAB4' — 같은 번호, 다른 번호만 있는 글은 아님), 질문 주제(범위·형식…)가 있으면 그 주제가 문단이나 글 제목에
+    있어야 한다. 둘 다 없는 질문은 남은 낱말·점수 문장·날짜(묻는 것일 때) 중 하나가 문단에 있어야 한다(날짜만 있는 글은 아님)."""
+    from .extract import title_tokens
+    fam_q = lk.families(message)
+    text, title = str(r.get("snippet") or ""), str(r.get("title") or "")
+    if fam_q and not fam_q & (lk.families(text) | lk.families(title)):
+        return False
+    want = {(k, n) for k, n in title_tokens(message) if n}
+    if want:
+        got = {(k, n) for k, n in title_tokens(text) | title_tokens(title) if n}
+        if not want & got and {k for k, _ in want} & {k for k, _ in got}:
+            return False   # 'LAB4'를 물었는데 'Lab6' 글
+    topics = question_topics(message)
+    if topics:
+        return any(topic_in(t, text) or topic_in(t, title) for t in topics)
+    if fam_q:
+        return True
+    low = (text + " " + title).lower()
+    keys = [k.lower() for k in _keywords(tokens(message)) if not any(q.search(k) for q, _ in TOPICS.values())]
+    if any(k in low for k in keys):
+        return True
+    if SCORE_WORDS.search(message or "") and SCORE_WORDS.search(text):
+        return True
+    return bool(DATE_WORDS.search(message or "") and r.get("dates"))
+
+
+def citation(r: dict, quote: str | None = None) -> dict:
+    """검색 결과 하나 → 인용 칸(계약 22-2). quote는 그 글의 문장 그대로(QUOTE_MAX자 이내)."""
+    q = str(quote if quote is not None else r.get("snippet") or "").strip()
+    return {"source_key": r.get("source_key"), "course_id": r.get("course_id"), "course_short": r.get("course_short"),
+            "type": r.get("type"), "title": r.get("title"), "posted_at": r.get("posted_at"), "url": r.get("url"),
+            "quote": q[:QUOTE_MAX]}
+
+
+def _excerpt(message: str, quote: str) -> str:
+    """답 글에 넣을 짧은 인용(질문 주제가 처음 나오는 곳 근처, EXCERPT자)."""
+    q = _flat(quote)
+    if len(q) <= EXCERPT:
+        return q
+    pos = min((m.start() for t in question_topics(message) for m in [TOPICS[t][1].search(q)] if m), default=0)
+    start = max(0, min(pos - 40, len(q) - EXCERPT))
+    return ("…" if start else "") + q[start:start + EXCERPT].strip() + "…"
+
+
+def question_rules_answer(message: str, results: list[dict], searched: int, ai_error: str | None = None,
+                          ai_enabled: bool = False, named: set | None = None) -> tuple[str, list[dict]]:
+    """규칙으로 답하기(AI 꺼짐·실패): 관련 높은 문단 1~3개를 그대로 인용. 못 찾으면 그렇다고 말한다(지어내지 않음).
+    named: 질문에 이름이 나온 과목 id들 — 있으면 그 과목 글만 인용. (답, citations)."""
+    rel = [r for r in results if relevant(message, r) and (not named or r.get("course_id") in named)]
+    picks = []
+    if rel:
+        best = rel[0].get("score") or 0
+        picks = [r for r in rel if (r.get("score") or 0) >= best * 0.5][:MAX_CITATIONS]
+    cites = [citation(r) for r in picks]
+    labels = [TOPIC_LABELS[t] for t in question_topics(message)]
+    if cites:
+        lines = [f"[{c['course_short'] or '과목 미상'}] '{_flat(c['title'])[:60]}': “{_excerpt(message, c['quote'])}”"
+                 for c in cites]
+        parts = [f"이 글들에 이렇게 적혀 있어요(규칙 검색, 이 PC의 글 {searched}개 중): " + " / ".join(lines),
+                 "원문에서 한 번 더 확인해 주세요."]
+    elif results:
+        what = f"'{'·'.join(labels)}'에 대한 내용" if labels else "질문에 맞는 내용"
+        parts = [f"{what}이 적힌 글을 이 PC의 글 {searched}개에서 찾지 못했어요.",
+                 "비슷한 낱말이 있는 글은 검색 결과에 있어요 — 과목 이름이나 다른 낱말로 다시 물어봐 주세요."]
+    else:
+        parts = [f"이 질문과 관련된 글을 이 PC의 글 {searched}개에서 찾지 못했어요.",
+                 "과목 이름이나 다른 낱말(예: 기말, LAB4, 범위, 제출 형식)로 다시 물어봐 주세요."]
+    if ai_error:
+        parts.append(f"AI에게 묻지 못해 규칙 검색으로 답했어요: {ai_error}")
+    elif not ai_enabled:
+        parts.append("설정 → AI에서 AI CLI를 켜면 찾은 글을 AI가 읽고 인용과 함께 답해 드려요.")
+    return " ".join(parts), cites
+
+
+def _ai_citations(cits: list[dict], results: list[dict], names: list | None) -> list[dict]:
+    """AI가 가린 글에서 인용한 것 → 이 PC의 원문 인용(자리 표시 없이) + 글 정보."""
+    from .agent_cli import original_quote, redact
+    out = []
+    for c in cits or []:
+        q = _flat(c.get("quote"))
+        same = [r for r in results if r.get("source_key") == c.get("source_key")]
+        home = next((r for r in same if q in _flat(redact(str(r.get("snippet") or ""), names)[0])), None)
+        home = home or (same[0] if same else None)
+        if home is None:
+            continue
+        orig = original_quote(q, [{"text": home.get("snippet") or ""}], names)
+        cite = citation(home, orig)
+        if not any(x["source_key"] == cite["source_key"] and x["quote"] == cite["quote"] for x in out):
+            out.append(cite)
+    return out
+
+
+def _ai_inputs(ctx: Ctx, message: str, results: list[dict], cids: list[str], names) -> tuple[dict, list]:
+    """assist·answer 작업이 함께 쓰는 글 묶음(계약 20-3·22-2): 메시지, 과목 목록, 지금 상태 요약, 찾은 문단. (inputs, 원문 조각들)."""
+    text, originals = state_text(ctx, cids)
+    originals += [r["snippet"] for r in results]
+    inputs = {"message": message, "names": names, "state_text": text,
+              "courses": [{"id": cid, "short": ctx.shorts[cid]} for cid in ctx.courses],
+              "snippets": [{"source_key": r["source_key"], "course_id": r["course_id"], "type": r["type"],
+                            "title": r["title"], "posted_at": r["posted_at"], "text": r["snippet"]} for r in results]}
+    return inputs, originals
+
+
+def _answer_question(ctx: Ctx, out: dict, message: str, results: list[dict], searched: int, ai_enabled: bool, runner,
+                     command, names, session, cids: list[str]) -> dict:
+    """question 갈래(22-2): AI가 켜져 있고 찾은 글이 있으면 작업 `answer`, 아니면(또는 실패하면) 규칙으로 문단을 인용.
+    질문 낱말과 겹치는 것 없이 날짜만 있는 문단(점수 MIN_AI_SCORE 이하)뿐이면 AI를 부르지 않는다(하루 한도를 아낀다)."""
+    if ai_enabled and any((r.get("score") or 0) > MIN_AI_SCORE for r in results):
+        from .agent_cli import AiSession
+        session = session or AiSession(ctx.store, runner=runner, command=command, enabled=True, max_calls=2)
+        inputs, _ = _ai_inputs(ctx, message, results, cids, names)
+        res = session.run("answer", inputs)
+        out["attempts"] = res.attempts
+        if res.ok:
+            out.update(by="ai", answer=res.data["answer"], citations=_ai_citations(res.data["citations"], results, names),
+                       notes=out["notes"] + list(res.notes), finished_at=iso(now_local()))
+            return out
+        out["error"] = res.error
+    named = set(cids) if mentioned_courses(message, list(ctx.courses.values())) else None   # 과목을 말했으면 그 과목 글만
+    out["answer"], out["citations"] = question_rules_answer(message, results, searched, out["error"], ai_enabled, named)
+    out["finished_at"] = iso(now_local())
+    return out
+
+
+# ---------------------------------------------------------------- 묻기 갈래(22-1): 다른 모듈의 handle
+
+_KEEP = ("id", "at", "message", "course_id", "status", "kind", "finished_at", "searched", "results", "attempts")
+
+
+def _handles(store, message: str, course_id, names, now):
+    from . import actions, maildraft, plan, whatif
+    return (("action", lambda: actions.handle(store, message, course_id)),
+            ("mail", lambda: maildraft.handle(store, message, course_id, names)),
+            ("plan", lambda: plan.handle(store, message, course_id, now)),
+            ("whatif", lambda: whatif.handle(store, message, course_id, now)))
+
+
+def _merge_handled(store, kind: str, res: dict, notes: list) -> dict:
+    """handle 결과 {"answer", ...추가 칸}을 대화 칸으로. 20장 칸(answer·by·proposals …)은 유지하고, 대화의 틀(id·kind·status …)은
+    handle이 바꾸지 못한다. 액션 제안은 check_action으로 같은 모양·검사를 거친다."""
+    shorts = {str(c["id"]): core.short_course_name(c.get("name"))
+              for c in (store.data.get("cache") or {}).get("courses", [])}
+    out = {"status": "done", "kind": kind, "by": "rules", "answer": "", "proposals": [], "citations": [], "searched": 0,
+           "results": [], "error": None, "attempts": 0, "notes": list(notes)}
+    for k, v in res.items():
+        if k in _KEEP or str(k).startswith("_"):
+            continue
+        out[k] = v
+    out["answer"] = str(res.get("answer") or "")
+    out["by"] = res.get("by") if res.get("by") in ("ai", "rules") else "rules"
+    extra = [str(n) for n in res.get("notes") or [] if n] if isinstance(res.get("notes"), list) else []
+    out["notes"] = list(notes) + extra
+    props = []
+    raw = res.get("proposals") if isinstance(res.get("proposals"), list) else []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        if p.get("type") == "action":
+            p = check_action(store, p, by=p["by"] if p.get("by") in ("ai", "rules") else out["by"], shorts=shorts)
+        else:
+            p = {"rejected_reason": None, "applied": False, "applied_at": None, "undone_at": None, "result": None,
+                 "notes": [], **p}
+        props.append(p)
+    out["proposals"] = props
+    out["citations"] = res.get("citations") if isinstance(res.get("citations"), list) else []
+    return out
+
+
 # ---------------------------------------------------------------- 한 번 묻기
 
 def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner=None, command: str | None = None,
            names: list | None = None, session=None) -> dict:
     """질문 하나에 답한다(잠금 밖에서, 몇십 초 걸릴 수 있음). store는 이 작업만 쓰는 사본(Store(path))이 좋다 —
-    AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 대화 칸(status, answer, proposals, searched, results, error, by …)."""
+    AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 대화 칸(status, kind, answer, proposals, citations, searched, results,
+    error, by …). 갈래(계약 22-1): actions → maildraft → plan → whatif의 handle 중 첫 번째로 None이 아닌 것, 아니면
+    missing(놓친 것 — 20장) / question(22-2)."""
+    notes: list[str] = []
+    now = now_local()
+    for kind, fn in _handles(store, message, course_id, names, now):
+        try:
+            res = fn()
+        except Exception as e:  # noqa: BLE001 — 한 갈래가 고장 나도 다음 갈래로(계약 22-1)
+            notes.append(f"'{kind}' 갈래에서 오류가 나 다음 갈래로 넘어갔어요({type(e).__name__})")
+            continue
+        if res is None:
+            continue
+        if not isinstance(res, dict):
+            notes.append(f"'{kind}' 갈래의 답 모양이 달라 다음 갈래로 넘어갔어요")
+            continue
+        out = _merge_handled(store, kind, res, notes)
+        out["finished_at"] = iso(now_local())
+        return out
+    kind = classify(message)
     ctx = Ctx(store)
     results, searched = _search(store, message, course_id, items=ctx.items)
     cids = scope_of(ctx, message, course_id, results)
-    out = {"status": "done", "searched": searched, "results": results, "error": None, "by": "rules",
-           "answer": "", "proposals": [], "attempts": 0, "notes": []}
+    out = {"status": "done", "kind": kind, "searched": searched, "results": results, "error": None, "by": "rules",
+           "answer": "", "proposals": [], "citations": [], "attempts": 0, "notes": notes}
+    if kind == "question":
+        return _answer_question(ctx, out, message, results, searched, ai_enabled, runner, command, names, session, cids)
     if ai_enabled:
         from .agent_cli import AiSession
         session = session or AiSession(store, runner=runner, command=command, enabled=True, max_calls=2)
-        text, originals = state_text(ctx, cids)
-        originals += [r["snippet"] for r in results]
-        inputs = {"message": message, "names": names, "state_text": text,
-                  "courses": [{"id": cid, "short": ctx.shorts[cid]} for cid in ctx.courses],
-                  "snippets": [{"source_key": r["source_key"], "course_id": r["course_id"], "type": r["type"],
-                                "title": r["title"], "posted_at": r["posted_at"], "text": r["snippet"]} for r in results],
-                  "check": lambda p, why: check_proposal(ctx, p, "ai", why, originals, names)}
+        inputs, originals = _ai_inputs(ctx, message, results, cids, names)
+        inputs["check"] = lambda p, why: check_proposal(ctx, p, "ai", why, originals, names)
         res = session.run("assist", inputs)
         out["attempts"] = res.attempts
         if res.ok:
-            out.update(by="ai", answer=res.data["answer"], proposals=res.data["proposals"], notes=list(res.notes))
+            out.update(by="ai", answer=res.data["answer"], proposals=res.data["proposals"], notes=notes + list(res.notes))
             out["finished_at"] = iso(now_local())
             return out
         out["error"] = res.error
@@ -878,8 +1218,8 @@ def new_thread(store, message: str, course_id: str | None) -> dict:
     """대화 하나를 'running'으로 만든다(부르는 쪽이 잠금·저장). 최근 MAX_THREADS개만 남긴다."""
     import uuid
     th = {"id": "t-" + uuid.uuid4().hex[:10], "at": iso(now_local()), "message": message, "course_id": course_id,
-          "status": "running", "answer": None, "proposals": [], "searched": 0, "results": [], "error": None,
-          "by": None, "finished_at": None}
+          "status": "running", "kind": None, "answer": None, "proposals": [], "citations": [], "searched": 0,
+          "results": [], "error": None, "by": None, "finished_at": None}
     box = _box(store)
     box["threads"].append(th)
     del box["threads"][:-MAX_THREADS]
@@ -916,9 +1256,18 @@ def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bo
 STALE_SECONDS = 300
 
 
+def can_apply(p: dict) -> bool:
+    """[반영]/[실행] 단추: 검사를 통과했고 아직 반영 안 함. 액션은 서버 동작만(client 동작은 화면이 직접 — 계약 22-9)."""
+    if p.get("rejected_reason") or p.get("applied"):
+        return False
+    if p.get("type") == "action":
+        return not p.get("client")
+    return p.get("type") in _APPLY
+
+
 def public_threads(store, active: set | None = None) -> list[dict]:
     """state.agent.threads: 오래된 것부터(대화 순서). '_'로 시작하는 칸은 빼고, 이 프로세스·다른 프로세스 어디에서도 끝나지
-    않은 채 오래된 'running'(앱이 꺼졌던 경우)은 오류로 보여 준다."""
+    않은 채 오래된 'running'(앱이 꺼졌던 경우)은 오류로 보여 준다. kind가 없는 옛 대화는 'missing'(계약 22-1)."""
     now = now_local()
     out = []
     for t in threads(store):
@@ -926,13 +1275,16 @@ def public_threads(store, active: set | None = None) -> list[dict]:
             continue
         t2 = {k: v for k, v in t.items() if not str(k).startswith("_")}
         t2["proposals"] = [{**{k: v for k, v in p.items() if not str(k).startswith("_")},
-                            "can_apply": bool(not p.get("rejected_reason") and not p.get("applied")
-                                              and p.get("type") != "note")}
+                            "client": bool(p.get("client")), "can_apply": can_apply(p)}
                            for p in t.get("proposals") or [] if isinstance(p, dict)]
+        if not isinstance(t2.get("citations"), list):
+            t2["citations"] = []
         at = parse_iso(t.get("at"))
         if (t2.get("status") == "running" and (active is None or t2.get("id") not in active)
                 and at and (now - at).total_seconds() > STALE_SECONDS):
             t2.update(status="error", error="답을 받지 못했어요(앱이 다시 켜졌을 수 있어요). 다시 물어봐 주세요")
+        if not t2.get("kind"):   # 옛 대화(kind 없음)·답하기 전에 멈춘 대화는 'missing', 답하는 중이면 아직 모름(None)
+            t2["kind"] = None if t2.get("status") == "running" else "missing"
         out.append(t2)
     return out
 
@@ -1113,6 +1465,11 @@ _APPLY = {"add_deadline": (_apply_add, _undo_add), "fix_due": (_apply_fix, _undo
           "set_weights": (_apply_weights, _undo_cfg), "set_dist": (_apply_dist, _undo_cfg)}
 
 
+def proposal(store, thread_id, idx) -> tuple[dict, dict]:
+    """(대화, 제안) — 없는 대화 LookupError, 없는 번호 ValueError."""
+    return _proposal(store, thread_id, idx)
+
+
 def _proposal(store, thread_id, idx) -> tuple[dict, dict]:
     th = find_thread(store, thread_id)
     if th is None:
@@ -1130,6 +1487,8 @@ def apply(store, thread_id, idx, names: list | None = None) -> dict:
     th, p = _proposal(store, thread_id, idx)
     if p.get("applied"):
         raise AgentConflict("이미 반영한 제안이에요")
+    if p.get("type") == "action":   # 앱 동작은 화면의 [실행](features/agent.py → actions.run)으로만 — 계약 22-9
+        raise ValueError("앱 동작은 앱 화면의 채팅에서 [실행]을 눌러 주세요")
     if p.get("type") == "note" or p.get("type") not in _APPLY:
         raise ValueError("설명만 있는 제안이라 반영할 것이 없어요")
     if p.get("rejected_reason"):
@@ -1156,6 +1515,8 @@ def apply(store, thread_id, idx, names: list | None = None) -> dict:
 def undo(store, thread_id, idx) -> dict:
     """반영 전 값으로 되돌린다(항목은 지우고, 연결·개수·비중·학점 비율은 이전 값). 그 사이 직접 바꿨으면 AgentConflict."""
     th, p = _proposal(store, thread_id, idx)
+    if p.get("type") == "action":
+        raise ValueError("앱 동작은 앱 화면의 채팅에서 [되돌리기]를 눌러 주세요")
     if not p.get("applied") or not p.get("_undo"):
         raise AgentConflict("반영하지 않은 제안이에요")
     _APPLY[p["type"]][1](store, p["_undo"])
@@ -1163,6 +1524,28 @@ def undo(store, thread_id, idx) -> dict:
     p.pop("_undo", None)
     ref = f"{thread_id}#{idx}"
     store.data["missed_cases"] = [c for c in store.data.get("missed_cases") or [] if c.get("_ref") != ref]
+    return p
+
+
+def record_action(store, thread_id, idx, res: dict, undo: bool = False) -> dict | None:
+    """actions.run/undo의 결과({"ok", "message", "undo"})를 그 액션 제안에 남긴다(부르는 쪽이 잠금·저장, 계약 22-9).
+    실행: 성공이면 applied·applied_at·result{ok, message}·_undo(되돌릴 값, 화면에 안 나감). 되돌리기: 성공이면 applied false·
+    undone_at. 실패면 result만(다시 누를 수 있게). 그 사이 대화·제안이 지워졌으면 None."""
+    try:
+        _, p = _proposal(store, thread_id, idx)
+    except (LookupError, ValueError):
+        return None
+    if p.get("type") != "action":
+        return None
+    ok = bool(res.get("ok"))
+    msg = _flat(res.get("message"))[:300] or None
+    now = iso(now_local())
+    p["result"] = {"ok": ok, "message": msg}
+    if ok and not undo:
+        p.update(applied=True, applied_at=now, undone_at=None, _undo=res.get("undo"))
+    elif ok:
+        p.update(applied=False, undone_at=now)
+        p.pop("_undo", None)
     return p
 
 
