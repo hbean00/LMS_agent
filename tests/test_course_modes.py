@@ -155,12 +155,13 @@ def test_hidden_course_downloads_and_news(tmp_path):
         store = Store(tmp_path / "state.json")
         store.data["course_prefs"] = {"101": {"mode": "hidden", "at": "2026-11-13T00:00:00+09:00"}}
         core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=tmp_path / "dl")
-        assert store.data.get("downloads", {}) == {}            # 데모 첨부는 모두 101(ASIC)
+        # 데모 첨부는 102의 엑셀 점수표(Quiz2_성적.xlsx, 계약 25-2) 말고는 모두 101(ASIC) → 101 것은 받지 않는다
+        assert sorted(store.data.get("downloads", {})) == ["102:cf8401"]
         store.data["course_prefs"] = {}
         core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=tmp_path / "dl")
         got = store.data["downloads"]
-        # 5 = LearningX 2 + 공지 점수표 2 + 과제 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
-        assert len(got) == 5 and all(m["course_id"] == "101" for m in got.values())
+        # 101의 5 = LearningX 2 + 공지 점수표 2 + 과제 설명에 링크된 Lab5_prelab.pdf(계약 24-3) — 더하기 102 엑셀 1
+        assert len(got) == 6 and sorted(k for k, m in got.items() if m["course_id"] != "101") == ["102:cf8401"]
         app = App(store, tmp_path, cfg={}, scheduler=_Sched())
         mats = app.state()["materials"]["items"]
         ann = [m for m in mats if m["filename"] in ("Lab0_score.pdf", "Lab1_score.pdf")]
@@ -172,9 +173,9 @@ def test_hidden_course_downloads_and_news(tmp_path):
         board = next(m for m in mats if m["filename"] == "Lab6.pdf")
         assert board["board_title"] == "과제" and not board["course_hidden"]
         store.data["course_prefs"] = {"101": {"mode": "hidden", "at": "2026-11-13T00:00:00+09:00"}}
-        assert all(m["course_hidden"] for m in app.state()["materials"]["items"])
+        assert all(m["course_hidden"] == m["key"].startswith("101:") for m in app.state()["materials"]["items"])
         new, changes, mats_news, weights, _ = celebrate._news_parts(store, [], core.now_local(), {"items": {}})
-        assert mats_news == [] and weights == []
+        assert [k for k, _ in mats_news] == ["102:cf8401"] and weights == []   # 101 자료는 빠지고 102 엑셀만
     finally:
         mock.shutdown()
 

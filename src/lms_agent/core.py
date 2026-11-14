@@ -720,20 +720,22 @@ def _attachment_bytes(canvas: Canvas, att: dict, max_bytes: int = 50_000_000) ->
     return get(str(info.get("url") or ""))
 
 
-def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) -> tuple[dict, dict, list[str]]:
-    """새 첨부만 내려받고 PDF는 글자를 뽑는다(materials 모듈). 잠금 없이(네트워크) 실행한다."""
+def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) -> tuple[dict, dict, list[str], set]:
+    """새 첨부만 내려받고 PDF는 글자를, 표 파일은 칸을 뽑는다(materials 모듈). 잠금 없이(네트워크) 실행한다.
+    넷째 값 = 받지 않고 디스크에서 다시 읽은 표 파일의 키(보고의 '받은 수'에서 뺀다, 계약 25-2)."""
     try:
         from .materials import fetch, plan
     except ImportError:
-        return {}, {}, []
+        return {}, {}, [], set()
     from .store import hidden_courses
     shorts = {c["id"]: short_course_name(c["name"]) for c in cache.get("courses", [])}
     hidden = hidden_courses(store.data)   # 제외한 과목은 새로 받지 않는다(받은 파일은 둠, 계약 15장)
     jobs = [j for j in plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder))
             if str(j.get("course_id")) not in hidden]
     if not jobs:
-        return {}, {}, []
-    return fetch(jobs, lambda att: _attachment_bytes(canvas, att), pdf_reader=pdf_reader)
+        return {}, {}, [], set()
+    updates, texts, errors = fetch(jobs, lambda att: _attachment_bytes(canvas, att), pdf_reader=pdf_reader)
+    return updates, texts, errors, {j["key"] for j in jobs if j.get("reread")}
 
 
 def _auto_weights(store, ai_enabled: bool, session=None) -> list[str]:
@@ -854,9 +856,9 @@ def sync(canvas: Canvas, store, full: bool = False, by: str = "app", downloads_t
         mode, reason = "incremental", None
     cache = collect(canvas, lookback_days=store.data["settings"].get("lookback_days", 120),
                     prev=prev, full=(mode == "full"))
-    downloaded, texts, dl_errors = ({}, {}, [])
+    downloaded, texts, dl_errors, reread = ({}, {}, [], set())
     if downloads_to is not None:
-        downloaded, texts, dl_errors = _download_new(canvas, cache, store, downloads_to, pdf_reader)
+        downloaded, texts, dl_errors, reread = _download_new(canvas, cache, store, downloads_to, pdf_reader)
     with store.locked():
         store.reload_if_changed()
         if still_valid is not None and not still_valid():
@@ -869,7 +871,8 @@ def sync(canvas: Canvas, store, full: bool = False, by: str = "app", downloads_t
         store.data["cache"] = cache
         store.data["last_sync"] = cache["fetched_at"]
         report = rebuild(store, mode=mode, reason=reason, by=by)
-        report["downloaded"] = len(downloaded)
+        # 받아 둔 표 파일을 다시 읽은 것(reread, 계약 25-2)은 새로 받은 수에 넣지 않는다
+        report["downloaded"] = len([k for k in downloaded if k not in reread])
         store.data["rules_version"] = RULES_VERSION
         store.write()
     if still_valid is not None and not still_valid():

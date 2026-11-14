@@ -142,7 +142,8 @@ def test_assignment_and_syllabus_links_collected(env):
 
     # 파일 API는 파일마다 한 번(공지와 과제에 함께 링크된 점수표도 한 번)
     asked = files_api(mock)
-    assert sorted(asked) == sorted(set(asked)) and len(asked) == 6
+    # 7 = 위 링크 6 + 데모 디지털신호처리 공지의 엑셀 점수표(Quiz2_성적.xlsx, 계약 25-2)
+    assert sorted(asked) == sorted(set(asked)) and len(asked) == 7
     # 본문은 각 출처가 읽는다 — board 출처로 두 번 읽지 않는다
     keys = {f"{s['type']}:{s['id']}" for s in core._sources(cache, [], now_local())}
     assert "assignment:1011" in keys and not any(k.startswith("board:assignments") or k.startswith("board:syllabus")
@@ -186,7 +187,8 @@ def test_learningx_failure_keeps_one_copy_of_virtual_boards(env):
     cache = store.data["cache"]
     assert any("LearningX" in e for e in cache["errors"])
     virt = [(b["course_id"], b["board_id"]) for b in cache["boards"] if b.get("source") == "canvas"]
-    assert sorted(virt) == [("101", "announcements"), ("101", "assignments")]
+    assert sorted(virt) == [("101", "announcements"), ("101", "assignments"),
+                            ("102", "announcements")]                  # 102 = 데모 엑셀 점수표 공지(계약 25-2)
     assert {b["board_id"] for b in cache["boards"] if b.get("source") != "canvas"} == {9101, 9102}   # 지난 LearningX 그대로
 
 
@@ -215,8 +217,9 @@ def test_downloads_dedupe_pdf_texts_and_search(env, tmp_path):
     r = core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=dl, pdf_reader=pdf_reader())
     got = store.data["downloads"]
     assert sorted(got) == sorted(["101:18001", "101:18002", "101:cf8101", "101:cf8102",   # 지금까지 받던 것
-                                  "101:cf8201", "101:cf8301", "101:cf8302", "103:cf8303"])
-    assert r["downloaded"] == 8 and "101:cf8001" not in got
+                                  "101:cf8201", "101:cf8301", "101:cf8302", "103:cf8303",
+                                  "102:cf8401"])                       # 데모 엑셀 점수표(계약 25-2)
+    assert r["downloaded"] == 9 and "101:cf8001" not in got
     assert "/공지/" in got["101:cf8101"]["path"].replace("\\", "/")      # 공지·과제 둘 다 → 한 번, 먼저 있던 공지 쪽
     m = got["101:cf8301"]
     assert (m["board_id"], m["post"], m["canvas_file_id"], m["board_title"], m["post_title"]) == \
@@ -256,7 +259,7 @@ def test_auto_download_off_and_hidden_course(env, tmp_path):
     store.data["settings"]["auto_download"] = True
     store.data["course_prefs"] = {"101": {"mode": "hidden", "at": "2026-11-13T00:00:00+09:00"}}
     core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=tmp_path / "dl", pdf_reader=pdf_reader())
-    assert sorted(store.data["downloads"]) == ["103:cf8303"]            # 제외한 101은 받지 않는다
+    assert sorted(store.data["downloads"]) == ["102:cf8401", "103:cf8303"]   # 제외한 101은 받지 않는다(102 = 데모 엑셀)
     assert virtual(store.data["cache"], "assignments") is not None     # 목록은 남는다(다시 보이면 바로 받음)
 
 

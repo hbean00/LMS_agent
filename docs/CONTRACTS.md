@@ -1158,3 +1158,63 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
   Esc는 확인 → 목록 → 서랍 순으로 닫는다. 서랍을 열면 닫힌 동안 답이 온 대화 → 이 페이지에서 고른 대화 → 가장 최근 대화. 보내는 단추는 '보내기'. 빈 대화에만 예시 칩 7개('요즘 너무 지쳐요' 포함).
   이어받은 과목은 내 말 아래 "앞 대화의 과목 ‘X’에서 찾았어요"(리드). 자료 화면 상태는 localStorage `lms-agent.materials`(펼친 과목·고른 분류·제외 묶음), 실행 파일은 [열기] 대신 [폴더 열기].
 - **확인 안 된 것**: AI를 켠 채팅(가짜 AI로만), 실제 화면 읽기 프로그램, 실제 계정의 과제 첨부 받기(다음 동기화에서 — 데이터 구조는 실제 데이터에서 확인: Project1·Project2·Report에 링크 2개씩).
+
+## 25. 엑셀(xlsx·xls)·CSV 점수표도 성적 후보로 — v0.7.3 (베타테스터 제보 2026-11-14)
+
+제보: "'디지털통신' 과목은 엑셀로 파일 첨부하였는데 성적 반영이 안 된 것 같다(CLI를 연결 안 해서인지 모르겠다)".
+원인(리드 확인): 첨부 내려받기(materials.fetch)는 **PDF에서만** 글자를 뽑고(`pdf_texts`), 성적 후보(`gradebook.score_file_candidates`)는 그 글자만 읽는다.
+엑셀 첨부는 파일로 저장만 되고 내용을 읽지 않았다(`grades.xlsx_stats`는 있었지만 아무도 부르지 않음). AI(CLI) 연결과는 관계없다.
+
+### 25-0. 파일 소유
+
+| 담당 | 파일 | 테스트 |
+|---|---|---|
+| X 읽기 | `sheets.py`(리드가 만든 빈 모듈 — 이름·모양 고정) | `tests/test_sheets.py`(새) |
+| Y 연결 | `materials.py`(표 파일 글자·표 뽑기, 받아 둔 파일 다시 읽기), `scorefile.py`(표 → 점수 결과), `gradebook.py`(후보·대기 수), `mock_canvas.py`(데모 엑셀 점수표 하나), `grades.py`(xlsx_stats는 sheets를 쓰게 — 기존 테스트 유지) | `tests/test_sheet_scores.py`(새), 기존 유지 |
+| 리드 | 문서·버전·화면 글(필요하면) | 전체 |
+
+### 25-1. 표 파일 읽기 (X, `sheets.py`)
+
+- `read(data: bytes, filename: str = "") -> list[{"name": str, "rows": list[dict[int, str | float]]}]` — 시트마다 행 목록(행 = 열 번호(0부터) → 값, 빈 칸은 없음). 
+  - **xlsx·xlsm**(zip, `xl/workbook.xml`): **모든 시트**(숨긴 시트는 빼고 notes), 공유 문자열·inline 문자열·숫자·수식의 저장된 값·불리언 무시·오류 무시, 셀 주소(r)로 열 위치, 날짜 서식 숫자는 숫자 그대로.
+  - **xls**(옛 엑셀, OLE2 복합 문서 `D0 CF 11 E0`, BIFF8 'Workbook' 스트림): BOUNDSHEET·SST(+CONTINUE)·LABELSST·LABEL·NUMBER·RK·MULRK·FORMULA(숫자 결과)·BOOLERR 무시, 시트마다.
+    BIFF5 이하·암호 걸린 파일은 ValueError("옛 형식(…)이라 읽지 못했어요 — 엑셀에서 .xlsx로 저장해 다시 올려 달라고 …").
+  - **csv·tsv**: UTF-8(BOM)·CP949(EUC-KR) 자동, 구분자 쉼표·탭·세미콜론 추측, 숫자처럼 보이는 칸은 그대로 문자열(숫자 판단은 쓰는 쪽).
+  - 형식은 내용(매직 바이트)으로 먼저, 다음 파일 이름 확장자로. 한도: 시트 20·시트당 행 5,000·열 200(넘으면 자르고 첫 시트 결과에 상관없이 읽은 만큼).
+  - 못 읽으면 `ValueError`(한국어, 파일 내용·주소 없음). 매크로·외부 연결은 실행하지 않는다(값만 읽음).
+- `kind_of(data: bytes, filename: str) -> "xlsx" | "xls" | "csv" | None` — 표 파일인지.
+- `to_text(sheets, limit=60000) -> str` — 검색·마감 찾기·체크리스트용 글: 시트마다 `[시트 이름]` 줄 다음 행마다 칸을 탭으로 이은 줄(숫자는 정수면 정수로).
+
+### 25-2. 받기·연결 (Y)
+
+- `materials.fetch`: 표 파일(`sheets.kind_of`)이면 `sheets.read` → `texts[key] = {"text": to_text, "sheets": 읽은 표(한도 안), "kind": "sheet", "sheet_kind": "xlsx"|"xls"|"csv", …(PDF 기록과 같은 칸)}`,
+  다운로드 기록에 `sheet_ok`·`sheet_notes`(못 읽은 이유). PDF가 아니어도 `pdf_texts`에 함께 둔다(이름은 옛것이지만 '첨부에서 뽑은 글'의 저장소).
+- **받아 둔 파일 다시 읽기**: 동기화 때 `downloads` 중 표 파일인데 `pdf_texts`에 표 기록이 없거나 `sheet_version`이 낮은 것을 디스크에서 다시 읽는다(한 번에 20개, 다운로드 폴더 안·크기 한도 안만).
+  v0.7.2 이전에 받아 둔 '디지털통신' 엑셀도 다음 동기화에서 읽힌다.
+- `scorefile.parse_sheet_results(sheets, student_id, filename) -> list[ScoreFileResult]`: 시트 하나 = 표 하나(PDF의 표 여럿처럼, 시트가 여럿이면 notes). 머리글 행(글자 칸 2개 이상, 위의 제목 줄 건너뜀),
+  학번 열(정확히 같은 값 — 숫자 학번 `2023123456.0`도 — 또는 보이는 자리가 맞는 가린 학번이 한 행뿐), 숫자 열마다 내 값·평균·표본표준편차·인원·등수·최고·최저·만점(머리글 '(10)'·'/10'·'만점/배점' 행),
+  학번·이름·번호·학과·등수·백분율 열과 요약 행(평균·표준편차·합계·최고·최저…)은 통계에서 뺌, 결시·빈 칸은 뺌(notes). 그 뒤는 PDF와 **같은 규칙**(`_table_kind` → 열마다 다른 평가면 `_per_column`, 세부면 합계 열 대표)
+  — 가능하면 `_parse_table`의 뒷부분을 함수로 나눠 함께 쓴다(같은 결과를 두 번 구현하지 않게).
+- `gradebook.score_file_candidates`·`score_files`: 표 기록(`sheets`)은 `parse_sheet_results`로, 후보 key는 지금처럼 `pdf:<첨부 키>(#<평가>)`, `source_title` = 파일 이름, `source_type` "pdf" 그대로(화면 호환) + `file_kind: "sheet"`.
+  점수표로 볼지: 파일 이름(score·점수·성적·grade…) 또는 표 모양(학번 같은 칸 + 숫자 칸인 행 5개 이상).
+- 데모: 한 과목 공지에 엑셀 점수표(`…성적.xlsx`, 데모 학번 줄 포함, 가짜 학번만) 하나 → 데모 성적 화면에 후보가 보이게. 다른 테스트 기대값이 바뀌면 이유를 적고 맞춘다.
+- 개인정보: 표 전체는 이 PC의 state.json에만(PDF 글과 같음), 화면·API·AI에는 내 값과 반 집계만(다른 학생 행·학번은 결과에 넣지 않음 — 지금 규칙).
+
+### 25-3. 구현 결과 (v0.7.3, 서브에이전트 X 읽기·Y 연결 → 리드 통합)
+
+- **읽기(X, `sheets.py`)**: `kind_of`·`read`·`read_with_notes(data, filename) -> (sheets, notes)`(notes는 개수만 — 시트 이름·내용 없음)·`to_text`·`SheetError(ValueError)`·`VERSION = 1`.
+  한도 시트 20·행 5,000·열 200(넘어 잘린 시트에 `"truncated": True`), 받은 파일 100MB, xlsx 압축 풀기 50MB(zip 머리글로 먼저 검사, DOCTYPE·ENTITY 거절), xls 스트림 50MB.
+  보이는 워크시트만(숨김·차트·매크로·빈 시트 뺌 — 숨긴 시트에 점수가 있어도 읽지 않음). 숫자 학번은 `2023123456.0`, 날짜는 일련번호 숫자. 행 키는 정수지만 state.json을 거치면 글자 → 읽는 쪽이 `int(k)`.
+  xls: 자체 OLE2 읽기(512·4096 섹터, DIFAT, 미니 스트림) + BIFF8(BOUNDSHEET·SST+CONTINUE·LABELSST·LABEL·RSTRING·NUMBER·RK·MULRK·FORMULA 숫자/글자). CSV: UTF-8(BOM)·UTF-16(BOM)·CP949, 구분자 쉼표·탭·세미콜론.
+  못 읽는 것(한국어 이유): .xlsb, 엑셀 95 이하, 암호 걸린 파일, .xls 이름의 HTML·XML 표(`E_HTML`) — 모두 "엑셀에서 .xlsx로 저장해 다시 올려 달라고…". 글자 표인 .xls는 CSV로 읽음. 실제 엑셀이 저장한 파일로 확인.
+- **연결(Y)**: `pdf_texts`의 표 기록 = `text`(to_text, 60,000자)·`sheets`(칸 키는 글자, 파일당 20,000칸·칸당 200자)·`kind: "sheet"`·`sheet_kind`·`sheet_version`(1)·`sheet_reader`(sheets.VERSION) + PDF 기록과 같은 칸.
+  표 파일 다운로드 기록에 `sheet_ok`·`sheet_notes`·`sheet_kind`·`sheet_version`·`sheet_reader`·`sheet_read_at`. 모든 점수 파일 후보에 `file_kind`("pdf"|"sheet"), key·source_type은 그대로.
+  다시 읽기는 `materials.plan()`이 만든다(`"reread": True` 일 — 실제 동기화 경로 `core._download_new`도 탄다): 표 확장자이면서 `sheet_version`/`sheet_reader`가 없거나 낮은 것, 한 번에 20개(최신 글 먼저),
+  다운로드 폴더 안(심볼릭 링크 풀어서)·크기 한도 안만, 이름만 표인 파일은 '못 읽음'으로 남겨 매번 다시 시도하지 않음. 동기화 보고의 `downloaded`는 다시 읽은 것을 빼고 센다(리드).
+  `scorefile.parse_sheet_results(sheets, sid, filename, label=None)`: 시트마다 표(한 시트에 머리글이 다른 표가 위아래로 있으면 나눔), 첫 학번 행 바로 위의 글자 칸 2개 이상 행 = 머리글(그 위 제목 줄은 표 이름),
+  학번(정확히 — 대소문자 무시·float 학번 — 또는 보이는 자리가 맞는 가린 학번 한 행), 빼는 열(학번·이름·번호·학과·학년·등수·백분율·비고·날짜·전화, 학번 왼쪽의 1..n, 값이 모두 10000 이상, 대부분 글자),
+  요약 행·만점/배점 행·빈 칸·결시는 통계에서 뺌, 만점은 머리글 '(10)'·'[10]'·'/10'·'10점'·'(max 20)'·'(20점 만점)' 또는 만점/배점 행·제목 '만점 50점'. 그 뒤는 PDF와 같은 규칙(`_col_stats`·`_table_result`·`_split_results`로 나눠 함께 씀 — PDF 결과는 2,970줄 비교로 바뀌지 않음을 확인).
+  점수표로 보는 것: 학번 열 + 점수 열이 있고, 파일 이름에 점수 낱말이 있거나 학번+숫자 행 5개 이상이면서 어떤 열에 서로 다른 값 3개 이상(시간표·명단·O/X 출석표는 후보도 '학번 확인' 안내도 없음).
+  AI 보호: `gradebook._ai_target`·`_dist_target`은 반 전체 점수표(글 모양으로 판단)를 고르지 않는다(AI에는 내 값·반 집계만).
+- **화면(리드)**: 자료 목록의 표 파일에 '표 내용 읽음' / '내용을 못 읽은 표'(이유 = sheet_notes 첫 줄) 꼬리표. 데모: 디지털신호처리 공지 'Quiz 2 결과 안내'(15일 전)의 `Quiz2_성적.xlsx` → 데모 학번으로 'Quiz 2' 9/10·7명 중 2등 후보.
+- **확인 안 된 것**: 베타테스터의 실제 '디지털통신' 파일(형식·모양을 모름 — 위 규칙으로 못 읽으면 자료 화면 꼬리표에 이유가 보인다), 두 줄로 합쳐진 머리글(합치지 않음), 표 안의 날짜로 마감 찾기(일련번호라 안 됨).

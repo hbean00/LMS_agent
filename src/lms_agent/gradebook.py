@@ -144,17 +144,48 @@ def set_student_id(store, value) -> None:
     store.data["settings"]["student_id"] = value.strip()
 
 
+def _is_sheet(rec: dict) -> bool:
+    """pdf_texts의 표 파일 기록(엑셀·CSV, 계약 25-2) — 글이 아니라 칸("sheets")으로 읽는다."""
+    return rec.get("kind") == "sheet" and isinstance(rec.get("sheets"), list)
+
+
+def _sheet_sig(rec: dict) -> tuple:
+    rows = [sh.get("rows") or [] for sh in rec.get("sheets") or [] if isinstance(sh, dict)]
+    return ("sheet", rec.get("sheet_version"), rec.get("sheet_reader"), tuple(len(r) for r in rows),
+            sum(len(x) for r in rows for x in r if isinstance(x, dict)))
+
+
+def _is_score_rec(key: str, rec: dict) -> bool:
+    """점수표인지: PDF는 파일 이름 또는 글 모양(scorefile.is_score_file), 표 파일은 파일 이름 또는 표 모양(is_score_sheet)."""
+    fn = rec.get("filename") or ""
+    if not _is_sheet(rec):
+        return scorefile.is_score_file(fn, rec.get("text") or "")
+    text = rec.get("text") or ""
+    ck = ("is", key, fn, len(text), hash(text), _sheet_sig(rec))
+    if ck not in _SCORE_CACHE:
+        if len(_SCORE_CACHE) > 500:
+            _SCORE_CACHE.clear()
+        _SCORE_CACHE[ck] = scorefile.is_score_sheet(rec.get("sheets"), fn)
+    return _SCORE_CACHE[ck]
+
+
 def _score_results(key: str, rec: dict, sid: str) -> list:
     """점수표 하나 → 평가마다 결과(scorefile.parse_score_results). 'Quiz 1 (10) | Midterm (100)'처럼 열마다 다른 평가면
-    열마다 하나, ASIC 'Lab0' 표처럼 한 평가의 세부 점수면 하나(베타테스터 제보: 열마다 다른 평가가 한 점수로 뭉쳐 자동으로 안 들어감)."""
+    열마다 하나, ASIC 'Lab0' 표처럼 한 평가의 세부 점수면 하나(베타테스터 제보: 열마다 다른 평가가 한 점수로 뭉쳐 자동으로 안 들어감).
+    표 파일 기록(엑셀·CSV)은 칸으로 읽는다(scorefile.parse_sheet_results — 베타테스터 제보: 엑셀 첨부 성적이 반영 안 됨)."""
     text = rec.get("text") or ""
-    ck = (key, sid, len(text), hash(text), rec.get("filename"))
+    sheet = _is_sheet(rec)
+    ck = (key, sid, len(text), hash(text), rec.get("filename")) + (_sheet_sig(rec) if sheet else ())
     if ck not in _SCORE_CACHE:
         if len(_SCORE_CACHE) > 500:
             _SCORE_CACHE.clear()
         fn = rec.get("filename") or ""
-        _SCORE_CACHE[ck] = (scorefile.parse_score_results(text, sid, filename=fn)
-                            if scorefile.is_score_file(fn, text) else [])
+        if sheet:
+            _SCORE_CACHE[ck] = (scorefile.parse_sheet_results(rec.get("sheets"), sid, filename=fn)
+                                if _is_score_rec(key, rec) else [])
+        else:
+            _SCORE_CACHE[ck] = (scorefile.parse_score_results(text, sid, filename=fn)
+                                if scorefile.is_score_file(fn, text) else [])
     return _SCORE_CACHE[ck]
 
 
@@ -164,8 +195,9 @@ def _score_result(key: str, rec: dict, sid: str):
 
 
 def score_file_candidates(store, names: dict | None = None) -> list[dict]:
-    """settings.student_id가 있으면, 첨부 PDF 글(pdf_texts) 중 점수표에서 내 점수·반 집계를 후보로.
-    키는 다른 후보와 같고 "key": "pdf:<첨부 키>"가 더 있다(같은 파일은 같은 key)."""
+    """settings.student_id가 있으면, 첨부 PDF 글·표 파일(pdf_texts) 중 점수표에서 내 점수·반 집계를 후보로.
+    키는 다른 후보와 같고 "key": "pdf:<첨부 키>"가 더 있다(같은 파일은 같은 key). 표 파일도 source_type은 "pdf"(화면 호환),
+    file_kind로 가른다("pdf" | "sheet")."""
     sid = (store.data.get("settings") or {}).get("student_id")
     if not sid:
         return []
@@ -190,13 +222,14 @@ def _score_candidate(key: str, rec: dict, r, cid, names: dict) -> dict:
             "label": r.label, "score": r.score, "max_score": r.max_score, "mean": r.mean, "sd": r.sd,
             "high": r.high, "low": r.low, "n": r.n, "rank": r.rank,
             "sentence": r.sentence, "notes": list(r.notes),
-            "key": ckey}
+            "key": ckey, "file_kind": "sheet" if _is_sheet(rec) else "pdf"}
 
 
 def score_files(store) -> tuple[int, list[str]]:
-    """(학번이 없을 때 받아 둔 성적 PDF 수, 학번은 있는데 내 줄을 못 찾은 성적 PDF 파일 이름) — 계약 14-7.
-    제외한 과목의 파일은 세지 않는다. 여기서는 파일 이름이 점수표(score·점수·성적·grade)인 것만 센다 — 글 모양만으로는
-    명령어 표·주소 표도 점수표처럼 보여 '학번을 확인해 주세요'가 잘못 뜰 수 있다(실제: Midterm_project.pdf)."""
+    """(학번이 없을 때 받아 둔 성적 PDF·표 파일 수, 학번은 있는데 내 줄을 못 찾은 파일 이름) — 계약 14-7·25-2.
+    제외한 과목의 파일은 세지 않는다. PDF는 파일 이름이 점수표(score·점수·성적·grade)인 것만 센다 — 글 모양만으로는
+    명령어 표·주소 표도 점수표처럼 보여 '학번을 확인해 주세요'가 잘못 뜰 수 있다(실제: Midterm_project.pdf).
+    표 파일은 칸이 있어 모양을 믿을 수 있다: 학번 열 + 점수 열이 있고, 파일 이름이 점수표이거나 그런 행이 여럿(is_score_sheet)."""
     sid = (store.data.get("settings") or {}).get("student_id")
     hidden = hidden_courses(store.data)
     waiting, unmatched = 0, []
@@ -204,7 +237,7 @@ def score_files(store) -> tuple[int, list[str]]:
         if not isinstance(rec, dict) or str(rec.get("course_id")) in hidden:
             continue
         fn = rec.get("filename") or ""
-        if not scorefile.is_score_file(fn, ""):
+        if not (_is_score_rec(key, rec) if _is_sheet(rec) else scorefile.is_score_file(fn, "")):
             continue
         if not sid:
             waiting += 1
@@ -259,8 +292,14 @@ def _is_user_edited(cfg: dict | None) -> bool:
     return bool(cfg) and any(not c.get("auto") for c in cfg.get("components") or [])
 
 
+def _class_table(s: dict) -> bool:
+    """첨부에서 뽑은 반 전체 점수표(학번 + 숫자인 줄이 여럿 — PDF 글·엑셀 표 글)는 AI에 보내지 않는다(계약 25-2 개인정보:
+    AI에는 내 값과 반 집계만). 파일 이름은 보지 않는다('성적 평가 기준.pdf'는 AI가 읽어야 할 글)."""
+    return s.get("type") == "pdf" and scorefile.is_score_file(None, s.get("text") or "")
+
+
 def _ai_target(srcs: list[dict]) -> dict | None:
-    cands = [s for s in srcs if _HAS_GRADING.search(s.get("text") or "")]
+    cands = [s for s in srcs if _HAS_GRADING.search(s.get("text") or "") and not _class_table(s)]
     if not cands:
         return None
     syl = [s for s in cands if s.get("type") == "syllabus"]
@@ -421,7 +460,7 @@ _SYLLABUS_NAME = re.compile(r"syllabus|강의\s*계획|계획서|course\s*(?:out
 
 def _dist_target(srcs: list[dict]) -> dict | None:
     """AI에 학점 비율을 물을 글: 강의계획서 > 이름이 강의계획서인 첨부 > 학점 낱말이 있는 가장 긴 글."""
-    cands = [s for s in srcs if _DIST_HINT.search(s.get("text") or "")]
+    cands = [s for s in srcs if _DIST_HINT.search(s.get("text") or "") and not _class_table(s)]
     if not cands:
         return None
     for pick in ([s for s in cands if s.get("type") == "syllabus"],

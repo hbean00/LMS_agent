@@ -300,7 +300,8 @@ def test_state_section(demo_app):
                      "post_title": "Lab3 Assignment", "filename": "Lab3.pdf", "size": len(PDF),
                      "posted_at": first["posted_at"], "downloaded_at": first["downloaded_at"], "pdf_ok": True,
                      "post_key": "board:83605-1", "exists": True, "board_folder": "과제", "course_hidden": False,
-                     "category": "assignment"}                                       # 자료 화면 분류(계약 24-4)
+                     "category": "assignment",                                       # 자료 화면 분류(계약 24-4)
+                     "sheet_ok": None, "sheet_notes": []}                            # PDF라 표 칸은 비어 있음(계약 25-2)
     assert [c["id"] for c in st["categories"]][:2] == ["assignment", "announcement"]
     assert "path" not in first                                                      # 전체 경로는 화면에 주지 않는다
 

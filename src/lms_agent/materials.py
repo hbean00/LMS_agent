@@ -1,9 +1,13 @@
 """첨부 자료 자동 저장: LearningX 게시판 글의 첨부(과제 PDF·강의 슬라이드)와 Canvas 공지·과제 설명·강의계획서에 링크된
 파일(core._linked_files의 가상 게시판, 계약 24-3)을 내 PC 폴더에 받고, PDF는 글자를 뽑아 마감 찾기 출처(type "pdf")로 넘긴다.
+표 파일(엑셀 xlsx·xls, CSV — sheets.kind_of)은 sheets.read로 칸을 읽어 같은 저장소(pdf_texts)에 "kind": "sheet" 기록으로 둔다
+(글 = sheets.to_text, 표 = "sheets" — 성적 후보가 읽음, 계약 25-2).
 계약 10장 "첨부 자료(materials) — B". 기록(downloads·pdf_texts)에는 어느 글에서 받았는지(board_id·post)와 canvas_file_id를 남긴다.
 
 - plan(): 수집 결과(cache["boards"])에서 아직 안 받은 첨부만 고르고 안전한 저장 위치를 정한다(네트워크 없음).
-- fetch(): 실제로 받는다. 받는 함수(get_bytes)와 PDF 읽는 함수(pdf_reader)는 넘겨받는다(테스트는 가짜).
+  받아 둔 표 파일 중 아직 안 읽었거나 옛 규칙(sheet_version)으로 읽은 것은 디스크에서 다시 읽는 일("reread": True)로 더한다
+  (한 번에 SHEET_REREAD_MAX개, 다운로드 폴더 안·크기 한도 안만) — v0.7.3 이전에 받아 둔 엑셀도 다음 동기화에서 읽힌다.
+- fetch(): 실제로 받는다. 받는 함수(get_bytes)와 PDF 읽는 함수(pdf_reader)는 넘겨받는다(테스트는 가짜). 다시 읽기는 받지 않는다.
 - apply()/run(): 결과를 state.json의 downloads·pdf_texts·materials_errors에 합친다.
 
 안전 규칙: 모든 저장 위치는 다운로드 폴더 안이어야 한다(글 제목·파일 이름에 "..", 경로 구분자, Windows 예약 이름이
@@ -18,12 +22,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from . import sheets as _sheets
 from .learningx import safe_name
 from .timeutil import iso, now_local, parse_iso
 
 APP_FOLDER = "LMS Agent"
 MAX_BYTES = 50_000_000            # 파일당 50MB
 PDF_TEXT_LIMIT = 60_000           # pdf_texts에 남기는 글자 수
+SHEET_VERSION = 1                 # 표 기록 만드는 판(이 모듈). 올리면 받아 둔 표 파일을 다음 동기화들에서 다시 읽는다
+SHEET_READER = int(getattr(_sheets, "VERSION", 1) or 1)   # 표 읽기 판(sheets.VERSION) — 올라가도 다시 읽는다
+SHEET_REREAD_MAX = 20             # 한 번의 동기화에서 디스크에서 다시 읽는 표 파일 수
+SHEET_CELL_LIMIT = 20_000         # pdf_texts의 표 기록에 남기는 칸 수(파일마다 — state.json이 커지지 않게)
+SHEET_CELL_CHARS = 200            # 칸마다 남기는 글자 수
+SHEET_EXTS = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv")   # 받아 둔 파일 중 다시 읽어 볼 이름
 # 칸마다 길이 제한. 그래도 폴더 경로가 길어 Windows 한도(파일 259자·폴더 247자)를 넘으면 dest_parts가 더 줄인다.
 LIMITS = {"course": 40, "board": 30, "post": 50, "file": 80}
 PATH_MAX, DIR_MAX = 259, 247
@@ -161,11 +172,13 @@ def _file_id(cid: str, att: dict):
     return (cid, str(fid)) if fid not in (None, "") else None
 
 
-def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path) -> list[dict]:
+def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path,
+         texts: dict | None = None) -> list[dict]:
     """받아야 할 첨부 목록. 같은 key·같은 크기이고 파일이 (지금 폴더 안에) 그대로 있으면 건너뛴다.
     파일을 지웠거나, 교수가 파일을 바꿨거나(크기 다름), 저장 폴더를 바꿨으면 다시 받는다.
     한 파일이 여러 글에 붙거나 링크돼 있으면(같은 key, 또는 같은 과목·같은 Canvas 파일 id — 예: 공지와 과제 설명에 같은 PDF)
-    한 번만 받는다: 이미 받아 둔 쪽이 있으면 그것, 없으면 게시판 순서상 처음 글(LearningX → 공지 → 과제 → 강의계획서)."""
+    한 번만 받는다: 이미 받아 둔 쪽이 있으면 그것, 없으면 게시판 순서상 처음 글(LearningX → 공지 → 과제 → 강의계획서).
+    끝에 받아 둔 표 파일 다시 읽기(reread_jobs, texts = pdf_texts를 주면 표 기록이 빠진 것도)를 더한다."""
     folder = Path(folder)
     taken: set = set()
     jobs: list[dict] = []
@@ -212,7 +225,60 @@ def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path) -
                     "board_id": board_id, "post": post.get("id"), "canvas_file_id": att.get("canvas_file_id"),
                     "posted_at": _posted_at(post), "attachment": att,
                 })
-    return jobs
+    return jobs + reread_jobs(downloads, folder, skip=planned, texts=texts)
+
+
+def _int(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _sheet_due(key: str, m: dict, texts: dict | None) -> bool:
+    """받아 둔 파일을 표로 (다시) 읽어야 하나: 이름이 표 파일이고, 아직 안 읽었거나 옛 판으로 읽었거나,
+    읽었다는데 pdf_texts에 표 기록이 없거나 옛 판(texts를 줄 때만)."""
+    name = str(m.get("filename") or m.get("path") or "").lower()
+    if not name.endswith(SHEET_EXTS):
+        return False
+    if _int(m.get("sheet_version")) < SHEET_VERSION or _int(m.get("sheet_reader")) < SHEET_READER:
+        return True
+    if texts is not None and m.get("sheet_ok"):
+        rec = texts.get(key)
+        return (not isinstance(rec, dict) or rec.get("kind") != "sheet" or _int(rec.get("sheet_version")) < SHEET_VERSION
+                or _int(rec.get("sheet_reader")) < SHEET_READER)
+    return False
+
+
+def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = None,
+                limit: int = SHEET_REREAD_MAX) -> list[dict]:
+    """받아 둔 표 파일을 디스크에서 다시 읽는 일(네트워크 없음): 최근 글의 파일부터 limit개. 파일이 지금 다운로드 폴더 안에
+    그대로 있고 MAX_BYTES 이하일 때만. skip = 이번에 받기로 한 key(받으면서 읽는다)."""
+    folder = Path(folder)
+    out: list[dict] = []
+
+    def newest(kv):
+        m = kv[1]
+        dt = parse_iso(m.get("posted_at")) or parse_iso(m.get("downloaded_at"))
+        return -dt.timestamp() if dt else 0.0
+    for key, m in sorted(((k, m) for k, m in (downloads or {}).items() if isinstance(m, dict)), key=newest):
+        if len(out) >= limit:
+            break
+        if key in skip or not _sheet_due(key, m, texts):
+            continue
+        path = m.get("path")
+        try:
+            if not path or not inside(path, folder) or not os.path.isfile(path) or os.path.getsize(path) > MAX_BYTES:
+                continue
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        out.append({"key": key, "reread": True, "dest": str(path), "root": str(folder),
+                    "filename": str(m.get("filename") or Path(path).name), "size": size,
+                    "course_id": str(m.get("course_id") or ""), "post_key": m.get("post_key"),
+                    "board_id": m.get("board_id"), "post": m.get("post"), "canvas_file_id": m.get("canvas_file_id"),
+                    "posted_at": m.get("posted_at"), "entry": dict(m)})
+    return out
 
 
 # ------------------------------------------------------------ 받기
@@ -247,9 +313,107 @@ def _write_atomic(dest: Path, data: bytes) -> None:
         raise
 
 
+def _limit_sheets(got: list) -> tuple[list[dict], list[str]]:
+    """sheets.read 결과 → 저장할 표(칸 SHEET_CELL_LIMIT개·칸마다 SHEET_CELL_CHARS자까지, 열 번호는 JSON처럼 글자 "0")와 메모."""
+    out, notes, left, cut = [], [], SHEET_CELL_LIMIT, False
+    for sh in got or []:
+        if not isinstance(sh, dict):
+            continue
+        extra = sh.get("notes")
+        notes += [str(n)[:200] for n in (extra if isinstance(extra, (list, tuple)) else [extra] if extra else [])]
+        rows = []
+        for r in sh.get("rows") or []:
+            if left <= 0:
+                cut = True
+                break
+            row = {}
+            for c, v in (r.items() if isinstance(r, dict) else []):
+                if isinstance(v, str):
+                    v = v[:SHEET_CELL_CHARS]
+                elif isinstance(v, bool) or not isinstance(v, (int, float)):
+                    continue
+                row[str(c)] = v
+            left -= len(row)
+            rows.append(row)
+        out.append({"name": str(sh.get("name") or "")[:100], "rows": rows})
+    if cut:
+        notes.append(f"표가 커서 앞부분(칸 {SHEET_CELL_LIMIT:,}개)만 남겼습니다")
+    return out, notes
+
+
+def read_sheet_file(data: bytes, name: str) -> dict | None:
+    """표 파일이면 {"kind", "ok", "notes", "text", "sheets"}, 아니면 None. 읽지 못한 이유는 notes(파일 내용·주소 없음)."""
+    try:
+        kind = _sheets.kind_of(data, name)
+    except Exception:
+        kind = None
+    if kind is None:
+        return None
+    try:
+        if hasattr(_sheets, "read_with_notes"):
+            got, extra = _sheets.read_with_notes(data, name)   # 뺀 시트·자른 것·인코딩 메모(내용 없음)
+        else:
+            got, extra = _sheets.read(data, name), []
+    except ValueError as e:     # sheets가 만든 한국어 이유(옛 형식·암호 등 — 파일 내용·경로 없음)
+        return {"kind": kind, "ok": False, "notes": [str(e)[:200] or "표 파일을 읽지 못했습니다"], "text": "", "sheets": []}
+    except Exception:
+        return {"kind": kind, "ok": False, "notes": ["표 파일을 읽지 못했습니다"], "text": "", "sheets": []}
+    stored, notes = _limit_sheets(got)
+    notes = [str(n)[:200] for n in extra or []] + notes
+    try:
+        text = _sheets.to_text(got, PDF_TEXT_LIMIT)
+    except Exception:
+        text = ""
+    ok = any(sh["rows"] for sh in stored)
+    if not ok and not notes:
+        notes = ["표 파일에서 칸을 찾지 못했습니다(빈 파일)"]
+    return {"kind": kind, "ok": ok, "notes": notes, "text": (text or "")[:PDF_TEXT_LIMIT], "sheets": stored}
+
+
+def _sheet_record(job: dict, got: dict) -> dict:
+    """pdf_texts의 표 기록(PDF 기록과 같은 칸 + 표)."""
+    return {"text": got["text"], "sheets": got["sheets"], "kind": "sheet", "sheet_kind": got["kind"],
+            "sheet_version": SHEET_VERSION, "sheet_reader": SHEET_READER,
+            "course_id": job.get("course_id"), "filename": job.get("filename"),
+            "post_key": job.get("post_key"), "board_id": job.get("board_id"), "post": job.get("post"),
+            "canvas_file_id": job.get("canvas_file_id"), "posted_at": job.get("posted_at")}
+
+
+def _apply_sheet(entry: dict, got: dict, at: str) -> None:
+    entry.update(sheet_ok=bool(got["ok"]), sheet_notes=list(got["notes"]), sheet_kind=got["kind"],
+                 sheet_version=SHEET_VERSION, sheet_reader=SHEET_READER, sheet_read_at=at)
+
+
+def _reread(job: dict, max_bytes: int, at: str) -> tuple[dict, dict | None] | None:
+    """받아 둔 표 파일을 디스크에서 다시 읽는다 → (downloads 기록, 표 기록 | None). 파일이 없거나 폴더 밖·너무 크면 None(그대로 둠)."""
+    path = Path(job["dest"])
+    try:
+        if not inside(path, job["root"]) or not path.is_file() or path.stat().st_size > max_bytes:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if len(data) > max_bytes:
+        return None
+    entry = dict(job.get("entry") or {})
+    got = _sheet_or_marker(data, job.get("filename") or path.name)
+    _apply_sheet(entry, got, at)
+    return entry, (_sheet_record(job, got) if got["ok"] else None)
+
+
+def _sheet_or_marker(data: bytes, name: str) -> dict | None:
+    """read_sheet_file + 이름만 표 파일(.xlsx 등)인데 내용이 아닌 것은 '읽지 않음' 표시(다음 동기화에서 다시 보지 않게)."""
+    got = read_sheet_file(data, name)
+    if got is None and str(name or "").lower().endswith(SHEET_EXTS):
+        got = {"kind": None, "ok": False, "notes": ["표 파일 형식이 아니어서 읽지 않았습니다"], "text": "", "sheets": []}
+    return got
+
+
 def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf_reader: Callable | None = None,
           now: datetime | None = None) -> tuple[dict, dict, list[str]]:
     """jobs(plan 결과)를 받아 저장한다. 한 파일이 실패해도 나머지는 계속.
+    PDF는 pdf_reader로 글자를, 표 파일(엑셀·CSV)은 sheets로 칸을 읽는다. 다시 읽기 일("reread")은 받지 않고 디스크에서 읽는다
+    (downloads 기록은 그대로 두고 sheet_* 칸만 바뀜 — downloaded_at도 그대로).
     → (downloads에 합칠 것, pdf_texts에 합칠 것, 한국어 오류 목록)."""
     at = iso(now or now_local())
     limit_mb = f"{max_bytes / 1_000_000:g}MB"
@@ -258,6 +422,13 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
     errors: list[str] = []
     taken: set = set()
     for job in jobs:
+        if job.get("reread"):
+            done = _reread(job, max_bytes, at)
+            if done is not None:
+                updates[job["key"]] = done[0]
+                if done[1] is not None:
+                    texts[job["key"]] = done[1]
+            continue
         name = job.get("filename") or "첨부"
         if job.get("size") is not None and job["size"] > max_bytes:
             errors.append(f"'{name}': {limit_mb}보다 커서 받지 않았습니다")
@@ -308,6 +479,12 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
             if ok:
                 texts[job["key"]] = {"text": text[:PDF_TEXT_LIMIT], "course_id": job["course_id"], "filename": name,
                                      "post_key": job["post_key"], **place, "posted_at": job.get("posted_at")}
+        elif not is_pdf:
+            got = _sheet_or_marker(bytes(data), name)
+            if got is not None:
+                _apply_sheet(entry, got, at)
+                if got["ok"]:
+                    texts[job["key"]] = _sheet_record({**job, "filename": name}, got)
         updates[job["key"]] = entry
     return updates, texts, errors
 
@@ -333,9 +510,16 @@ def apply(data: dict, updates: dict, texts: dict, errors: list[str]) -> None:
 
 def run(data: dict, folder: Path, get_bytes: Callable, pdf_reader: Callable | None = None,
         max_bytes: int = MAX_BYTES, now: datetime | None = None) -> dict:
-    """한 번에: cache["boards"] → plan → fetch → apply. 저장(store.save)은 부르는 쪽이 한다."""
+    """한 번에: cache["boards"] → plan(+ 받아 둔 표 파일 다시 읽기) → fetch → apply. 저장(store.save)은 부르는 쪽이 한다.
+    보고: planned·downloaded = 이번에 내려받은 것, pdf_texts = 이번에 만든 글·표 기록, reread = 다시 읽은 표 파일(있을 때만)."""
     cache = data.get("cache") or {}
-    jobs = plan(cache.get("boards") or [], data.get("downloads") or {}, short_names_of(cache), Path(folder))
+    jobs = plan(cache.get("boards") or [], data.get("downloads") or {}, short_names_of(cache), Path(folder),
+                texts=data.get("pdf_texts") or {})
     updates, texts, errors = fetch(jobs, get_bytes, max_bytes=max_bytes, pdf_reader=pdf_reader, now=now)
     apply(data, updates, texts, errors)
-    return {"planned": len(jobs), "downloaded": len(updates), "pdf_texts": len(texts), "errors": errors}
+    again = {j["key"] for j in jobs if j.get("reread")}
+    report = {"planned": len(jobs) - len(again), "downloaded": len(set(updates) - again), "pdf_texts": len(texts),
+              "errors": errors}
+    if again & set(updates):
+        report["reread"] = len(again & set(updates))
+    return report

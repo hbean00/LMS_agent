@@ -5674,6 +5674,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
           dd ? h('span', null, fmtShort(dd) + ' 받음') : null,
           isPdf && f.pdf_ok === true ? tag('PDF 내용 읽음', 'quiet', '이 PDF의 내용도 마감 찾기에 썼어요') : null,
           isPdf && f.pdf_ok === false ? tag('내용을 못 읽은 PDF', 'dash', '스캔한 PDF처럼 글자를 뽑을 수 없어 마감 찾기에 쓰지 못했어요. 직접 열어 확인하세요.') : null,
+          f.sheet_ok === true ? tag('표 내용 읽음', 'quiet', '이 표(엑셀·CSV)의 내용을 성적 후보·마감 찾기에 썼어요') : null,
+          f.sheet_ok === false ? tag('내용을 못 읽은 표', 'dash', (Array.isArray(f.sheet_notes) && f.sheet_notes[0]) ? String(f.sheet_notes[0]) : '이 표 파일을 읽지 못했어요. 직접 열어 확인하세요.') : null,
           missing ? h('span', { class: 'warn' }, '파일이 없어요(다음 동기화 때 다시 받아요)') : null,
           runnable && !missing ? h('span', null, '실행 파일이라 앱에서 열지 않아요') : null),
         deadlineLinks(links || [], '이 파일')),

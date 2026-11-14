@@ -99,6 +99,8 @@ def materials_state(app, ctx):
             "size": m.get("size"), "posted_at": m.get("posted_at"), "downloaded_at": m.get("downloaded_at"),
             "pdf_ok": m.get("pdf_ok"), "post_key": m.get("post_key"), "exists": bool(path) and os.path.isfile(path),
             "category": category_of(m.get("post_key"), m.get("board_title")),
+            # 표 파일(엑셀·CSV, 계약 25-2): 내용을 읽었는지와 못 읽은 이유(화면 꼬리표)
+            "sheet_ok": m.get("sheet_ok"), "sheet_notes": list(m.get("sheet_notes") or [])[:3],
         })
     items.sort(key=lambda x: (x["posted_at"] or x["downloaded_at"] or "", x["downloaded_at"] or ""), reverse=True)
     return {"folder": str(folder_of(app)), "auto_download": bool(_settings(app).get("auto_download", True)),

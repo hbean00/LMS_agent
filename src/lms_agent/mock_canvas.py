@@ -160,6 +160,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     scores_post = (f'<p>Lab0 and Lab1 scores are uploaded. Please find your row by your student ID.</p>'
                    f'<p><a href="{base_url}/courses/101/files/{SCORE_FILES[0]}/download">Lab0_score.pdf</a> '
                    f'<a href="/courses/101/files/{SCORE_FILES[1]}/download?wrap=1">Lab1_score.pdf</a></p>')
+    # 엑셀 점수표 공지(계약 25-2, 베타테스터 제보 '디지털통신' 모양): 본문에는 파일 링크만 → 받아서 표로 읽는다
+    sheet_post = ('<p>Quiz 2 결과를 엑셀 파일로 올립니다. 학번으로 본인 줄을 확인하세요.</p>'
+                  f'<p><a href="/courses/102/files/{SHEET_FILE}/download?wrap=1">Quiz2_성적.xlsx</a></p>')
     announcements = [
         announcement(101, 9001, at(-3, 10), "LAB4 보고서 제출 안내",
                      f"<p>LAB4 보고서 마감: {md(6)}({WEEKDAYS[lab4_due.weekday()]}) 23:59</p>"
@@ -177,6 +180,7 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         announcement(101, 9007, at(-20, 10), "Lab0, Lab1 Score Announcement", scores_post),
         announcement(101, 9008, at(-9, 11), "Announcement about Midterm Week", midterm_week),
         announcement(101, 9009, at(-12, 15), "Final week schedule", final_week),
+        announcement(102, 9010, at(-15, 16), "Quiz 2 결과 안내", sheet_post),
     ]
     conversations = [
         conversation(7001, "LAB4 보고서 마감 연장", "course_101", "ASIC설계", at(-1, 20),
@@ -212,8 +216,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         }}}
     files = {8001: lab6_pdf, 8002: slides,
              SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1),
-             PRELAB_FILE: prelab_pdf()}
-    file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf", PRELAB_FILE: "Lab5_prelab.pdf"}
+             PRELAB_FILE: prelab_pdf(), SHEET_FILE: score_table_xlsx()}
+    file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf", PRELAB_FILE: "Lab5_prelab.pdf",
+                  SHEET_FILE: "Quiz2_성적.xlsx"}
     return {
         "user": {"id": USER_ID, "name": "데모 학생", "short_name": "데모 학생",
                  "sortable_name": "학생, 데모", "login_id": "demo"},
@@ -241,6 +246,108 @@ def score_table_pdf(label: str, shift: int = 0) -> bytes:
         a, b = max(0, a - shift * (i % 3)), min(30, b + shift * (i % 2))
         lines.append(f"{i} {2026000000 + i} {a} {b} {a + b}")
     return tiny_pdf(lines)
+
+
+SHEET_FILE = 8401          # '디지털신호처리' 공지 'Quiz 2 결과 안내'의 엑셀 점수표 Quiz2_성적.xlsx(계약 25-2)
+# (문항1, 문항2) — 6번은 결시. 학번은 가짜(2026000001…, 숫자 칸), 데모 학번 2026000002 = 둘째 줄(4 + 5 = 9점)
+_QUIZ_ROWS = [(3, 5), (4, 5), (2, 6), (4, 6), (1, 3), None, (3, 4), (2, 5)]
+_FAKE_NAMES = ["김*민", "이*수", "박*진", "최*아", "정*우", "강*희", "조*현", "윤*서"]
+
+
+def score_table_xlsx() -> bytes:
+    """엑셀 점수표(베타테스터 제보 모양): 제목 줄 → 빈 줄 → 머리글(번호·학번·이름·문항1 (4)·문항2 (6)·합계 (10)) →
+    학생마다 한 줄(학번은 숫자 칸) → 평균 줄."""
+    rows = [["디지털신호처리 Quiz 2 결과"], [], ["번호", "학번", "이름", "문항1 (4)", "문항2 (6)", "합계 (10)"]]
+    done = []
+    for i, (name, sc) in enumerate(zip(_FAKE_NAMES, _QUIZ_ROWS), 1):
+        if sc is None:
+            rows.append([i, 2026000000 + i, name, "결시", None, None])
+            continue
+        rows.append([i, 2026000000 + i, name, sc[0], sc[1], sc[0] + sc[1]])
+        done.append(sc)
+    rows.append(["평균", None, None] + [round(sum(x) / len(x), 2) for x in
+                                       zip(*[(a, b, a + b) for a, b in done])])
+    return tiny_xlsx([("Quiz2", rows)])
+
+
+def tiny_xlsx(sheets: list) -> bytes:
+    """작은 엑셀(xlsx) 파일(표준 라이브러리 zip + XML). sheets = [(시트 이름, 행 목록)], 행 = [값…]:
+    str → 공유 문자열, ("i", s) → 인라인 문자열, 숫자 → 숫자 칸, None → 빈 칸. 날짜는 고정이라 같은 내용이면 같은 바이트."""
+    import io
+    import zipfile
+    from xml.sax.saxutils import escape, quoteattr
+
+    shared: list = []
+    index: dict = {}
+
+    def col(i: int) -> str:
+        s, i = "", i + 1
+        while i:
+            i, r = divmod(i - 1, 26)
+            s = chr(65 + r) + s
+        return s
+
+    def sheet_xml(rows) -> str:
+        out = []
+        for r, row in enumerate(rows, 1):
+            cells = []
+            for c, v in enumerate(row):
+                ref = f"{col(c)}{r}"
+                if v is None:
+                    continue
+                if isinstance(v, tuple):
+                    cells.append(f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(v[1]))}</t></is></c>')
+                elif isinstance(v, str):
+                    if v not in index:
+                        index[v] = len(shared)
+                        shared.append(v)
+                    cells.append(f'<c r="{ref}" t="s"><v>{index[v]}</v></c>')
+                else:
+                    cells.append(f'<c r="{ref}"><v>{v!r}</v></c>')
+            out.append(f'<row r="{r}">{"".join(cells)}</row>')
+        return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                f'<sheetData>{"".join(out)}</sheetData></worksheet>')
+
+    main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+    ct = "application/vnd.openxmlformats-officedocument.spreadsheetml"
+    bodies = [sheet_xml(rows) for _, rows in sheets]
+    parts = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            f'<Override PartName="/xl/workbook.xml" ContentType="{ct}.sheet.main+xml"/>'
+            + "".join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="{ct}.worksheet+xml"/>'
+                      for i in range(1, len(sheets) + 1))
+            + f'<Override PartName="/xl/sharedStrings.xml" ContentType="{ct}.sharedStrings+xml"/></Types>'),
+        "_rels/.rels": (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="{pkg}">'
+                        f'<Relationship Id="rId1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+        "xl/workbook.xml": (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="{main}" xmlns:r="{rel}"><sheets>'
+            + "".join(f'<sheet name={quoteattr(str(name))} sheetId="{i}" r:id="rId{i}"/>'
+                      for i, (name, _) in enumerate(sheets, 1)) + "</sheets></workbook>"),
+        "xl/_rels/workbook.xml.rels": (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="{pkg}">'
+            + "".join(f'<Relationship Id="rId{i}" Type="{rel}/worksheet" Target="worksheets/sheet{i}.xml"/>'
+                      for i in range(1, len(sheets) + 1))
+            + f'<Relationship Id="rId{len(sheets) + 1}" Type="{rel}/sharedStrings" Target="sharedStrings.xml"/>'
+            "</Relationships>"),
+    }
+    for i, body in enumerate(bodies, 1):
+        parts[f"xl/worksheets/sheet{i}.xml"] = body
+    parts["xl/sharedStrings.xml"] = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="{main}" '
+                                     f'count="{len(shared)}" uniqueCount="{len(shared)}">'
+                                     + "".join(f"<si><t>{escape(s)}</t></si>" for s in shared) + "</sst>")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, body in parts.items():
+            z.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), body.encode("utf-8"),
+                       compress_type=zipfile.ZIP_DEFLATED)
+    return buf.getvalue()
 
 
 def prelab_pdf() -> bytes:
@@ -292,6 +399,17 @@ def _oauth_signature(url: str, params: list) -> str:
     text = "&".join(["POST", enc(url), enc("&".join(f"{k}={v}" for k, v in pairs))])
     digest = hmac.new((enc(LTI_SECRET) + "&").encode(), text.encode(), hashlib.sha1).digest()
     return base64.b64encode(digest).decode()
+
+
+_TYPES = {".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ".xls": "application/vnd.ms-excel", ".csv": "text/csv"}
+
+
+def _content_type(data: dict, fid: int) -> tuple[str, str]:
+    """(Content-Type, 확장자) — 파일 이름(file_names)의 확장자로. 모르면 PDF(예전과 같음)."""
+    name = str((data.get("file_names") or {}).get(fid) or "").lower()
+    ext = next((e for e in _TYPES if name.endswith(e)), None)
+    return (_TYPES[ext], ext) if ext else ("application/pdf", ".pdf")
 
 
 def _post_summary(post: dict, board_id: int) -> dict:
@@ -584,7 +702,8 @@ class _Handler(BaseHTTPRequestHandler):
         body = self.server.data.get("files", {}).get(fid)
         if body is None:
             return self._not_found()
-        self._send_bytes(200, body, "application/pdf", {"Content-Disposition": f'attachment; filename="{fid}.pdf"'})
+        ctype, ext = _content_type(self.server.data, fid)
+        self._send_bytes(200, body, ctype, {"Content-Disposition": f'attachment; filename="{fid}{ext}"'})
 
     def _file_info(self, fid: int) -> None:
         """Canvas `GET /api/v1/files/:id` (Canvas 토큰) → url은 verifier가 든 다운로드 주소."""
@@ -596,7 +715,8 @@ class _Handler(BaseHTTPRequestHandler):
             (a.get("filename") for lx in srv.data.get("learningx", {}).values()
              for posts in lx["posts"].values() for p in posts for a in p.get("attachments") or []
              if a.get("canvas_file_id") == fid), None) or f"file_{fid}.pdf"
-        self._send(200, {"id": fid, "display_name": name, "filename": name, "content-type": "application/pdf",
+        self._send(200, {"id": fid, "display_name": name, "filename": name,
+                         "content-type": _content_type(srv.data, fid)[0],
                          "size": len(body), "locked": False, "hidden": False,
                          "url": f"{srv.base_url}/files/{fid}/download?download_frd=1&verifier=v{fid}"})
 

@@ -9,6 +9,9 @@ PDF에서 뽑은 글(materials의 pdf_texts)은 줄이 대략 표의 행을 따�
 
 평가가 하나인지 여럿인지(docs/CORNER_CASES.md 가족 5): 한 PDF에 표가 여럿이면 표마다, 한 표에 서로 다른 평가가 열마다 있으면
 ('Quiz 1 (10) | Midterm (100)', 합계 열 없음) 열마다 결과를 낸다 — parse_score_results. parse_score_text는 예전처럼 결과 하나.
+
+표 파일(엑셀 xlsx·xls, CSV — sheets.read가 읽은 칸, 계약 25-2)은 parse_sheet_results: 시트 하나 = 표 하나로 열마다 집계한 뒤
+PDF와 같은 뒷부분(_col_stats → _table_result, _split_results)을 함께 쓴다. 점수표인지는 is_score_sheet.
 """
 from __future__ import annotations
 
@@ -379,18 +382,26 @@ def parse_score_results(text: str, student_id: str, label: str | None = None,
     lines = text.splitlines()
     tables = _split_tables(lines) or [(0, len(lines), None)]
     want = label or label_from_filename(filename)
-    out: list[ScoreFileResult] = []
+    parsed = []
     for i, (a, b, lab) in enumerate(tables):
         seg = lines[a:b]
         r = _parse_table(seg, "\n".join(seg), sid, lab or want, filename)
-        if r is None:
-            continue
-        if len(tables) > 1:
-            r.notes.append(f"PDF에 점수표가 {len(tables)}개 — 표마다 따로 읽음")
+        if r is not None:
+            parsed.append((r, lab or r.label or f"표 {i + 1}", lab if len(tables) > 1 else None))
+    return _split_results(parsed, len(tables), f"PDF에 점수표가 {len(tables)}개 — 표마다 따로 읽음")
+
+
+def _split_results(parsed: list, n_tables: int, multi_note: str) -> list[ScoreFileResult]:
+    """표마다 읽은 결과 → 평가마다 결과(PDF·표 파일 공통). parsed = [(결과, 세부 표일 때 key, 열마다일 때 key 앞머리)].
+    열마다 다른 평가인 표는 열마다 결과(_per_column), 한 평가의 세부면 그 표 하나. 결과가 하나면 key None, 겹치면 ' (2)'."""
+    out: list[ScoreFileResult] = []
+    for r, key, prefix in parsed:
+        if n_tables > 1:
+            r.notes.append(multi_note)
         if _table_kind(r.columns) == "separate":
-            out.extend(_per_column(r, lab if len(tables) > 1 else None))
+            out.extend(_per_column(r, prefix))
         else:
-            r.key = lab or r.label or f"표 {i + 1}"
+            r.key = key
             out.append(r)
     if len(out) == 1:
         out[0].key = None
@@ -505,11 +516,7 @@ def _parse_table(lines: list[str], text: str, sid: str, label: str | None,
         values = [v[j] for _, v in good if v[j] is not None]
         if not values or _RANK_HEAD.match(names[j]):
             continue   # 등수 칸은 점수가 아니다(클수록 나쁨)
-        me = my[j]
-        cols.append({"name": names[j], "mine": me, "mean": round(statistics.fmean(values), 3),
-                     "sd": round(statistics.stdev(values), 3) if len(values) >= 2 else None, "n": len(values),
-                     "rank": (1 + sum(x > me for x in values)) if me is not None else None,
-                     "high": max(values), "low": min(values), "max_score": maxes[j]})
+        cols.append(_col_stats(names[j], values, my[j], maxes[j]))
         col_at.append(j)
     if not cols or max(c["n"] for c in cols) < 2:
         return None
@@ -522,7 +529,22 @@ def _parse_table(lines: list[str], text: str, sid: str, label: str | None,
         notes.append("평균은 PDF에 적힌 값(표준편차·등수는 읽은 행으로 계산)")
         if off:
             notes.append("PDF에 적힌 평균과 계산한 평균이 다름 — 일부 행을 못 읽었을 수 있음(표준편차·등수 확인 필요)")
-    if any(c["n"] < len(good) for c in cols):
+    return _table_result(cols, notes, len(good), label, filename, gm)
+
+
+def _col_stats(name: str, values: list, me, max_score) -> dict:
+    """열 하나의 집계(PDF·표 파일 공통): 내 값·평균·표본표준편차·인원·내 등수(1 = 가장 높음)·최고·최저·만점."""
+    return {"name": name, "mine": me, "mean": round(statistics.fmean(values), 3),
+            "sd": round(statistics.stdev(values), 3) if len(values) >= 2 else None, "n": len(values),
+            "rank": (1 + sum(x > me for x in values)) if me is not None else None,
+            "high": max(values), "low": min(values), "max_score": max_score}
+
+
+def _table_result(cols: list[dict], notes: list[str], n_rows: int, label: str | None, filename: str | None,
+                  gm: float | None) -> ScoreFileResult:
+    """열 집계 → 결과 하나(PDF·표 파일 공통): 대표 열 = 합계·점수 낱말이 있는 마지막 열(없으면 마지막 열),
+    대표 열에 만점이 없으면 글 전체의 '만점 N점'(gm)."""
+    if any(c["n"] < n_rows for c in cols):
         notes.append("빈 칸·결시는 통계에서 뺌")
     prim = next((c for c in reversed(cols) if _TOTAL_HEAD.search(c["name"])), cols[-1])
     if prim["max_score"] is None and gm is not None:
@@ -535,3 +557,308 @@ def _parse_table(lines: list[str], text: str, sid: str, label: str | None,
                            mean=prim["mean"], sd=prim["sd"], n=prim["n"], rank=prim["rank"],
                            high=prim["high"], low=prim["low"], columns=cols, sentence=_sentence(label, prim, len(cols) > 1),
                            notes=notes)
+
+
+# ---------------------------------------------------------------- 표 파일(엑셀 xlsx·xls, CSV) — 계약 25-2
+# sheets.read의 모양: [{"name": 시트 이름, "rows": [{열 번호: 글자 | 숫자}]}]. state.json을 거치면 열 번호가 글자("0")가 된다.
+# 시트 하나 = 표 하나. 머리글 → 학번 열 → 숫자 열마다 집계 → 그 뒤는 PDF와 같은 규칙(_table_kind → _per_column / 대표 열).
+
+_CELL_NUM = re.compile(r"^\(?([-+]?\d+(?:\.\d+)?)\)?\s*(?:점|pts?)?$")
+# 점수가 아닌 열의 머리글(학번·이름·번호·학과·등수·백분율·비고·날짜·연락처) — 칸 전체(또는 괄호를 뗀 것)가 이 말일 때
+_SHEET_SKIP_HEAD = re.compile(
+    r"^(?:학번|수험\s*번호|student(?:\s*(?:id|no\.?|number|name))?|id|no\.?|num(?:ber)?|번호|순번|연번|#|"
+    r"이름|성명|성|명|name|학과|전공|소속|department|dept\.?|major|학년|분반|section|"
+    r"등수|순위|석차|rank(?:ing)?|place|%|％|percent(?:age)?|pct|백분율|퍼센트|백분위|"
+    r"비고|remarks?|notes?|memo|메모|e-?mail|이메일|전화(?:번호)?|연락처|phone|날짜|일자|일시|date|time|"
+    r"제출\s*(?:일|일시|시각)?|submitted(?:\s*at)?)$", re.I)
+_ID_WORD = re.compile(r"학번|수험\s*번호|student\s*(?:id|no|number)|^\s*id\s*$", re.I)
+_HEAD_MAX = (re.compile(r"^(?P<name>.*?)\s*[(\[]\s*(?P<m>\d{1,4}(?:\.\d+)?)\s*(?:점)?\s*[)\]]$"),  # 'Quiz 1 (10)'·'[20]'
+             re.compile(r"^(?P<name>.*?)\s*/\s*(?P<m>\d{1,4}(?:\.\d+)?)$"),                         # 'Quiz1/10'
+             # '과제 10점'·'과제10점'·'중간 100점 만점'('Quiz 2 10점'의 2는 이름, '100점'만 있으면 만점으로 보지 않음)
+             re.compile(r"^(?P<name>.*?(?:[^\d\s]|\S\s))\s*(?P<m>\d{1,4}(?:\.\d+)?)\s*점(?:\s*만점)?$"))
+SHEET_SHAPE_ROWS = 5          # 파일 이름에 점수 낱말이 없을 때 점수표로 볼 최소 행 수(학번 + 숫자)
+
+
+def _col_letter(i: int) -> str:
+    s, i = "", i + 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _cell(v):
+    """칸 값 → 글자(앞뒤 공백 없음) | 숫자(float) | None(빈 칸·불리언·NaN·무한대)."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        v = float(v)
+        return v if v == v and v not in (float("inf"), float("-inf")) else None
+    s = str(v).strip()
+    return s or None
+
+
+def _num_cell(v) -> float | None:
+    if isinstance(v, float):
+        return v
+    if isinstance(v, str):
+        m = _CELL_NUM.match(v)
+        return float(m.group(1)) if m else None
+    return None
+
+
+def _id_cell(v) -> str | None:
+    """학번처럼 보이는 칸 → 글자. 숫자로 저장된 학번(2023123456.0)은 정수 글자로."""
+    if isinstance(v, float):
+        if v > 0 and v.is_integer():
+            s = str(int(v))
+            return s if 6 <= len(s) <= 12 else None
+        return None
+    if isinstance(v, str):
+        s = re.sub(r"\s+", "", v)
+        return s if _is_id(s) else None
+    return None
+
+
+def _text(v) -> bool:
+    return isinstance(v, str) and _num_cell(v) is None
+
+
+def _lead_text(row: dict) -> str:
+    return next((row[c] for c in sorted(row) if _text(row[c])), "")
+
+
+def _fmt(v) -> str:
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+def _sheet_rows(sheet: dict) -> list[dict]:
+    rows = []
+    for r in (sheet or {}).get("rows") or []:
+        row = {}
+        for k, v in (r.items() if isinstance(r, dict) else []):
+            try:
+                c = int(k)
+            except (TypeError, ValueError):
+                continue
+            v = _cell(v)
+            if v is not None and c >= 0:
+                row[c] = v
+        rows.append(row)
+    return rows
+
+
+def _head_name(raw: str) -> tuple[str, float | None]:
+    """머리글 칸 → (이름, 만점). 'Quiz 1 (10)'·'Quiz1/10'·'과제(10점)'·'Prelab (max 20)'·'중간 100점 만점'."""
+    s = re.sub(r"\s+", " ", _norm_header(raw)).strip()
+    for rx in _HEAD_MAX:
+        m = rx.match(s)
+        if m and m.group("name").strip():
+            return m.group("name").strip(), float(m.group("m"))
+    return s, None
+
+
+def _skip_head(raw: str) -> bool:
+    s = re.sub(r"\s+", " ", str(raw or "")).strip()
+    bare = re.sub(r"\s*[(\[][^)\]]*[)\]]\s*", " ", s).strip()
+    return bool(s) and (bool(_SHEET_SKIP_HEAD.match(s)) or bool(bare and _SHEET_SKIP_HEAD.match(bare))
+                        or bool(_ID_WORD.search(s)))
+
+
+def _head_like(row: dict) -> bool:
+    """머리글처럼 보이는 행: 글자 칸 2개 이상이고 요약(평균…)·만점 행이 아님."""
+    lead = _lead_text(row)
+    return sum(_text(v) for v in row.values()) >= 2 and not (_SUMMARY.match(lead) or _MAX_ROW.match(lead))
+
+
+def _row_sig(row: dict | None) -> tuple:
+    return tuple((c, re.sub(r"\s+", "", _fmt(v)).lower()) for c, v in sorted((row or {}).items()))
+
+
+def _sheet_tables(sheet: dict) -> list[dict]:
+    """시트 하나 → 점수표 모양(학번 열 + 점수 열)인 표들. 보통 하나지만, 한 시트에 표가 위아래로 여럿이면
+    (학번 행 사이에 다른 머리글이 나오면) 섞지 않고 나눈다 — 같은 머리글이 되풀이되는 것(인쇄용 머리)은 같은 표.
+    학번은 보지 않는다(점수표인지 판단·내 행 찾기가 함께 쓴다)."""
+    rows = _sheet_rows(sheet)
+    found = {i: {c: s for c, v in r.items() for s in [_id_cell(v)] if s} for i, r in enumerate(rows)}
+    found = {i: ids for i, ids in found.items() if ids}
+    if len(found) < 2:
+        return []
+    count = Counter(c for ids in found.values() for c in ids)
+    id_cols = {c for c, n in count.items() if n >= max(2, 0.5 * len(found))}
+    if not id_cols:
+        return []
+    data_at = [bool(id_cols & set(found.get(i, {}))) for i in range(len(rows))]
+    blocks, cur, floor, label = [], None, 0, None          # cur = [머리글 행 | None, 첫 행, 끝(제외)]
+    for i, r in enumerate(rows):
+        if data_at[i]:
+            if cur is None:
+                # 머리글 = 첫 학번 행 바로 위쪽(10줄 안, 앞 표 뒤)의 글자 칸 2개 이상인 행 — 그 위 제목 줄은 건너뜀
+                hi = next((j for j in range(i - 1, max(floor, i - 11) - 1, -1) if _head_like(rows[j])), None)
+                cur = [hi, hi + 1 if hi is not None else i, None]
+                label = _label_of(_joined(rows[floor:hi if hi is not None else i]))
+            continue
+        lead = _lead_text(r)
+        if cur is None or _SUMMARY.match(lead) or _MAX_ROW.match(lead):
+            continue
+        if _head_like(r):   # 다른 머리글('학번 Prelab …'가 아닌 줄) — 같은 머리글의 반복(인쇄용 머리)은 같은 표
+            new = _row_sig(r) != _row_sig(rows[cur[0]] if cur[0] is not None else None)
+        else:               # 다른 평가 이름의 제목 줄('Lab1 Scores')
+            lab = _label_of(_joined([r]))
+            new = lab is not None and _label_key(lab) != _label_key(label)
+        if new and any(data_at[j] for j in range(i + 1, min(len(rows), i + 12))):
+            cur[2] = floor = i                     # 뒤에 학번 행이 또 → 새 표
+            blocks.append(cur)
+            cur = None
+    if cur is not None:
+        cur[2] = len(rows)
+        blocks.append(cur)
+    name = str((sheet or {}).get("name") or "").strip()
+    out, prev_end = [], 0
+    for hi, start, end in blocks:
+        t = _block_table(rows, hi, start, end, rows[prev_end:hi if hi is not None else start], id_cols, count, name)
+        prev_end = end
+        if t is not None:
+            out.append(t)
+    return out
+
+
+def _joined(rs) -> str:
+    return "\n".join("\t".join(_fmt(r[c]) for c in sorted(r)) for r in rs if r)
+
+
+def _label_of(text: str) -> str | None:
+    m = _TABLE_LABEL.search(text or "")
+    return re.sub(r"\s+", " ", m.group(0)).strip() if m else None
+
+
+def _block_table(rows: list[dict], hi: int | None, start: int, end: int, title_rows: list[dict], id_cols: set,
+                 count: Counter, name: str) -> dict | None:
+    header = rows[hi] if hi is not None else {}
+    idcol = min(id_cols, key=lambda c: (not _ID_WORD.search(_fmt(header.get(c, ""))), -count[c], c))
+    data, ids, summary, max_row = [], [], [], None
+    for r in rows[start:end]:
+        rid = {c: s for c in id_cols for s in [_id_cell(r.get(c))] if s}
+        if rid:
+            data.append(r)
+            ids.append(rid)
+            continue
+        lead = _lead_text(r)
+        if lead and _MAX_ROW.match(lead):
+            max_row = r
+        elif lead and _SUMMARY.match(lead):
+            summary.append((lead, r))
+    if len(data) < 2:
+        return None
+    cols, skipped = [], []
+    for c in sorted(set(header) | {c for r in data for c in r}):
+        if c in id_cols:
+            continue
+        raw = _fmt(header[c]) if c in header else ""
+        vals, texts = [], 0
+        for r in data:
+            v = r.get(c)
+            x = _num_cell(v)
+            vals.append(x)
+            if x is None and v is not None and not (isinstance(v, str) and _PLACE.match(v)):
+                texts += 1
+        nums = [x for x in vals if x is not None]
+        if not nums or len(nums) < texts:
+            continue    # 글자 열(이름·비고 등)
+        if _skip_head(raw):
+            skipped.append(raw)
+            continue
+        if c < idcol and len(nums) == len(vals) >= 3 and nums == [float(i) for i in range(1, len(nums) + 1)]:
+            continue    # 학번 앞의 1, 2, 3 … = 순번
+        if min(nums) >= 10000:
+            skipped.append(raw or f"열 {_col_letter(c)}")
+            continue    # 날짜·연락처·다른 번호(점수가 아님)
+        cname, mx = _head_name(raw) if raw else (f"열 {_col_letter(c)}", None)
+        if mx is None and max_row is not None:
+            mx = _num_cell(max_row.get(c))
+        cols.append({"col": c, "name": cname, "max": mx, "vals": vals})
+    if not cols:
+        return None
+    # 표 이름: 머리글 위 제목 줄의 평가 이름('Quiz 2 결과') → 없으면 시트 이름('Quiz1')
+    return {"name": name, "label": _label_of(_joined(title_rows)) or _label_of(name), "ids": ids,
+            "cols": cols, "summary": summary, "skipped": skipped, "title": _joined(title_rows + ([header] if header else [])),
+            "header": hi is not None}
+
+
+def is_score_sheet(sheets: list | None, filename: str | None = None) -> bool:
+    """표 파일이 점수표인지: 학번 열 + 점수 열이 있는 시트가 있고, 파일 이름에 score·점수·성적·grade가 있거나
+    (없으면) 학번 + 숫자인 행이 SHEET_SHAPE_ROWS개 이상이고 값이 세 가지 이상인 숫자 열이 있을 때.
+    일정표·명단(학번·이름·학년)·출석부(O/X, 1/0)는 점수표로 보지 않는다."""
+    named = bool(filename and _SCORE_NAME.search(Path(filename).stem))
+    for t in (t for sh in sheets or [] if isinstance(sh, dict) for t in _sheet_tables(sh)):
+        if named:
+            return True
+        if len(t["ids"]) >= SHEET_SHAPE_ROWS and any(
+                sum(x is not None for x in col["vals"]) >= SHEET_SHAPE_ROWS
+                and len({x for x in col["vals"] if x is not None}) >= 3 for col in t["cols"]):
+            return True
+    return False
+
+
+def _sheet_result(t: dict, sid: str, label: str | None, filename: str | None) -> ScoreFileResult | None:
+    notes = ["표준편차는 표본표준편차(n−1로 나눔)", "다른 학생의 행·학번은 결과에 넣지 않음(평균 같은 집계만)"]
+    if t["name"]:
+        notes.append(f"표 파일의 '{t['name']}' 시트에서 읽음")
+    low = sid.lower()
+    hits = [i for i, ids in enumerate(t["ids"]) if any(s.lower() == low for s in ids.values())]
+    if not hits:
+        masked = [i for i, ids in enumerate(t["ids"]) if any(_masked_match(s, sid) for s in ids.values())]
+        if len(masked) != 1:
+            return None   # 없거나 여러 행과 맞음 → 본인을 고르지 않는다
+        hits = masked
+        notes.append("가린 학번과 보이는 자리가 맞는 행 1개를 본인으로 봄 — 확인 필요")
+    elif len(hits) > 1:
+        notes.append("학번이 같은 행이 여러 개 — 첫 번째 행 사용")
+    me = hits[0]
+    used = [col for col in t["cols"] if any(x is not None for x in col["vals"])]
+    cols = [_col_stats(col["name"], [x for x in col["vals"] if x is not None], col["vals"][me], col["max"])
+            for col in used]
+    if not cols or max(c["n"] for c in cols) < 2:
+        return None
+    if not t["header"]:
+        notes.append("머리글 행(글자 칸 2개 이상)을 못 찾아 열 이름을 열 A, B, …로 둠")
+    if t["summary"]:
+        notes.append(f"요약 행(평균·합계 등) {len(t['summary'])}개는 통계에서 뺌")
+    shown = [s for s in t["skipped"] if not re.fullmatch(r"(?i)번호|순번|연번|no\.?|#|num(?:ber)?|학년|분반", s.strip())]
+    if shown:   # 늘 빼는 순번·학년은 알리지 않는다
+        notes.append("점수가 아닌 숫자 열(등수·백분율·날짜 등)은 뺌: " + ", ".join(shown[:5]))
+    avg = next((r for lead, r in t["summary"] if _AVG_LINE.match(lead)), None)
+    if avg is not None:
+        off = [c["name"] for col, c in zip(used, cols) for o in [_num_cell(avg.get(col["col"]))]
+               if o is not None and abs(o - c["mean"]) > (0.5 if o.is_integer() else 0.05) + 1e-9]
+        if off:
+            notes.append(f"표에 적힌 평균과 계산한 평균이 다른 열: {', '.join(off[:5])} — "
+                         "결시·빈 칸을 0점으로 셌을 수 있음(평균은 읽은 행으로 계산)")
+    gm = None
+    for m in _MAX_GLOBAL.finditer(t["title"][:3000]):
+        gm = float(next(g for g in m.groups() if g))
+        break
+    return _table_result(cols, notes, len(t["ids"]), label, filename, gm)
+
+
+def parse_sheet_results(sheets: list | None, student_id: str, filename: str | None = None,
+                        label: str | None = None) -> list[ScoreFileResult]:
+    """표 파일(sheets.read 결과)에서 평가마다 결과 — parse_score_results와 같은 모양·규칙(계약 25-2).
+    시트 하나 = 표 하나(한 시트에 다른 머리글·다른 평가 제목으로 표가 위아래로 여럿이면 나눔): 머리글(첫 학번 행 바로 위의
+    글자 칸 2개 이상인 행 — 그 위 제목 줄은 건너뜀), 학번 열(정확히 같은 값, 숫자로 저장된 학번 2023123456.0도 / 보이는 자리가
+    맞는 가린 학번이 한 행뿐), 숫자 열마다 집계(만점 = 머리글 '(10)'·'/10'·'10점' 또는 '만점·배점' 행).
+    학번·이름·번호·학과·등수·백분율 열, 요약 행(평균·합계·최고·최저…), 결시·빈 칸은 뺀다.
+    결과에는 내 값과 반 집계만 들어간다(다른 학생의 행·학번은 넣지 않음)."""
+    sid = re.sub(r"\s+", "", str(student_id or ""))
+    if not sheets or not sid:
+        return []
+    want = label or label_from_filename(filename)
+    per_sheet = [_sheet_tables(sh) for sh in sheets if isinstance(sh, dict)]
+    tables = [(t, k, len(ts)) for ts in per_sheet for k, t in enumerate(ts, 1)]
+    parsed = []
+    for t, k, n_in_sheet in tables:
+        r = _sheet_result(t, sid, t["label"] or want, filename)
+        if r is not None:   # 이름(여럿일 때 key): 표 이름 → 시트 이름(한 시트에 표가 여럿이면 '시트 표 2')
+            name = t["label"] or ((f"{t['name']} 표 {k}" if n_in_sheet > 1 else t["name"]) or None)
+            parsed.append((r, name or r.label, name if len(tables) > 1 else None))
+    return _split_results(parsed, len(tables), f"표 파일에 점수표가 {len(tables)}개(시트·표마다) — 따로 읽음")

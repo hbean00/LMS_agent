@@ -7,13 +7,9 @@
 """
 from __future__ import annotations
 
-import io
 import math
-import posixpath
 import re
 import statistics
-import xml.etree.ElementTree as ET
-import zipfile
 from dataclasses import dataclass, field
 from statistics import NormalDist
 
@@ -867,61 +863,10 @@ def find_scores(text: str) -> list[ScoreFound]:
 
 # ---------------------------------------------------------------- 엑셀
 
-_XLSX_LIMIT = 64 * 1024 * 1024
 _SUMMARY = re.compile(r"^\s*(?:평균|표준\s*편차|합계|총계|최고(?:점)?|최저(?:점)?|최댓값|최솟값|중앙값|인원|"
                       r"average|mean|avg|sd|std|stdev|total|sum|max|min|median|count)\s*[:：]?\s*$", re.I)
 _ID_HEAD = re.compile(r"학번|수험\s*번호|student\s*(?:id|no|number)|^\s*(?:id|no\.?|번호|순번|연번|#)\s*$|이름|성명|^\s*name\s*$", re.I)
 _MASK_CH = set("*●○■□xX")
-
-
-def _local(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
-
-
-def _zxml(z: zipfile.ZipFile, path: str):
-    try:
-        info = z.getinfo(path)
-    except KeyError:
-        return None
-    if info.file_size > _XLSX_LIMIT:
-        raise ValueError("엑셀 파일 안의 내용이 너무 큽니다")
-    try:
-        return ET.fromstring(z.read(path))
-    except ET.ParseError as e:
-        raise ValueError(f"엑셀 파일 구조를 읽지 못했습니다({path})") from e
-
-
-def _rels(z: zipfile.ZipFile, part: str) -> dict:
-    d, base = posixpath.split(part)
-    root = _zxml(z, posixpath.join(d, "_rels", base + ".rels"))
-    out = {}
-    for r in (root if root is not None else []):
-        if _local(r.tag) != "Relationship" or r.get("TargetMode") == "External":
-            continue
-        t = r.get("Target", "")
-        out[r.get("Id")] = (r.get("Type", ""), t.lstrip("/") if t.startswith("/") else posixpath.normpath(posixpath.join(d, t)))
-    return out
-
-
-def _rich(el) -> str:
-    parts = []
-    for ch in el:
-        n = _local(ch.tag)
-        if n == "t":
-            parts.append(ch.text or "")
-        elif n == "r":
-            parts.extend(t.text or "" for t in ch if _local(t.tag) == "t")
-    return "".join(parts)
-
-
-def _col(ref: str | None) -> int | None:
-    m = re.match(r"([A-Za-z]+)", ref or "")
-    if not m:
-        return None
-    n = 0
-    for ch in m.group(1).upper():
-        n = n * 26 + ord(ch) - 64
-    return n - 1
 
 
 def _col_name(i: int) -> str:
@@ -940,62 +885,6 @@ def _as_num(v) -> float | None:
     return None
 
 
-def _read_sheet(data: bytes) -> tuple[list[dict], str, int]:
-    try:
-        z = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile as e:
-        raise ValueError("xlsx 파일을 읽을 수 없습니다(옛 .xls라면 .xlsx로 다시 저장해 주세요)") from e
-    with z:
-        wb_path = next((p for t, p in _rels(z, "").values() if t.endswith("/officeDocument")), "xl/workbook.xml")
-        wb = _zxml(z, wb_path)
-        if wb is None:
-            raise ValueError("xlsx 안에 workbook.xml이 없습니다")
-        wb_rels = _rels(z, wb_path)
-        sheets = [el for el in wb.iter() if _local(el.tag) == "sheet"]
-        if not sheets:
-            raise ValueError("xlsx 안에 시트가 없습니다")
-        rid = next((v for k, v in sheets[0].attrib.items() if k.endswith("}id")), None)
-        path = wb_rels.get(rid, ("", ""))[1] or posixpath.join(posixpath.dirname(wb_path), "worksheets/sheet1.xml")
-        sst_path = next((p for t, p in wb_rels.values() if t.endswith("/sharedStrings")),
-                        posixpath.join(posixpath.dirname(wb_path), "sharedStrings.xml"))
-        sst_root = _zxml(z, sst_path)
-        sst = [_rich(si) for si in sst_root if _local(si.tag) == "si"] if sst_root is not None else []
-        sheet = _zxml(z, path)
-        if sheet is None:
-            raise ValueError("첫 번째 시트를 찾지 못했습니다")
-    rows = []
-    for row in (el for el in sheet.iter() if _local(el.tag) == "row"):
-        cells, nxt = {}, 0
-        for c in row:
-            if _local(c.tag) != "c":
-                continue
-            col = _col(c.get("r"))
-            col = nxt if col is None else col
-            nxt = col + 1
-            t = c.get("t", "n")
-            v = next((ch.text for ch in c if _local(ch.tag) == "v"), None)
-            val = None
-            if t == "s":
-                if v is not None and v.strip().isdigit() and int(v) < len(sst):
-                    val = sst[int(v)]
-            elif t == "inlineStr":
-                is_ = next((ch for ch in c if _local(ch.tag) == "is"), None)
-                val = _rich(is_) if is_ is not None else None
-            elif t in ("str", "d"):
-                val = v
-            elif t not in ("b", "e") and v not in (None, ""):
-                try:
-                    val = float(v)
-                except ValueError:
-                    val = None
-                if val is not None and not math.isfinite(val):
-                    val = None
-            if val is not None and not (isinstance(val, str) and not val.strip()):
-                cells[col] = val
-        rows.append(cells)
-    return rows, sheets[0].get("name") or "Sheet1", len(sheets)
-
-
 def _masked_match(cell: str, sid: str) -> bool:
     cell = cell.strip()
     if len(cell) != len(sid) or not any(ch in _MASK_CH for ch in cell):
@@ -1005,8 +894,15 @@ def _masked_match(cell: str, sid: str) -> bool:
 
 
 def xlsx_stats(data: bytes, student_id: str) -> dict:
-    """성적 엑셀(xlsx)에서 숫자 열마다 내 값과 반 평균·표준편차를 뽑는다. 다른 학생의 행·학번은 돌려주지 않는다."""
-    rows, sheet_name, n_sheets = _read_sheet(data)
+    """성적 엑셀(xlsx)에서 숫자 열마다 내 값과 반 평균·표준편차를 뽑는다. 다른 학생의 행·학번은 돌려주지 않는다.
+    파일 읽기는 sheets.read(보이는 첫 시트만 — 첨부 성적 후보는 scorefile.parse_sheet_results가 모든 시트를 읽는다).
+    못 읽으면 ValueError(한국어)."""
+    from . import sheets   # 표 파일 읽기(계약 25-1)
+    got = sheets.read(data, "")
+    if not got:
+        raise ValueError("엑셀 파일 안에 읽을 시트가 없습니다")
+    rows = [dict(r) for r in got[0].get("rows") or [] if isinstance(r, dict)]
+    sheet_name, n_sheets = got[0].get("name") or "Sheet1", len(got)
     notes = [f"첫 번째 시트 '{sheet_name}'만 읽음" + (f"(시트 {n_sheets}개)" if n_sheets > 1 else ""),
              "표준편차는 표본표준편차(n−1로 나눔)", "다른 학생의 행·학번은 결과에 넣지 않음(평균 같은 집계만)"]
 
