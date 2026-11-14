@@ -1,8 +1,11 @@
-"""에이전트에게 묻기(채팅) — 계약 20장. 일은 agent.py가 하고, 여기는 경로·상태 칸·백그라운드 작업만.
+"""에이전트에게 묻기(채팅) — 계약 20장·24장. 일은 agent.py가 하고, 여기는 경로·상태 칸·백그라운드 작업만.
 
-- POST /api/agent/ask {"message", "course_id"?} → {"job": 대화 id} 바로(AI는 수십 초 걸릴 수 있어 백그라운드 스레드).
-  진행은 state.agent(busy, threads[].status). 한 번에 하나만(답하는 중이면 409).
-- 작업은 파일에서 새로 읽은 사본으로 답을 만들고, 앱의 Store에 잠금을 잡고 다시 읽은 뒤 그 대화만 합쳐 저장한다.
+- POST /api/agent/ask {"message", "course_id"?, "conversation"?} → {"job": 차례 id, "conversation": 대화 id, "agent"} 바로
+  (AI는 수십 초 걸릴 수 있어 백그라운드 스레드). conversation이 없거나 모르는 id면 신규 대화(c-<hex>). 진행은 state.agent
+  (busy, threads[].status, conversations). 한 번에 하나만(답하는 중이면 409).
+- 작업은 파일에서 읽은 사본으로 답을 만들고(같은 대화의 앞 차례 최대 6개를 이어받음), 앱의 Store에 잠금을 잡고 다시 읽은
+  뒤 그 차례만 합쳐 저장한다.
+- POST /api/agent/clear → 대화 기록 전부, {"conversation": id} → 그 대화만(모르는 id 404).
 - AI(settings.ai_cli)가 꺼져 있어도 같은 창이 규칙 검색으로 답한다(by "rules"). 테스트·데모는 App(..., ai_runner=가짜).
 - 액션 제안(type "action", 계약 22-9)은 /api/agent/apply·undo에서 actions.run/undo로 실행한다. 액션은 화면 단추와 같은 API 경로를
   앱 안에서 부르므로(그 경로가 잠금을 잡는다) **잠금 밖에서** 실행하고, 결과만 파일 잠금 안에서 제안에 남긴다.
@@ -40,21 +43,25 @@ def agent_state(app, ctx):
     active = {k for k, t in app.agent_jobs.items() if t.is_alive()}
     return {"enabled": bool(st.get("ai_cli")), "available": available(app), "busy": bool(active),
             "threads": agent.public_threads(app.store, active),
+            "conversations": agent.conversations(app.store, active),
             "calls_today": agent_cli.calls_today(app.store),
-            "limits": {"per_day": agent_cli.MAX_CALLS_PER_DAY, "per_ask": 2, "timeout": 90,
-                       "max_chars": agent_cli.MAX_TEXT, "max_message": agent.MAX_MESSAGE},
+            "limits": {"per_day": agent_cli.MAX_CALLS_PER_DAY, "per_ask": agent.PER_ASK, "timeout": 90,
+                       "max_chars": agent_cli.MAX_TEXT, "max_message": agent.MAX_MESSAGE,
+                       "history_turns": agent.HISTORY_TURNS, "max_threads": agent.MAX_THREADS,
+                       "max_conversations": agent.MAX_CONVERSATIONS},
             "missed_cases": len(app.store.data.get("missed_cases") or [])}
 
 
 @router.route("POST", r"/api/agent/ask")
 def ask(app, body):
     msg, cid = agent.check_message(body.get("message"), body.get("course_id"), app.store)   # ValueError → 400
+    conv = body.get("conversation")
     with app.agent_guard:
         if busy(app):
             raise ApiError(409, "이전 질문에 답하는 중이에요. 끝나면 다시 물어봐 주세요")
         with app.store.locked():
             app.store.reload_if_changed()
-            th = agent.new_thread(app.store, msg, cid)
+            th = agent.new_thread(app.store, msg, cid, conversation=conv if isinstance(conv, str) else None)
             app.store.write()
         ai_on = bool((app.store.data.get("settings") or {}).get("ai_cli"))
         # 실행기는 작업이 읽은 설정대로(settings.ai_provider, 계약 21-3). ai_command는 테스트·데모가 넣은 claude
@@ -64,7 +71,7 @@ def ask(app, body):
         app.agent_jobs = {k: v for k, v in app.agent_jobs.items() if v.is_alive()}
         app.agent_jobs[th["id"]] = t
         t.start()
-    return {"job": th["id"], "agent": agent_state(app, None)}
+    return {"job": th["id"], "conversation": th["conversation"], "agent": agent_state(app, None)}
 
 
 def wait(app, job_id: str, timeout: float = 30.0) -> bool:
@@ -187,10 +194,17 @@ def undo_proposal(app, body):
 
 @router.route("POST", r"/api/agent/clear")
 def clear(app, body):
-    """대화 기록 지우기(반영한 마감·연결은 그대로 — 항목 화면에서 되돌릴 수 있다). 돌던 작업의 답은 버려진다."""
+    """대화 기록 지우기 — 본문이 없으면(또는 conversation이 null) 전부, {"conversation": id}면 그 대화만(계약 24-1).
+    반영한 마감·연결은 그대로(항목 화면에서 되돌릴 수 있다). 지운 대화에서 돌던 작업의 답은 버려진다. 모르는 대화 404."""
+    conv = (body or {}).get("conversation") if isinstance(body, dict) else None
+    if conv is not None and (not isinstance(conv, str) or not conv or len(conv) > 80):
+        raise ApiError(400, "conversation(대화 id)이 올바르지 않아요")
     with app.store.locked():
         app.store.reload_if_changed()
-        agent._box(app.store)["threads"] = []
+        if conv is None:
+            agent._box(app.store)["threads"] = []
+        elif not agent.clear_conversation(app.store, conv):
+            raise ApiError(404, "대화를 찾을 수 없어요(지워졌을 수 있어요)")
         app.store.write()
     return app.state()
 

@@ -13,10 +13,18 @@ AI가 켜져 있으면 AI CLI 작업 `assist`(agent_cli)에 보내 근거 있는
 질문(question): 같은 검색(질문 낱말 — 범위·형식·규정·출석·장소 … — 로 점수 보강)으로 찾은 문단을 그대로 인용해 답한다(citations).
 AI가 켜져 있으면 작업 `answer`(인용이 보낸 글에 그대로 있고 답의 날짜·숫자가 인용 안에 있는 것만), 아니면 규칙으로 문단 1~3개 인용.
 
+일반 대화(chat, 계약 24-2): 인사·감사·힘듦·시각·도움말·일반 이야기처럼 학업과 무관한 말, 또는 학업 낱말이 없는데 관련 글도 없는 말.
+AI가 켜져 있으면 작업 `chat`(페이스메이커 말투, 제안·인용 없음, 과목 사실·'했다'는 말을 지어내지 않음), 아니면 규칙 답(rules_chat).
+학업 질문인데 글을 못 찾으면 question('찾지 못했어요') 그대로 두고, AI가 켜져 있으면 끝에 일반 지식 설명을 덧붙인다(general).
+
+이어지는 대화(conversation, 계약 24-1): 차례(thread)마다 conversation id. 같은 대화의 앞 차례(최대 6)를 history로 받아
+과목(course_context)을 이어받고, 짧은 생략 질문('그럼 중간은?')은 앞 질문의 주제 낱말을 합쳐(followup) 갈래·검색에 쓴다.
+AI 입력에는 '이전 대화'(가림, 1,500자 이내)를 더하되 이전 답은 근거가 아니다(인용 검증은 찾은 글에서만).
+
 저장 칸(store.data):
-- "agent": {"threads": [대화, 최근 20개]} — 대화 = {id, at, message, course_id, status, kind, answer, proposals, citations,
-  searched, results, error, by, finished_at, …갈래별 칸(whatif·draft·plan)}. 제안의 "_"로 시작하는 칸(되돌리기 기록)은
-  화면에 내보내지 않는다.
+- "agent": {"threads": [차례, 최근 MAX_THREADS개]} — 차례 = {id, at, message, course_id, conversation, status, kind, answer,
+  proposals, citations, searched, results, error, by, finished_at, carried, course_context, …갈래별 칸(whatif·draft·plan·general)}.
+  제안의 "_"로 시작하는 칸(되돌리기 기록)은 화면에 내보내지 않는다.
 - "agent_items": [반영한 마감 기록] — core.build_items가 함께 합친다(다음 동기화에도 남게, 규칙이 같은 마감을 찾으면 하나로).
 - "missed_cases": [규칙이 놓친 사례(가린 문장)] — 사용자가 원할 때만 파일로 저장(자동으로 보내지 않음).
 """
@@ -30,9 +38,12 @@ from . import core
 from . import links as lk
 from .extract import deadline_kind, find_dates, html_to_text
 from .store import hidden_courses
-from .timeutil import iso, now_local, parse_iso
+from .timeutil import iso, local_tz, now_local, parse_iso
 
-MAX_THREADS = 20
+MAX_THREADS = 80          # 남기는 차례 수(계약 24-1, 오래된 것부터 지움)
+MAX_CONVERSATIONS = 20    # state.agent.conversations에 보이는 대화 수
+HISTORY_TURNS = 6         # 답할 때 넘기는 같은 대화의 앞 차례 수
+PER_ASK = 2               # 한 번 묻기에 쓰는 AI 호출(질문 답 + 일반 지식 덧붙이기를 합쳐)
 MAX_MESSAGE = 500
 SEARCH_LIMIT = 8
 SNIPPET_MAX = 500
@@ -1052,25 +1063,33 @@ def _ai_citations(cits: list[dict], results: list[dict], names: list | None) -> 
     return out
 
 
-def _ai_inputs(ctx: Ctx, message: str, results: list[dict], cids: list[str], names) -> tuple[dict, list]:
-    """assist·answer 작업이 함께 쓰는 글 묶음(계약 20-3·22-2): 메시지, 과목 목록, 지금 상태 요약, 찾은 문단. (inputs, 원문 조각들)."""
+def _ai_inputs(ctx: Ctx, message: str, results: list[dict], cids: list[str], names, message_typed: str | None = None,
+               history: list | None = None) -> tuple[dict, list]:
+    """assist·answer 작업이 함께 쓰는 글 묶음(계약 20-3·22-2·24-1): 메시지, 과목 목록, 지금 상태 요약, 찾은 문단, 이전 대화.
+    message는 갈래·검색에 쓴 말(생략 질문이면 앞 질문과 합친 뜻), message_typed는 사용자가 친 그대로 — 다르면 AI에 둘 다 보낸다.
+    (inputs, 원문 조각들)."""
     text, originals = state_text(ctx, cids)
     originals += [r["snippet"] for r in results]
-    inputs = {"message": message, "names": names, "state_text": text,
-              "courses": [{"id": cid, "short": ctx.shorts[cid]} for cid in ctx.courses],
+    typed = message_typed if message_typed is not None else message
+    inputs = {"message": typed, "followup": message if _flat(message) != _flat(typed) else None, "names": names,
+              "state_text": text, "courses": [{"id": cid, "short": ctx.shorts[cid]} for cid in ctx.courses],
               "snippets": [{"source_key": r["source_key"], "course_id": r["course_id"], "type": r["type"],
-                            "title": r["title"], "posted_at": r["posted_at"], "text": r["snippet"]} for r in results]}
+                            "title": r["title"], "posted_at": r["posted_at"], "text": r["snippet"]} for r in results],
+              "history": [{"message": h.get("message"), "answer": h.get("answer"), "kind": h.get("kind")}
+                          for h in _history_list(history)]}
     return inputs, originals
 
 
 def _answer_question(ctx: Ctx, out: dict, message: str, results: list[dict], searched: int, ai_enabled: bool, runner,
-                     command, names, session, cids: list[str]) -> dict:
+                     command, names, session, cids: list[str], message_typed: str | None = None,
+                     history: list | None = None) -> dict:
     """question 갈래(22-2): AI가 켜져 있고 찾은 글이 있으면 작업 `answer`, 아니면(또는 실패하면) 규칙으로 문단을 인용.
-    질문 낱말과 겹치는 것 없이 날짜만 있는 문단(점수 MIN_AI_SCORE 이하)뿐이면 AI를 부르지 않는다(하루 한도를 아낀다)."""
+    질문 낱말과 겹치는 것 없이 날짜만 있는 문단(점수 MIN_AI_SCORE 이하)뿐이면 AI를 부르지 않는다(하루 한도를 아낀다).
+    message는 갈래·검색에 쓴 말(생략 질문이면 합친 뜻), message_typed는 친 그대로(AI에 함께 보냄)."""
     if ai_enabled and any((r.get("score") or 0) > MIN_AI_SCORE for r in results):
         from .agent_cli import AiSession
-        session = session or AiSession(ctx.store, runner=runner, command=command, enabled=True, max_calls=2)
-        inputs, _ = _ai_inputs(ctx, message, results, cids, names)
+        session = session or AiSession(ctx.store, runner=runner, command=command, enabled=True, max_calls=PER_ASK)
+        inputs, _ = _ai_inputs(ctx, message, results, cids, names, message_typed, history)
         res = session.run("answer", inputs)
         out["attempts"] = res.attempts
         if res.ok:
@@ -1084,14 +1103,456 @@ def _answer_question(ctx: Ctx, out: dict, message: str, results: list[dict], sea
     return out
 
 
+# ---------------------------------------------------------------- 일반 대화인지(계약 24-2)
+
+# 학업 말(이것이 있으면 일반 대화로 보지 않는다 — 지금까지처럼 놓친 것·질문 갈래). 평가 낱말(links.families)·질문 주제·점수 낱말·
+# 과목 이름은 따로 본다. '공부'는 넣지 않는다('공부 팁 알려줘'는 일반 대화, '공부 계획'은 plan 갈래가 먼저 받는다).
+ACADEMIC_WORDS = re.compile(
+    r"과제|숙제|레포트|리포트|보고서|시험|퀴즈|중간\s*고사|기말\s*고사|강의|수업|교수|조교|학점|성적|점수|출석|결석|공지|계획서|"
+    r"실라버스|과목|전공|학기|주차|실습|프로젝트|발표|제출|마감|기한|데드라인|휴강|보강|수강|교재|교과서|챕터|단원|범위|진도|평가|비중|"
+    r"배점|확인함|캘린더|일정|스케[줄쥴]|"
+    r"(?<![a-z])(?:lms|canvas|syllabus|homeworks?|assignments?|exams?|quiz(?:zes)?|midterms?|finals?|lectures?|classes|"
+    r"courses?|professor|prof|labs?|projects?|reports?|deadlines?|due|grades?|scores?|semester|schedule|submit\w*)(?![a-z])",
+    re.I)
+_DATE_ASK = re.compile(r"마감|기한|데드라인|언제까지|며칠까지|(?<![a-z])(?:due|deadline)(?![a-z])", re.I)
+CRISIS_WORDS = re.compile(
+    r"죽고\s*싶|자살|자해|극단\s*적\s*(?:인\s*)?선택|살기\s*싫|살고\s*싶지\s*않|사라지고\s*싶|그만\s*살고\s*싶|"
+    r"(?<![a-z])(?:suicid\w*|kill\s+myself|self[-\s]?harm|end\s+my\s+life|want\s+to\s+die)(?![a-z])", re.I)
+CHEER_WORDS = re.compile(
+    r"힘들|힘드|지쳤|지친|지쳐|피곤|졸려|우울|스트레스|불안해|막막|번아웃|하기\s*싫|못\s*하겠|포기하고\s*싶|그만두고\s*싶|멘붕|"
+    r"응원|격려|위로|힘\s*(?:내|줘|좀|이\s*안)|화이팅|파이팅|"
+    r"(?<![a-z])(?:tired|exhausted|stressed|burn(?:ed|t)?\s*out|anxious|motivat\w*|cheer\s+me)(?![a-z])", re.I)
+GREETING_WORDS = re.compile(
+    r"^\s*(?:안녕|하이|헬로|반가워|반갑|좋은\s*(?:아침|오후|저녁|밤)|굿\s*모닝|굿\s*나잇|잘\s*자|ㅎㅇ|여보세요|"
+    r"hi|hello|hey|good\s+(?:morning|afternoon|evening|night))(?![a-z])", re.I)
+THANKS_WORDS = re.compile(r"고마워|고맙|감사(?:해|합|드려|드립)|땡큐|ㄱㅅ|ㄳ|(?<![a-z])(?:thanks|thank\s+you|thx)(?![a-z])", re.I)
+TIME_WORDS = re.compile(
+    r"(?:오늘|지금|현재)\s*(?:이|은|는)?\s*(?:며칠|몇\s*(?:일|월|시|분)|무슨\s*(?:요일|날)|몇\s*요일|날짜|요일|시간|시각)|"
+    r"^\s*몇\s*시(?:야|예요|에요|지|니|냐|인가요?|일까)?\s*[?？]?\s*$|무슨\s*요일|"
+    r"(?<![a-z])(?:what\s+(?:time|day|date)\s+is\s+it|what'?s\s+the\s+(?:time|date)|today'?s\s+date)(?![a-z])", re.I)
+HELP_WORDS = re.compile(
+    r"(?:뭘|뭐|무엇을|무얼|어떤\s*걸)\s*(?:할\s*수|도와|해\s*줄\s*수)|할\s*수\s*있는\s*(?:게|것|일)|도움말|"
+    r"(?:넌|너는|너)\s*(?:누구|뭐)|누구(?:야|세요|니)|(?<![a-z])(?:what\s+can\s+you\s+do|who\s+are\s+you)(?![a-z])", re.I)
+GENERAL_WORDS = re.compile(
+    r"날씨|추천|맛집|메뉴|뭐\s*먹|점심|저녁|영화|드라마|노래|음악|게임|운동|여행|연애|친구|고민|심심|농담|재밌는|"
+    r"팁|조언|노하우|요령|하는\s*법|어떻게\s*(?:하면|해야|할까|하지)|"
+    r"(?<![a-z])(?:weather|recommend\w*|jokes?|movies?|music|songs?|tips?|advice|how\s+to)(?![a-z])", re.I)
+CHAT_INTENTS = ("crisis", "cheer", "time", "greeting", "thanks", "help", "general", "other")
+
+
+def _visible_courses(store) -> list[dict]:
+    hidden = hidden_courses(store.data)
+    return [c for c in (store.data.get("cache") or {}).get("courses", []) if str(c["id"]) not in hidden]
+
+
+def strong_academic(message: str, courses=()) -> bool:
+    """학업 말인지(계약 24-2): 평가 낱말(기말·LAB…)·질문 주제(범위·형식…)·점수 낱말·학업 낱말(과제·시험·강의·마감…)·과목 이름.
+    '날짜·언제·시간' 같은 말만 있는 것('지금 몇 시야?')과 '안 보여요'만 있는 것('할 게 없어요')은 학업 말이 아니다."""
+    msg = message or ""
+    return bool(lk.families(msg) or question_topics(msg) or SCORE_WORDS.search(msg) or ACADEMIC_WORDS.search(msg)
+                or _DATE_ASK.search(msg) or (courses and mentioned_courses(msg, list(courses))))
+
+
+def chat_intent(message: str, courses=()) -> str | None:
+    """처음부터 일반 대화인 말의 갈래(계약 24-2) — crisis(위기)·cheer(힘듦·응원)·time(오늘 날짜·시각)·greeting·thanks·help(뭘 할 수
+    있어?)·general(날씨·추천·고민·팁 …). 아니면 None(놓친 것·질문 갈래로; 관련 글이 없으면 그때 'other'로 일반 대화).
+    위기 말은 언제나 먼저. 힘듦은 '언제·마감·안 보여요·범위' 같은 물음이 없을 때만('과제 너무 힘들어'는 응원, '힘든데 LAB4 마감
+    언제야?'는 마감 찾기). 나머지는 학업 말(strong_academic)이 없을 때만."""
+    msg = message or ""
+    if CRISIS_WORDS.search(msg):
+        return "crisis"
+    asks = bool(MISSING_WORDS.search(msg) or question_topics(msg) or _DATE_ASK.search(msg) or re.search(r"언제|몇\s*시", msg))
+    if CHEER_WORDS.search(msg) and not asks:
+        return "cheer"
+    if strong_academic(msg, courses):
+        return None
+    for kind, rx in (("time", TIME_WORDS), ("greeting", GREETING_WORDS), ("thanks", THANKS_WORDS), ("help", HELP_WORDS),
+                     ("general", GENERAL_WORDS)):
+        if rx.search(msg):
+            return kind
+    return None
+
+
+def _grounded(message: str, r: dict) -> bool:
+    """학업 말이 없는 메시지에 그 문단이 정말 관련 있는지: relevant()이면서 날짜만 맞은 것이 아님(평가 낱말·주제·남은 낱말·점수 문장)."""
+    if not relevant(message, r):
+        return False
+    if lk.families(message) or question_topics(message):
+        return True
+    low = (str(r.get("snippet") or "") + " " + str(r.get("title") or "")).lower()
+    keys = [k.lower() for k in _keywords(tokens(message)) if not any(q.search(k) for q, _ in TOPICS.values())]
+    return any(k in low for k in keys) or bool(SCORE_WORDS.search(message or "") and SCORE_WORDS.search(low))
+
+
+# ---------------------------------------------------------------- 이어지는 대화(계약 24-1): 앞 차례를 이어받기
+
+FOLLOW_MAX = 25           # 생략 질문으로 볼 최대 길이
+FOLLOW_LEAD = re.compile(
+    r"\s*(?:그럼|그러면|그렇다면|그건|그거|그게|그것은|그것|거기(?:는|서|선)?|그\s*과목(?:은|는)?|그\s*수업(?:은|는)?|"
+    r"그\s*과제(?:는|도)?|그\s*시험(?:은|도)?|또|그리고|그\s*다음(?:은)?|그다음(?:은)?|다른\s*(?:건|거|것)(?:은|는|도)?|"
+    r"나머지(?:는|도)?|그\s*밖에(?:는)?|"
+    r"(?:and|also|then|what\s+about|how\s+about)(?![a-z]))[\s,.]*", re.I)
+FOLLOW_TAIL = re.compile(r"(?:은|는|도|건|이랑|랑|하고)\s*[?？]*\s*$")
+MORE_WORDS = re.compile(r"^\s*(?:또|다른\s*(?:건|거|것)|나머지|그\s*밖)|(?<![a-z])(?:else|other|more)(?![a-z])", re.I)
+_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9+#\-]*|[가-힣]+|\d+[A-Za-z가-힣]*")
+_GRADE_TOKEN = re.compile(r"(?<![A-Za-z0-9])[A-DF](?:\+|0)?(?![A-Za-z0-9])")
+# 물음 낱말(무엇을 하라는지·묻는지) — 생략 질문에서 '주제'가 아니라 '물음'으로 남긴다(메일·계획·만약에·명령 낱말 포함)
+_ASK_WORDS = re.compile(
+    r"메일|이메일|써|쓰|초안|작성|문의|연장|결석|공결|공부|계획|일정|스케[줄쥴]|세워|짜|받아야|받으려|받으면|받을|몇|만약|이면|라면|"
+    r"어디|언제|뭐|무엇|어떻게|왜|알려|해줘|해\s*줘|줘|주세|보여|찾아|켜|꺼|바꿔|열어|동기화|반영|날짜|시간|"
+    r"(?<![a-z])(?:when|what|where|how|why|which|email|mail|draft|plan|tell|show|find)(?![a-z])", re.I)
+
+
+def is_followup(message: str) -> bool:
+    """앞 차례에 기대는 짧은 말인지: 25자 이하이고 '그럼/그러면/그건/거기/그 과목/또/그리고/다른 건…'으로 시작하거나,
+    낱말 두 개 이하에 '…은?/…는?/…도?'로 끝남('중간은?', 'LAB3도?')."""
+    msg = _flat(message)
+    if not msg or len(msg) > FOLLOW_MAX:
+        return False
+    if FOLLOW_LEAD.match(msg) and FOLLOW_LEAD.match(msg).end() > 0:
+        return True
+    return bool(FOLLOW_TAIL.search(msg)) and len(tokens(msg)) <= 2
+
+
+def _strip_leads(message: str) -> str:
+    msg = _flat(message)
+    for _ in range(4):
+        m = FOLLOW_LEAD.match(msg)
+        if not m or m.end() == 0:
+            break
+        msg = msg[m.end():]
+    return msg.strip()
+
+
+def _parts(text: str, courses) -> tuple[list[str], str]:
+    """메시지 → (주제 낱말, 물음 글). 주제 = 평가 낱말(LAB4·기말…)과 물음 낱말이 아닌 이름 같은 낱말(감상문 …),
+    물음 글 = 주제·과목 이름 조각·이어 말하는 낱말(그럼…)을 뺀 나머지 글 그대로('범위 어디까지야?', '연장 문의 메일 써줘')."""
+    variants = [v.lower() for c in courses for v in course_variants(c)]
+    subject, spans = [], []
+    for m in _TOKEN.finditer(text or ""):
+        raw = m.group(0)
+        t = _strip(raw)
+        low = t.lower()
+        if FOLLOW_LEAD.fullmatch(raw) or FOLLOW_LEAD.fullmatch(t):
+            spans.append(m.span())
+            continue
+        if lk.families(t):
+            subject.append(t)
+            spans.append(m.span())
+            continue
+        if len(t) < 2 or t[0].isdigit() or _GRADE_TOKEN.fullmatch(t):
+            continue
+        if any(low == v or low in v for v in variants):
+            spans.append(m.span())   # 과목 이름은 따로 이어받는다(course_id)
+            continue
+        if (low in _STOP or DATE_WORDS.search(t) or SCORE_WORDS.search(t) or MISSING_WORDS.search(t)
+                or any(q.search(t) for q, _ in TOPICS.values()) or _ASK_WORDS.search(t)):
+            continue
+        subject.append(t)
+        spans.append(m.span())
+    ask, last = [], 0
+    for a, b in spans:
+        ask.append(text[last:a])
+        last = b
+    ask.append(text[last:])
+    return subject, _flat(" ".join(ask))
+
+
+def _has_ask(ask: str) -> bool:
+    return bool(re.search(r"[가-힣A-Za-z0-9]{2,}", ask or ""))
+
+
+def merge_followup(message: str, previous: str, courses=()) -> str:
+    """생략 질문 + 앞 질문 → 갈래·검색에 쓸 말(계약 24-1). 이번 말에 주제가 없으면 앞 질문의 주제를, 물음이 없으면 앞 질문의 물음을
+    더한다('그럼 중간은?' + 'ASIC 기말 범위 어디까지야?' → '중간은? 범위 어디까지야?', '그건 언제야?' + 'LAB4 제출 형식이 뭐야?' →
+    '언제야? LAB4'). 이번 말에 학점 글자('그럼 B+는?')가 있으면 앞 물음의 학점 글자는 뺀다."""
+    cur = _strip_leads(message)
+    cur_subject, cur_ask = _parts(cur, courses)
+    prev_subject, prev_ask = _parts(previous or "", courses)
+    if _GRADE_TOKEN.search(cur):
+        prev_ask = _flat(_GRADE_TOKEN.sub(" ", prev_ask))
+    out = [] if not re.search(r"[가-힣A-Za-z0-9]", cur) else [cur]
+    if not cur_subject and prev_subject:
+        out.append(" ".join(dict.fromkeys(prev_subject)))
+    if not _has_ask(cur_ask) and _has_ask(prev_ask):
+        out.append(prev_ask)
+    return _flat(" ".join(out)) or _flat(message)
+
+
+def _history_list(history) -> list[dict]:
+    """answer()가 받는 앞 차례들(오래된 것부터, 최대 HISTORY_TURNS) — 모양이 다른 것은 버린다."""
+    out = []
+    for h in history or []:
+        if isinstance(h, dict) and isinstance(h.get("message"), str):
+            out.append(h)
+    return out[-HISTORY_TURNS:]
+
+
+def followup(message: str, course_id, history: list, courses: list, intent: str | None = None) -> dict:
+    """앞 차례에서 이어받을 것(계약 24-1) → {"message": 갈래·검색에 쓸 말, "course_id": 쓸 과목, "followup": 생략 질문인지,
+    "more": '또 다른 건?'인지, "prev": 앞 차례|None, "carried": {"from", "course_id", "course_short", "message"}|None}.
+    - 앞 차례 = 같은 대화에서 가장 최근의 일반 대화(chat)가 아닌 차례. 일반 대화(intent)면 아무것도 이어받지 않는다.
+    - 과목: 이번 메시지에 과목 이름이 없고 course_id도 없으면 앞 차례의 과목(course_context)을 쓴다.
+    - 주제: 생략 질문(is_followup)이면 앞 차례의 '읽은 뜻'과 합친다(merge_followup)."""
+    out = {"message": message, "course_id": course_id, "followup": False, "more": False, "prev": None, "carried": None}
+    if intent:
+        return out
+    prev = next((h for h in reversed(_history_list(history)) if h.get("kind") != "chat"), None)
+    if prev is None:
+        return out
+    out["prev"] = prev
+    carried = {}
+    known = {str(c["id"]): c for c in courses}
+    pc = prev.get("course_id")
+    if course_id is None and pc is not None and str(pc) in known and not mentioned_courses(message, courses):
+        out["course_id"] = carried["course_id"] = str(pc)
+    if is_followup(message):
+        out["followup"] = True
+        out["more"] = bool(MORE_WORDS.search(message))
+        eff = merge_followup(message, str(prev.get("effective") or prev.get("message") or ""), courses)
+        if eff != _flat(message):
+            out["message"] = carried["message"] = eff
+    if carried:
+        cid = carried.get("course_id")
+        out["carried"] = {"from": prev.get("id"), "course_id": cid,
+                          "course_short": core.short_course_name(known[cid].get("name")) if cid else None,
+                          "message": carried.get("message")}
+    return out
+
+
+def _drop_carried_course(fu: dict) -> None:
+    fu["course_id"] = None
+    if fu.get("carried"):
+        fu["carried"].update(course_id=None, course_short=None)
+        if not fu["carried"].get("message"):
+            fu["carried"] = None
+
+
+def course_context(out: dict, course_id, message: str, courses: list) -> str | None:
+    """이 차례가 다룬 과목(다음 차례가 이어받는다): 정한·이어받은 과목 → 메시지에 이름이 하나만 나온 과목 → 답(인용·제안·만약에·
+    메일·계획)이 모두 한 과목이면 그 과목. 아니면 None."""
+    if course_id is not None:
+        return str(course_id)
+    named = mentioned_courses(message, courses)
+    if len(named) == 1:
+        return named[0]
+    seen = []
+    for c in out.get("citations") or []:
+        seen.append(c.get("course_id"))
+    for p in out.get("proposals") or []:
+        if isinstance(p, dict) and not p.get("rejected_reason"):
+            seen.append(p.get("course_id"))
+    for k in ("whatif", "draft", "plan"):
+        if isinstance(out.get(k), dict):
+            seen.append(out[k].get("course_id"))
+    ids = {str(x) for x in seen if x not in (None, "")}
+    return ids.pop() if len(ids) == 1 else None
+
+
+def _prev_cited(prev: dict | None) -> list[tuple[str, str]]:
+    return [(str(k), _flat(q)) for k, q in (prev or {}).get("cited") or [] if q]
+
+
+# ---------------------------------------------------------------- 일반 대화 답(계약 24-2)
+
+_WD_FULL = "월화수목금토일"
+CHAT_EXAMPLES = ("'기말 범위 어디까지야?'", "'과제 연장 문의 메일 써줘'")
+HELP_LINES = ("과목 질문에 답하기('기말 범위 어디까지야?')", "놓친 마감 찾기('기말고사 날짜가 안 보여요')",
+              "성적 '만약에'('기말에서 몇 점 받아야 A?')", "문의 메일 초안('LAB4 연장 문의 메일 써줘')",
+              "공부 계획('기말 전 2주 공부 계획 세워줘')", "앱 설정('컴퓨터 켤 때 자동 실행해줘')")
+AI_OFF_CHAT = "학업 밖 이야기는 설정 → AI에서 AI 도움을 켜면 같이 나눌 수 있어요."
+CRISIS_HELP = ("지금 위험하다고 느끼면 바로 112나 119에 연락해 주세요. 24시간 자살예방상담전화 109, 정신건강위기상담 "
+               "1577-0199, 학교 학생상담센터에서 이야기를 들어 줄 거예요.")
+GENERAL_HEAD = "강의 글에는 없어서 일반적인 설명이에요"
+
+
+def pace_summary(store, now: datetime | None = None) -> dict:
+    """일반 대화에 쓰는 짧은 지금 상태(읽기만, 계약 24-2): 이번 주(월~일) 마감 수·남은 수·확인 전 수, 가장 가까운 남은 마감,
+    학기 주차, km·다음 이정표·연속 완주(celebrate — 성적 숫자 없음). 계산이 안 되면 빈 칸."""
+    now = now or now_local()
+    out = {"week_now": None, "weeks_total": None, "week_total": 0, "week_left": 0, "week_review": 0, "next": None,
+           "km": None, "pace": None, "synced": store.data.get("cache") is not None}
+    if not out["synced"]:
+        return out
+    cache = store.data.get("cache") or {}
+    try:
+        from . import coach
+        view = store.view()
+        sem = core.semester_info(cache, view, today=now.date())
+        items = core.annotate(view, sem, cache)
+        out["week_now"], out["weeks_total"] = sem.get("week_now"), sem.get("weeks_total")
+        lv = coach.live(items)
+        monday = now.date() - timedelta(days=now.weekday())
+        start = datetime.combine(monday, datetime.min.time(), tzinfo=now.tzinfo)
+        end = start + timedelta(days=7)
+        week = [v for v in lv if start <= parse_iso(v["due"]) < end]
+        out["week_total"] = len(week)
+        out["week_left"] = sum(1 for v in week if not v.get("submitted") and parse_iso(v["due"]) >= now)
+        out["week_review"] = sum(1 for v in week if v.get("status") == "review")
+        nxt = next((v for v in lv if parse_iso(v["due"]) >= now and not v.get("submitted")), None)
+        if nxt:
+            out["next"] = {"title": nxt.get("title"), "course_short": core.short_course_name(nxt.get("course_name")),
+                           "due": nxt.get("due")}
+        try:
+            from . import celebrate
+            cel = celebrate.state(store, sem, items, now)[0]   # 읽기만(저장할 것은 버린다)
+            out["km"] = cel.get("km")
+            out["pace"] = coach._pace_text(cel)
+        except Exception:  # noqa: BLE001 — 페이스는 덤이다
+            pass
+    except Exception:  # noqa: BLE001 — 상태 요약이 없어도 대화는 한다
+        return out
+    return out
+
+
+def chat_state_text(pace: dict, now: datetime) -> str:
+    """AI 작업 chat에 보내는 짧은 상태(계약 24-2): 지금 시각·주차·이번 주 마감 수·페이스. 제목·성적·개인 정보 없음."""
+    lines = [f"오늘 / now: {now:%Y-%m-%d}({_WD_FULL[now.weekday()]}) {now:%H:%M}"]
+    if pace.get("week_now") and pace.get("weeks_total"):
+        lines.append(f"학기 / term: {pace['week_now']}주차 / {pace['weeks_total']}주")
+    if pace.get("synced"):
+        lines.append(f"이번 주 마감 / this week: {pace['week_total']}개 · 남은 것 {pace['week_left']}개"
+                     + (f" · 확인 전 {pace['week_review']}개" if pace.get("week_review") else ""))
+    else:
+        lines.append("이번 주 마감 / this week: 아직 동기화 전이라 모름 / not synced yet")
+    if pace.get("pace"):
+        lines.append(f"페이스 / pace: {pace['pace']}")
+    return "\n".join(lines)
+
+
+def _clock(now: datetime) -> str:
+    h = now.hour
+    half = "오전" if h < 12 else "오후"
+    h12 = h % 12 or 12
+    return f"{now.year}년 {now.month}월 {now.day}일 {_WD_FULL[now.weekday()]}요일 {half} {h12}시 {now.minute}분"
+
+
+def _next_text(pace: dict) -> str | None:
+    nxt = pace.get("next")
+    due = parse_iso((nxt or {}).get("due"))
+    if not nxt or due is None:
+        return None
+    where = f"[{nxt['course_short']}] " if nxt.get("course_short") else ""
+    return f"{where}{nxt.get('title')}({_md(due)})"
+
+
+def rules_chat(intent: str, pace: dict, now: datetime, ai_enabled: bool = False, ai_error: str | None = None,
+               found_nothing: bool = False) -> str:
+    """AI 없이 하는 일반 대화 답(계약 24-2): 인사 → 인사 + 이번 주 할 일·km, 감사 → 짧게, 힘듦 → 응원 + 다음 이정표,
+    시각 → 지금 시각, 도움말 → 할 수 있는 것, 위기 → 도움 받을 곳, 그 밖 → AI를 켜면 같이 나눌 수 있다는 안내 + 예시 2개."""
+    nxt = _next_text(pace)
+    pace_line = f"{pace['pace']}." if pace.get("pace") else ""
+    if intent == "crisis":
+        return "많이 힘든 마음이 느껴져요. 혼자 견디지 않아도 돼요. " + CRISIS_HELP + " 마감은 잠시 미뤄도 괜찮아요 — 당신이 먼저예요."
+    if intent == "greeting":
+        if not pace.get("synced"):
+            todo = "아직 동기화 전이라 마감을 몰라요 — 동기화하면 같이 챙길게요."
+        elif pace.get("week_left"):
+            todo = f"이번 주 마감 {pace['week_total']}개 중 {pace['week_left']}개 남았어요" + (
+                f" — 가장 가까운 건 {nxt}예요." if nxt else ".")
+        elif pace.get("week_total"):
+            todo = f"이번 주 마감 {pace['week_total']}개는 모두 끝냈어요. 페이스 좋아요!"
+        else:
+            todo = "이번 주는 남은 마감이 없어요." + (f" 다음은 {nxt}예요." if nxt else "")
+        return " ".join(x for x in ("안녕하세요! 오늘도 같이 달려 봐요.", todo, pace_line) if x)
+    if intent == "thanks":
+        return "천만에요! 필요하면 언제든 불러 주세요." + (f" {nxt}까지 같이 페이스 맞춰 갈게요." if nxt else "")
+    if intent == "cheer":
+        parts = ["많이 지쳤군요. 여기까지 달려온 것만으로도 충분히 잘하고 있어요.", pace_line,
+                 f"오늘은 가장 가까운 {nxt} 하나만 붙잡아 봐요." if nxt else "오늘은 잠깐 쉬어 가도 괜찮아요.",
+                 "물 한 잔 마시고 5분만 쉬었다가 다시 같이 가요."]
+        return " ".join(x for x in parts if x)
+    if intent == "time":
+        week = f" 학기 {pace['week_now']}주차예요." if pace.get("week_now") else ""
+        return f"지금은 {_clock(now)}이에요.{week}"
+    if intent == "help":
+        out = "저는 이 PC에 모은 강의 글로 이런 걸 도와드려요: " + ", ".join(HELP_LINES) + "."
+        return out + ("" if ai_enabled else " " + AI_OFF_CHAT)
+    head = "이 말에 맞는 강의 글은 찾지 못했어요. " if found_nothing else ""
+    if ai_enabled and ai_error:
+        head += f"지금은 AI에게 묻지 못했어요({ai_error}). "
+    elif not ai_enabled:
+        head += AI_OFF_CHAT + " "
+    return head + "이런 건 바로 도와드릴 수 있어요: " + ", ".join(CHAT_EXAMPLES) + "."
+
+
+def _ensure_help(answer: str) -> str:
+    """위기 말에 대한 AI 답에 도움 받을 곳이 없으면 덧붙인다(하네스가 보장)."""
+    if "109" in answer or "1577-0199" in answer:
+        return answer
+    return (answer.rstrip() + " " + CRISIS_HELP).strip()
+
+
+def _session_left(session) -> str | None:
+    """이 묻기에서 AI를 더 부를 수 없으면 그 이유(한국어)."""
+    if session is None:
+        return "AI CLI 사용이 꺼져 있습니다(설정에서 켤 수 있음)"
+    if session.calls >= session.max_calls:
+        return f"이번 질문에 쓸 AI 호출({session.max_calls}회)을 다 썼어요"
+    return session.blocked()
+
+
+def _chat_ai(store, message: str, mode: str, intent: str, session, names, history, now, pace) -> tuple:
+    """AI 작업 chat 한 번 → (답 | None, 오류 | None, 시도 수, 알림)."""
+    why = _session_left(session)
+    if why:
+        return None, why, 0, []
+    inputs = {"message": message, "names": names, "mode": mode, "intent": intent,
+              "state_text": chat_state_text(pace, now),
+              "history": [{"message": h.get("message"), "answer": h.get("answer"), "kind": h.get("kind")}
+                          for h in _history_list(history)]}
+    res = session.run("chat", inputs)
+    if not res.ok:
+        return None, res.error, res.attempts, list(res.notes)
+    ans = res.data["answer"]
+    if intent == "crisis" or CRISIS_WORDS.search(message or ""):
+        ans = _ensure_help(ans)
+    return ans, None, res.attempts, list(res.notes)
+
+
+def _chat(store, out: dict, message: str, intent: str, ai_enabled: bool, session, names, history, now,
+          found_nothing: bool = False) -> dict:
+    """일반 대화 갈래(kind "chat"): AI가 켜져 있으면 작업 chat, 아니면(또는 실패하면) 규칙 답. 인용·제안·검색 결과 없음."""
+    pace = pace_summary(store, now)
+    out.update(kind="chat", intent=intent, proposals=[], citations=[], results=[], by="rules")
+    if ai_enabled:
+        ans, err, n, notes = _chat_ai(store, message, "chat", intent, session, names, history, now, pace)
+        out["attempts"] = int(out.get("attempts") or 0) + n
+        out["notes"] = list(out.get("notes") or []) + notes
+        if ans is not None:
+            out.update(by="ai", answer=ans, error=None)
+            return out
+        out["error"] = err
+    out["answer"] = rules_chat(intent, pace, now, ai_enabled, out.get("error"), found_nothing)
+    return out
+
+
+def _general_addendum(store, out: dict, message: str, session, names, history, now) -> None:
+    """학업 질문인데 강의 글에 답이 없을 때(인용 0, AI 켜짐): 작업 chat(mode general)으로 일반 지식 설명을 끝에 덧붙인다.
+    out["general"] = {"answer", "by": "ai"}, out["answer"] 끝에 '강의 글에는 없어서 일반적인 설명이에요 — …'. 실패하면 그대로."""
+    pace = pace_summary(store, now)
+    ans, err, n, notes = _chat_ai(store, message, "general", "general", session, names, history, now, pace)
+    out["attempts"] = int(out.get("attempts") or 0) + n
+    out["notes"] = list(out.get("notes") or []) + notes
+    if ans is None:
+        if n:
+            out["notes"].append(f"일반 지식 설명은 덧붙이지 못했어요({_flat(err)[:120]})")
+        return
+    out["general"] = {"answer": ans, "by": "ai"}
+    out["answer"] = f"{out.get('answer') or ''}\n\n{GENERAL_HEAD} — {ans}".strip()
+
+
 # ---------------------------------------------------------------- 묻기 갈래(22-1): 다른 모듈의 handle
 
-_KEEP = ("id", "at", "message", "course_id", "status", "kind", "finished_at", "searched", "results", "attempts")
+_KEEP = ("id", "at", "message", "course_id", "status", "kind", "finished_at", "searched", "results", "attempts",
+         "conversation", "carried", "course_context")
 
 
-def _handles(store, message: str, course_id, names, now):
+def _handles(store, message: str, course_id, names, now, action_course=None):
+    """갈래 handle들(모양 고정: handle(store, message, course_id, …)). 이어받은 과목은 메일·계획·만약에에 넘기고, 명령(actions)에는
+    직접 고른 과목이나 생략 질문('그 과목 P/NP로 바꿔줘')일 때만 넘긴다(action_course)."""
     from . import actions, maildraft, plan, whatif
-    return (("action", lambda: actions.handle(store, message, course_id)),
+    return (("action", lambda: actions.handle(store, message, action_course)),
             ("mail", lambda: maildraft.handle(store, message, course_id, names)),
             ("plan", lambda: plan.handle(store, message, course_id, now)),
             ("whatif", lambda: whatif.handle(store, message, course_id, now)))
@@ -1130,15 +1591,39 @@ def _merge_handled(store, kind: str, res: dict, notes: list) -> dict:
 
 # ---------------------------------------------------------------- 한 번 묻기
 
+def _finish(out: dict, fu: dict, message: str, courses: list) -> dict:
+    """차례 칸 마무리: 이어받은 것(carried)·이 차례의 과목(course_context)·끝난 시각."""
+    out["carried"] = fu.get("carried")
+    out["course_context"] = None if out.get("kind") == "chat" else course_context(out, fu.get("course_id"),
+                                                                                  fu.get("message") or message, courses)
+    if fu.get("carried") and fu["carried"].get("course_short"):
+        out["notes"] = list(out.get("notes") or []) + [f"앞 대화의 과목 '{fu['carried']['course_short']}'에서 찾았어요"]
+    out["finished_at"] = iso(now_local())
+    return out
+
+
 def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner=None, command: str | None = None,
-           names: list | None = None, session=None) -> dict:
+           names: list | None = None, session=None, history: list | None = None) -> dict:
     """질문 하나에 답한다(잠금 밖에서, 몇십 초 걸릴 수 있음). store는 이 작업만 쓰는 사본(Store(path))이 좋다 —
-    AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 대화 칸(status, kind, answer, proposals, citations, searched, results,
-    error, by …). 갈래(계약 22-1): actions → maildraft → plan → whatif의 handle 중 첫 번째로 None이 아닌 것, 아니면
-    missing(놓친 것 — 20장) / question(22-2)."""
+    AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 차례 칸(status, kind, answer, proposals, citations, searched, results,
+    error, by, carried, course_context …).
+    history: 같은 대화의 앞 차례들(오래된 것부터, 최대 6) [{"message", "answer", "kind", "course_id", "effective"?, "cited"?, "id"?}]
+    — 과목·주제를 이어받는다(계약 24-1, followup).
+    갈래(계약 22-1·24-2): actions → maildraft → plan → whatif의 handle 중 첫 번째로 None이 아닌 것 → 처음부터 일반 대화인 말
+    (chat_intent) → missing(놓친 것 — 20장) / question(22-2) → 학업 말이 없고 관련 글도 없으면 chat. AI 호출은 한 번 묻기에
+    PER_ASK(2)회까지(질문 답과 일반 지식 덧붙이기가 함께 쓴다)."""
     notes: list[str] = []
     now = now_local()
-    for kind, fn in _handles(store, message, course_id, names, now):
+    hist = _history_list(history)
+    courses = _visible_courses(store)
+    intent = chat_intent(message, courses)
+    fu = followup(message, course_id, hist, courses, intent)
+    eff = fu["message"]
+    if ai_enabled and session is None:
+        from .agent_cli import AiSession
+        session = AiSession(store, runner=runner, command=command, enabled=True, max_calls=PER_ASK)
+    act_course = fu["course_id"] if (course_id is not None or fu["followup"]) else None
+    for kind, fn in _handles(store, eff, fu["course_id"], names, now, act_course):
         try:
             res = fn()
         except Exception as e:  # noqa: BLE001 — 한 갈래가 고장 나도 다음 갈래로(계약 22-1)
@@ -1149,32 +1634,53 @@ def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner
         if not isinstance(res, dict):
             notes.append(f"'{kind}' 갈래의 답 모양이 달라 다음 갈래로 넘어갔어요")
             continue
-        out = _merge_handled(store, kind, res, notes)
-        out["finished_at"] = iso(now_local())
-        return out
-    kind = classify(message)
+        return _finish(_merge_handled(store, kind, res, notes), fu, message, courses)
+    base = {"status": "done", "searched": 0, "results": [], "error": None, "by": "rules", "answer": "", "proposals": [],
+            "citations": [], "attempts": 0, "notes": notes}
+    if intent:
+        return _finish(_chat(store, {**base, "kind": "chat"}, message, intent, ai_enabled, session, names, hist, now),
+                       fu, message, courses)
+    kind = classify(eff)
     ctx = Ctx(store)
-    results, searched = _search(store, message, course_id, items=ctx.items)
-    cids = scope_of(ctx, message, course_id, results)
-    out = {"status": "done", "kind": kind, "searched": searched, "results": results, "error": None, "by": "rules",
-           "answer": "", "proposals": [], "citations": [], "attempts": 0, "notes": notes}
+    results, searched = _search(store, eff, fu["course_id"], items=ctx.items)
+    if fu["course_id"] is not None and course_id is None and not any(relevant(eff, r) for r in results):
+        # 이어받은 과목에 관련 글이 없으면 모든 과목에서 다시 찾는다(다른 과목 이야기로 넘어간 경우)
+        again, n_again = _search(store, eff, None, items=ctx.items)
+        if any(relevant(eff, r) for r in again):
+            results, searched = again, n_again
+            _drop_carried_course(fu)
+    if fu["more"]:   # '또 다른 건?' — 앞 차례에서 인용한 문단은 빼고
+        seen = _prev_cited(fu["prev"])
+        results = [r for r in results if not any(k == r["source_key"] and q and q in _flat(r["snippet"]) for k, q in seen)]
+    academic = strong_academic(eff, courses) or course_id is not None
+    out = {**base, "kind": kind, "searched": searched, "results": results}
+    if not academic and not any(_grounded(eff, r) for r in results):
+        out["searched"] = searched
+        return _finish(_chat(store, out, message, "other", ai_enabled, session, names, hist, now, found_nothing=True),
+                       fu, message, courses)
+    cids = scope_of(ctx, eff, fu["course_id"], results)
     if kind == "question":
-        return _answer_question(ctx, out, message, results, searched, ai_enabled, runner, command, names, session, cids)
+        out = _answer_question(ctx, out, eff, results, searched, ai_enabled, runner, command, names, session, cids,
+                               message_typed=message, history=hist)
+        if not out["citations"]:
+            if not academic:   # 학업 말이 없고 인용할 글도 없음 → 일반 대화
+                out.update(answer="", error=None)
+                return _finish(_chat(store, out, message, "other", ai_enabled, session, names, hist, now,
+                                     found_nothing=True), fu, message, courses)
+            if ai_enabled:     # 학업 질문인데 글에 없음 → '찾지 못했어요' 끝에 일반 지식 설명(계약 24-2)
+                _general_addendum(store, out, message, session, names, hist, now)
+        return _finish(out, fu, message, courses)
     if ai_enabled:
-        from .agent_cli import AiSession
-        session = session or AiSession(store, runner=runner, command=command, enabled=True, max_calls=2)
-        inputs, originals = _ai_inputs(ctx, message, results, cids, names)
+        inputs, originals = _ai_inputs(ctx, eff, results, cids, names, message_typed=message, history=hist)
         inputs["check"] = lambda p, why: check_proposal(ctx, p, "ai", why, originals, names)
         res = session.run("assist", inputs)
         out["attempts"] = res.attempts
         if res.ok:
             out.update(by="ai", answer=res.data["answer"], proposals=res.data["proposals"], notes=notes + list(res.notes))
-            out["finished_at"] = iso(now_local())
-            return out
+            return _finish(out, fu, message, courses)
         out["error"] = res.error
-    out["answer"], out["proposals"] = rules_answer(ctx, message, results, searched, cids, out["error"], ai_enabled)
-    out["finished_at"] = iso(now_local())
-    return out
+    out["answer"], out["proposals"] = rules_answer(ctx, eff, results, searched, cids, out["error"], ai_enabled)
+    return _finish(out, fu, message, courses)
 
 
 # ---------------------------------------------------------------- 대화 기록·작업
@@ -1214,28 +1720,106 @@ def check_message(message, course_id, store) -> tuple[str, str | None]:
     return msg, cid
 
 
-def new_thread(store, message: str, course_id: str | None) -> dict:
-    """대화 하나를 'running'으로 만든다(부르는 쪽이 잠금·저장). 최근 MAX_THREADS개만 남긴다."""
+def conversation_of(t: dict) -> str | None:
+    """차례가 속한 대화 id. conversation 칸이 없는 옛 차례(v0.7.1까지)는 그 차례 id가 곧 대화 id(혼자인 대화)."""
+    if not isinstance(t, dict):
+        return None
+    conv = t.get("conversation")
+    return conv if isinstance(conv, str) and conv else t.get("id")
+
+
+def conversation_ids(store) -> set:
+    return {c for c in (conversation_of(t) for t in threads(store)) if c}
+
+
+def new_thread(store, message: str, course_id: str | None, conversation: str | None = None) -> dict:
+    """차례 하나를 'running'으로 만든다(부르는 쪽이 잠금·저장). conversation이 이미 있는 대화 id면 그 대화에 잇고, 없거나 모르는
+    id면 신규 대화(c-<hex>)를 연다(계약 24-1). 최근 MAX_THREADS개만 남긴다(오래된 것부터 지움)."""
     import uuid
+    conv = conversation if isinstance(conversation, str) and conversation in conversation_ids(store) else None
     th = {"id": "t-" + uuid.uuid4().hex[:10], "at": iso(now_local()), "message": message, "course_id": course_id,
+          "conversation": conv or "c-" + uuid.uuid4().hex[:10],
           "status": "running", "kind": None, "answer": None, "proposals": [], "citations": [], "searched": 0,
-          "results": [], "error": None, "by": None, "finished_at": None}
+          "results": [], "error": None, "by": None, "finished_at": None, "carried": None, "course_context": None}
     box = _box(store)
     box["threads"].append(th)
     del box["threads"][:-MAX_THREADS]
     return th
 
 
+def _turn(t: dict) -> dict:
+    """앞 차례 하나 → answer(history=…)가 받는 모양."""
+    carried = t.get("carried") if isinstance(t.get("carried"), dict) else {}
+    cited = [(c.get("source_key"), c.get("quote")) for c in t.get("citations") or [] if isinstance(c, dict)]
+    return {"id": t.get("id"), "message": str(t.get("message") or ""), "answer": str(t.get("answer") or ""),
+            "kind": t.get("kind") or "missing", "course_id": t.get("course_context") or t.get("course_id"),
+            "effective": carried.get("message") or str(t.get("message") or ""), "cited": cited}
+
+
+def history_for(store, thread_id: str, limit: int = HISTORY_TURNS) -> list[dict]:
+    """그 차례보다 앞선 같은 대화의 끝난 차례들(오래된 것부터, 최대 limit) — 오류·답하는 중인 차례는 뺀다."""
+    me = find_thread(store, thread_id)
+    if me is None:
+        return []
+    conv = conversation_of(me)
+    out = []
+    for t in threads(store):
+        if t is me:
+            break
+        if isinstance(t, dict) and conversation_of(t) == conv and t.get("status") == "done":
+            out.append(_turn(t))
+    return out[-limit:]
+
+
+def conversations(store, active: set | None = None) -> list[dict]:
+    """state.agent.conversations(계약 24-1): [{"id", "title"(첫 질문 40자), "started_at", "last_at", "turns", "legacy",
+    "running"}] — 최근 먼저, 최대 MAX_CONVERSATIONS. legacy = conversation 칸이 없는 옛 차례 하나(id = 그 차례 id)."""
+    legacy = {t.get("id") for t in threads(store) if isinstance(t, dict) and not t.get("conversation")}
+    groups: dict = {}
+    order: dict = {}
+    for i, t in enumerate(public_threads(store, active)):
+        conv = t.get("conversation")
+        g = groups.setdefault(conv, {"id": conv, "title": None, "started_at": t.get("at"), "last_at": t.get("at"),
+                                     "turns": 0, "legacy": conv in legacy, "running": False})
+        if g["title"] is None:
+            msg = _flat(t.get("message"))
+            g["title"] = msg if len(msg) <= 40 else msg[:39] + "…"
+        g["turns"] += 1
+        g["running"] = g["running"] or t.get("status") == "running"
+        order[conv] = i   # 차례는 오래된 것부터 쌓이므로, 같은 시각이면 마지막 차례가 뒤에 있는 대화가 최근
+        last = max((x for x in (t.get("finished_at"), t.get("at")) if parse_iso(x)), key=lambda x: parse_iso(x),
+                   default=None)
+        if last and (parse_iso(g["last_at"]) is None or parse_iso(last) > parse_iso(g["last_at"])):
+            g["last_at"] = last
+    floor = datetime(1970, 1, 1, tzinfo=local_tz())   # 시각을 모르는 차례(datetime.min은 시간대 계산에서 넘칠 수 있음)
+    out = sorted(groups.values(), key=lambda g: (parse_iso(g["last_at"]) or floor, order[g["id"]]), reverse=True)
+    return out[:MAX_CONVERSATIONS]
+
+
+def clear_conversation(store, conversation: str) -> bool:
+    """그 대화의 차례만 지운다(부르는 쪽이 잠금·저장). 반영한 마감·연결은 그대로(항목 화면에서 되돌릴 수 있다). 없으면 False."""
+    box = _box(store)
+    keep = [t for t in box["threads"] if conversation_of(t) != conversation]
+    if len(keep) == len(box["threads"]):
+        return False
+    box["threads"] = keep
+    return True
+
+
 def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bool = False, runner=None,
-            command: str | None = None, names: list | None = None) -> dict:
+            command: str | None = None, names: list | None = None, history: list | None = None) -> dict:
     """백그라운드 작업 하나: 파일에서 새로 읽은 사본으로 답을 만들고(잠금 밖), target(앱의 Store)에 잠금을 잡고 다시 읽은 뒤
-    그 대화와 AI 실행 기록만 합쳐 저장한다(그 사이 다른 프로세스가 저장한 것을 지우지 않게). 그 사이 대화가 지워졌으면 버린다."""
+    그 차례와 AI 실행 기록만 합쳐 저장한다(그 사이 다른 프로세스가 저장한 것을 지우지 않게). 그 사이 차례가 지워졌으면 버린다.
+    history를 주지 않으면 사본에서 같은 대화의 앞 차례를 읽는다(history_for)."""
     from .agent_cli import RUN_LOG_KEEP
     from .store import Store
     work = Store(target.path)
     before = list(work.data.get("ai_runs") or [])
     try:
-        result = answer(work, message, course_id, ai_enabled=ai_enabled, runner=runner, command=command, names=names)
+        if history is None:
+            history = history_for(work, thread_id)
+        result = answer(work, message, course_id, ai_enabled=ai_enabled, runner=runner, command=command, names=names,
+                        history=history)
     except Exception as e:  # noqa: BLE001 — 화면이 '답하는 중'에 멈춰 있지 않게
         result = {"status": "error", "error": f"답을 만들지 못했어요({type(e).__name__})", "answer": None,
                   "proposals": [], "by": "rules", "finished_at": iso(now_local())}
@@ -1267,13 +1851,17 @@ def can_apply(p: dict) -> bool:
 
 def public_threads(store, active: set | None = None) -> list[dict]:
     """state.agent.threads: 오래된 것부터(대화 순서). '_'로 시작하는 칸은 빼고, 이 프로세스·다른 프로세스 어디에서도 끝나지
-    않은 채 오래된 'running'(앱이 꺼졌던 경우)은 오류로 보여 준다. kind가 없는 옛 대화는 'missing'(계약 22-1)."""
+    않은 채 오래된 'running'(앱이 꺼졌던 경우)은 오류로 보여 준다. kind가 없는 옛 차례는 'missing'(계약 22-1),
+    conversation이 없는 옛 차례는 conversation = 그 차례 id(혼자인 대화, 계약 24-1)."""
     now = now_local()
     out = []
     for t in threads(store):
         if not isinstance(t, dict):
             continue
         t2 = {k: v for k, v in t.items() if not str(k).startswith("_")}
+        t2["conversation"] = conversation_of(t)
+        t2.setdefault("carried", None)
+        t2.setdefault("course_context", None)
         t2["proposals"] = [{**{k: v for k, v in p.items() if not str(k).startswith("_")},
                             "client": bool(p.get("client")), "can_apply": can_apply(p)}
                            for p in t.get("proposals") or [] if isinstance(p, dict)]

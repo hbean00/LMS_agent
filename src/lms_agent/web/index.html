@@ -911,9 +911,36 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 /* ---------- 자료 ---------- */
 .mat-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .mat-folder { font-size: 14.5px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
-.mat-course { margin-top: var(--panel-gap); }
+/* 과목별 접기 묶음(계약 24-4): 머리를 누르면 펼치기/접기, 안은 분류(과제·공지·강의자료…) → 글 → 파일 */
+.mat-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
+.mat-search { flex: 1 1 220px; width: auto; max-width: 340px; height: 38px; font-size: 15px; }
+.mat-cats { flex-wrap: wrap; max-width: 100%; }
+.mat-cats button { height: 30px; padding: 0 11px; }
+.mat-cats .mat-n { margin-left: 5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mat-all { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mat-note { margin-top: 10px; font-size: 14.5px; color: var(--graphite); }
+.mat-course { margin-top: 12px; padding: 0; }
+.mat-ch { margin: 0; font-size: inherit; }
+.mat-ctog { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 0 12px; width: 100%; min-height: 58px; padding: 12px var(--panel-x) 12px 18px;
+  border: 0; border-radius: var(--r-panel); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.mat-ctog:hover { background: var(--desk); }
+.mat-ctog > .ico { width: 18px; height: 18px; color: var(--graphite); transform: rotate(-90deg); transition: transform .15s; }
+.mat-ctog[aria-expanded="true"] > .ico { transform: none; }
+.mat-ctog[aria-expanded="true"] { border-radius: var(--r-panel) var(--r-panel) 0 0; }
+.mat-cname { min-width: 0; font-size: 18px; font-weight: 800; line-height: 1.4; letter-spacing: -.015em; overflow-wrap: anywhere; word-break: normal; }
+.mat-ccount { font-size: 14.5px; font-weight: 600; color: var(--graphite); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mat-cmeta { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 0 12px; font-size: 13.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.mat-cbody { padding: 2px var(--panel-x) 14px; border-top: 1px solid var(--rule); }
+.mat-hid { margin-top: 20px; }
+.mat-htog { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--graphite); font: inherit; font-size: 15.5px; font-weight: 700; cursor: pointer; }
+.mat-htog:hover { background: var(--paper); color: var(--ink); }
+.mat-htog > .ico { transform: rotate(-90deg); transition: transform .15s; }
+.mat-htog[aria-expanded="true"] > .ico { transform: none; }
 .mat-board { margin-top: 16px; }
 .mat-board > .sub-h { color: var(--graphite); font-weight: 700; margin-bottom: 4px; }
+.mat-board > .sub-h .sec-n { font-size: 14px; font-weight: 500; }
+.mat-board + .mat-board { padding-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .mat-ctog > .ico, .mat-htog > .ico { transition: none; } }
 .mat-post { padding: 12px 0 8px; border-top: 1px solid var(--rule); }
 .mat-post-t { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-weight: 700; }
 .mat-files { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; }
@@ -1063,13 +1090,41 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 .ag-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 64px; padding: 10px 12px 10px 22px; border-bottom: 1px solid var(--rule); }
 .ag-title { font-size: 19px; font-weight: 800; letter-spacing: -.015em; }
 .ag-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-right: auto; font-size: 13.5px; color: var(--graphite); }
-.ag-compose { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 22px; border-bottom: 1px solid var(--rule); }
+/* 입력칸은 맨 아래에 붙어 있고, 대화만 위에서 스크롤된다(계약 24-1) */
+.ag-compose { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px 22px 14px; border-top: 1px solid var(--rule); background: var(--paper); }
 .ag-compose > .help { font-size: 14px; }
-.ag-row { display: flex; align-items: center; gap: 10px; }
-.ag-lbl { font-size: 14.5px; font-weight: 700; }
-.ag-course { width: auto; min-width: 0; max-width: 100%; height: 36px; padding: 0 8px; font-size: 15px; }
-textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding: 9px 12px; border-radius: 10px; resize: vertical; font-size: 16px; line-height: 1.55; }
+.ag-lbl { font-size: 14px; font-weight: 700; }
+.ag-course { width: auto; min-width: 0; max-width: 11em; height: 34px; padding: 0 8px; font-size: 14.5px; }
+.ag-inrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.ag-inrow .btn { height: 40px; }
+textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding: 8px 12px; border-radius: 10px; resize: none; overflow-y: auto; font-size: 16px; line-height: 1.55; }
 .ag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 지금 대화 줄: 대화 제목 · [이전 대화] · [신규 대화] */
+.ag-cwrap { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); }
+.ag-cwrap:empty { display: none; }
+.ag-cbar { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 50px; padding: 6px 14px 6px 22px; border-bottom: 1px solid var(--rule); }
+.ag-bar .ag-lbl { margin-right: -6px; }
+.ag-ctitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 700; }
+.ag-ctitle.is-new { color: var(--graphite); font-weight: 600; }
+.ag-cbar .btn { flex: none; }
+.ag-cbtn .ico { width: 15px; height: 15px; }
+.ag-cbtn[aria-expanded="true"] { border-color: var(--ink); background: var(--desk); }
+.ag-cbtn[aria-expanded="true"] .ag-chev { transform: rotate(180deg); }
+.ag-cn { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--desk); color: var(--graphite); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* 이전 대화 목록(서랍 안에서 펼침 — 창을 하나 더 띄우지 않는다) */
+.ag-convs { flex: none; max-height: min(40vh, 380px); overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 8px 14px 10px; border-bottom: 1px solid var(--rule); background: var(--desk); }
+.ag-convs-h { padding: 2px 8px 4px; font-size: 13.5px; font-weight: 700; color: var(--graphite); }
+.ag-conv { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 10px; width: 100%; min-height: 50px; padding: 6px 10px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.ag-conv:hover { background: var(--paper); border-color: var(--rule-strong); }
+.ag-conv[aria-current="true"] { background: var(--paper); border-color: var(--rule-strong); box-shadow: inset 3px 0 0 var(--burgundy); }
+.ag-conv-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
+.ag-conv-m { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; font-size: 13px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.ag-conv .ag-spin { grid-column: 2; grid-row: 1 / span 2; width: 14px; height: 14px; }
+.ag-convs-f { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; padding: 8px 8px 0; border-top: 1px solid var(--rule-strong); font-size: 14px; }
+.ag-convs-f .linkish { font-size: 14px; }
+.ag-convs-f .ag-confirm { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--ink); }
+.ag-convs-f .inline-error { flex-basis: 100%; }
 .ag-chip {
   height: 30px; padding: 0 12px; border: 1px solid var(--rule-strong); border-radius: 15px; background: var(--paper);
   color: var(--graphite); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
@@ -1080,20 +1135,25 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
 .ag-count { margin-left: auto; font-size: 13.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
 .ag-count.is-near { color: var(--burgundy); font-weight: 700; }
 .ag-note { font-size: 13.5px; }
-.ag-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 22px; padding: 16px 22px 32px; }
+.ag-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; padding: 16px 22px 24px; }
 .ag-list:focus { outline: none; }
 .ag-list:focus-visible { outline: 2px solid var(--burgundy); outline-offset: -2px; }
-.ag-lhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; color: var(--graphite); }
-.ag-lhead > span:first-child { margin-right: auto; }
-.ag-lhead .linkish { font-size: 13.5px; }
-.ag-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
-.ag-thread + .ag-thread { padding-top: 22px; border-top: 1px solid var(--rule); }
-.ag-qbox { display: grid; justify-items: end; gap: 4px; }
+/* 차례 하나 = 내 말(오른쪽 말풍선) + 에이전트 답(왼쪽) */
+.ag-thread { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+.ag-qbox { display: grid; justify-items: end; gap: 3px; }
 .ag-q { max-width: 88%; padding: 9px 14px; border-radius: 14px 14px 4px 14px; background: var(--desk); font-size: 15.5px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
-.ag-qmeta { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 13px; color: var(--graphite); }
-.ag-run { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 15px; }
-.ag-run .help { flex-basis: 100%; padding-left: 26px; font-size: 13.5px; }
+.ag-qmeta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 8px; font-size: 13px; color: var(--graphite); }
+.ag-thread .ag-answer { justify-self: start; max-width: 100%; padding: 9px 14px; border: 1px solid var(--rule); border-radius: 4px 14px 14px 14px; background: var(--paper); }
+.ag-run { justify-self: start; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; max-width: 100%; padding: 9px 14px; border: 1px solid var(--rule); border-radius: 4px 14px 14px 14px; font-size: 15px; }
+.ag-run .help { flex-basis: 100%; font-size: 13.5px; }
 .ag-since { font-size: 13.5px; color: var(--graphite); }
+.ag-dots { display: inline-flex; align-items: center; gap: 4px; height: 16px; }
+.ag-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--burgundy); opacity: .3; animation: ag-dot 1.2s ease-in-out infinite; }
+.ag-dots i:nth-child(2) { animation-delay: .2s; }
+.ag-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes ag-dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.ag-empty-chips { margin-top: 10px; }
+.ag-empty-chips .ag-chips { margin-top: 6px; }
 .ag-a { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
 .ag-ahead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13.5px; color: var(--graphite); }
 .ag-rules { font-size: 14.5px; color: var(--graphite); }
@@ -1139,6 +1199,12 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
 @media (prefers-reduced-motion: reduce) {
   .ag-spin { animation: none; border-right-color: var(--burgundy); }
   .drawer[open] { animation: none; }
+  .ag-dots i { animation: none; opacity: .7; }
+}
+@media (max-width: 560px) {
+  .ag-keys { display: none; }
+  .ag-cbar { padding-left: 16px; }
+  .ag-list, .ag-compose { padding-left: 16px; padding-right: 16px; }
 }
 
 /* ---------- 에이전트 확장(계약 22): 브리핑·바뀐 마감·체크리스트·메일 초안·만약에·공부 계획 ---------- */
@@ -1492,31 +1558,31 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
 <dialog id="cele-dlg" class="dlg cele" aria-labelledby="cele-title" aria-describedby="cele-desc"></dialog>
 <dialog id="pick-dlg" class="dlg pickbox" aria-labelledby="pick-title" aria-describedby="pick-desc"></dialog>
 
-<!-- 에이전트에게 묻기(계약 20장): 규칙이 놓친 것을 말로 짚으면 모아 둔 글에서 근거와 함께 제안 -->
+<!-- 에이전트에게 묻기(계약 20·24장): 이어지는 대화 하나를 위(오래된 것)에서 아래(최근)로. 입력칸은 맨 아래 -->
 <dialog id="agent-dlg" class="drawer" aria-labelledby="agent-title" aria-describedby="agent-desc">
   <div class="ag-head">
     <h2 id="agent-title" class="ag-title">에이전트에게 묻기</h2>
     <span id="agent-mode" class="ag-mode"></span>
     <button id="agent-close" class="icon-btn" type="button" aria-label="닫기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
   </div>
+  <p id="agent-desc" class="sr-only">과목 질문, 성적 ‘만약에’, 문의 메일, 공부 계획, 앱 설정, 가벼운 이야기까지 말로 해 주세요. 앞 대화를 이어받아 답하고, 바꾸는 건 직접 눌러야 해요.</p>
+  <div id="agent-cbar" class="ag-cwrap"></div>
+  <div id="agent-list" class="ag-list" role="region" aria-label="대화" tabindex="0"></div>
   <form id="agent-form" class="ag-compose" novalidate>
-    <p id="agent-desc" class="help">과목 질문, 성적 ‘만약에’, 문의 메일, 공부 계획, 앱 설정까지 말로 해 주세요. 이 PC에 모아 둔 공지·게시판·메시지·강의계획서에서 근거를 찾아 답하고, 바꾸는 건 직접 눌러야 해요.</p>
-    <div class="ag-row">
+    <label class="sr-only" for="agent-text">에이전트에게 보낼 말</label>
+    <div class="ag-inrow">
+      <textarea id="agent-text" class="input ag-input" rows="2" maxlength="500" placeholder="예) 기말 범위 어디까지야?" autocomplete="off" aria-describedby="agent-keys agent-count"></textarea>
+      <button id="agent-send" class="btn btn-primary btn-sm" type="submit">보내기</button>
+    </div>
+    <div class="ag-bar">
       <label class="ag-lbl" for="agent-course">과목</label>
       <select id="agent-course" class="input ag-course"></select>
-    </div>
-    <label class="sr-only" for="agent-text">에이전트에게 물을 내용</label>
-    <textarea id="agent-text" class="input ag-input" rows="3" maxlength="500" placeholder="예) 기말 범위 어디까지야?" autocomplete="off" aria-describedby="agent-keys agent-count"></textarea>
-    <div id="agent-chips" class="ag-chips" role="group" aria-label="예시 질문(누르면 칸에 채워져요)"></div>
-    <div class="ag-bar">
       <span id="agent-keys" class="ag-keys"><kbd>Enter</kbd> 보내기 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈</span>
       <span id="agent-count" class="ag-count">0/500</span>
-      <button id="agent-send" class="btn btn-primary btn-sm" type="submit">묻기</button>
     </div>
     <p id="agent-note" class="help ag-note"></p>
     <p id="agent-error" class="inline-error" role="alert" hidden></p>
   </form>
-  <div id="agent-list" class="ag-list" role="region" aria-label="대화 기록" tabindex="0"></div>
   <div id="agent-live" class="sr-only" role="status" aria-live="polite"></div>
 </dialog>
 
@@ -1665,6 +1731,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     x: ['M6 6l12 12', 'M18 6L6 18'],
     trash: ['M5 7h14', 'M10 11v6', 'M14 11v6', 'M7 7l1 13h8l1-13', 'M9 7V4h6v3'],
     plus: ['M12 5v14', 'M5 12h14'],
+    chev: ['M6 9l6 6 6-6'],
     check: ['M5 12.5l4.5 4.5L19 7'],
     file: ['M6.5 3h7.5l4.5 4.5V21h-12z', 'M14 3v4.5h4.5', 'M9 13h6', 'M9 16.5h6'],
     user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4.5 20.5a7.5 7.5 0 0 1 15 0']
@@ -5402,12 +5469,67 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const total = c && c.read_counts && typeof c.read_counts.announcements === 'number' ? c.read_counts.announcements : null;
     return total !== null && total >= n ? '공지 ' + total + '개 중 파일이 붙은 ' + n + '개' : '파일이 붙은 공지 ' + n + '개';
   }
+  // ---- 자료 화면: 과목별 접기 묶음 · 분류(과제·공지·강의자료·강의계획서·기타) · 검색 (계약 24-4)
+  // 펼친 과목·고른 분류는 이 브라우저에 기억(localStorage가 막혀도 이번 화면에서는 동작). 처음에는 가장 최근에 받은 과목 하나만 펼친다
+  const MAT_KEY = 'lms-agent.materials';
+  const MAT_CATS = [['assignment', '과제'], ['announcement', '공지'], ['lecture', '강의자료'], ['syllabus', '강의계획서'], ['board', '기타 게시판']];
+  const MAT_CHIP = { board: '기타' };
+  // 앱에서 열면 프로그램이 실행되는 형식(서버 features/materials.RUNNABLE과 같은 목록): [열기] 대신 폴더에서 직접 확인하게
+  const MAT_RUN = /\.(exe|com|bat|cmd|scr|pif|msi|msp|msc|cpl|lnk|url|reg|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|jar|appref-ms|application|gadget|inf|scf|sh|command|app|desktop)$/i;
+  const matUi = { loaded: false, open: new Set(), hid: false, cat: 'all', q: '', shut: new Set() };
+  function matLoad(courses) {
+    if (matUi.loaded) return;
+    matUi.loaded = true;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(MAT_KEY) || 'null'); } catch (e) { saved = null; }
+    if (saved && typeof saved === 'object' && Array.isArray(saved.open)) {
+      matUi.open = new Set(saved.open.map(String));
+      matUi.hid = saved.hid === true;
+      if (typeof saved.cat === 'string') matUi.cat = saved.cat;
+      return;
+    }
+    const first = courses.filter((c) => !c.hidden).sort((a, b) => b.lastMs - a.lastMs)[0];   // 처음: 가장 최근에 받은 과목 하나만
+    if (first) matUi.open.add(first.key);
+  }
+  function matSave() {
+    try { localStorage.setItem(MAT_KEY, JSON.stringify({ open: Array.from(matUi.open), hid: matUi.hid, cat: matUi.cat })); } catch (e) { /* 기억 못 해도 이번에는 동작함 */ }
+  }
+  const matCat = (f) => {
+    const c = String(f.category || '');
+    if (MAT_CATS.some((x) => x[0] === c)) return c;
+    return /^board:announcements-/.test(String(f.post_key || '')) ? 'announcement' : 'board';   // 예전 서버(분류 칸 없음)
+  };
+  const matCats = (M) => {
+    const list = Array.isArray(M.categories) ? M.categories.filter((c) => c && typeof c.id === 'string' && c.id).map((c) => [c.id, String(c.label || c.id)]) : [];
+    return list.length ? list : MAT_CATS;
+  };
+  const matDomId = (k) => 'mat-c-' + String(k).replace(/[^A-Za-z0-9_-]/g, (ch) => '_' + ch.charCodeAt(0).toString(16));
+  // 과목 묶음 만들기: 과목 키 = 파일 key의 과목 id(없으면 짧은 이름). 이름·순서는 과목 목록(state.courses)을 따른다
+  function matGroups(items) {
+    const order = new Map((state.courses || []).map((c, i) => [String(c && c.id), i]));
+    const map = new Map();
+    for (const f of items) {
+      const id = matCourse(f);
+      const key = id && (order.has(id) || !f.course_short) ? id : String(f.course_short || id || '과목 미상');
+      let g = map.get(key);
+      if (!g) {
+        const co = courseById(id);
+        g = { key, name: co ? courseShort(co) : String(f.course_short || '과목 미상'), order: order.has(id) ? order.get(id) : 1e6, hidden: false, files: [], lastMs: 0 };
+        map.set(key, g);
+      }
+      g.files.push(f);
+      if (f.course_hidden === true || (courseById(id) && modeOf(id) === 'hidden')) g.hidden = true;
+      g.lastMs = Math.max(g.lastMs, Date.parse(f.downloaded_at) || 0);   // 가장 최근에 받은 때(처음 펼칠 과목 고르기)
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ko'));
+  }
+  const matHit = (f, q) => !q || [f.filename, f.post_title, f.board_title].some((x) => String(x || '').toLowerCase().indexOf(q) >= 0);
   function renderMaterials() {
     const body = $('materials-body');
     body.replaceChildren();
     const M = matState();
     if (!M) { body.appendChild(h('p', { class: 'empty' }, '이 버전에는 첨부 자료 기능이 없어요.')); return; }
-    const items = Array.isArray(M.items) ? M.items : [];
+    const items = Array.isArray(M.items) ? M.items.filter((f) => f && typeof f === 'object') : [];
     body.appendChild(h('div', { class: 'mat-tools' },
       h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'mat-folder', on: { click: (e) => openMaterial(null, e.currentTarget) } }, '폴더 열기'),
       h('span', { class: 'mat-folder', title: M.folder || '' }, (M.folder ? M.folder + '에 저장. ' : '') + (M.auto_download ? '동기화할 때 신규 첨부를 자동으로 받아요.' : '자동 저장이 꺼져 있어요.') + ' ', h('a', { href: '#settings' }, '설정'))));
@@ -5418,51 +5540,147 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
         h('p', { class: 'empty' }, M.auto_download ? '아직 받은 첨부가 없어요. 게시판에 첨부가 올라오면 동기화할 때 이 PC에 저장해 둘게요.' : '자동 저장이 꺼져 있어요. 설정에서 켜면 게시판 첨부를 이 PC에 받아 둡니다.')));
       return;
     }
-    // 과목 → 게시판 → 글 → 파일
-    const courses = [];
-    const find = (arr, key, make) => { let x = arr.find((y) => y.key === key); if (!x) { x = make(); arr.push(x); } return x; };
-    // Canvas 공지의 첨부는 서버가 가상 게시판(board_id "announcements", 제목 '공지')으로 묶는다: 공지 전체가 아니라 '파일이 붙은 공지'라고 밝힌다
-    const isNotice = (f) => /^board:announcements-/.test(String(f.post_key || '')) || f.board_id === 'announcements' || f.board_source === 'canvas';
-    for (const it of items) {
-      const c = find(courses, it.course_short || '과목 미상', () => ({ key: it.course_short || '과목 미상', boards: [] }));
-      const bk = isNotice(it) ? '\u0001notice' : it.board_title || '게시판';
-      const b = find(c.boards, bk, () => ({ key: bk, notice: isNotice(it), title: isNotice(it) ? '공지 첨부 파일' : it.board_title || '게시판', posts: [] }));
-      const p = find(b.posts, it.post_key || it.post_title || it.key, () => ({ key: it.post_key || it.post_title || it.key, title: it.post_title || '제목 없음', at: it.posted_at, files: [] }));
-      p.files.push(it);
+    const groups = matGroups(items);
+    matLoad(groups);
+    const cats = matCats(M);
+    if (matUi.cat !== 'all' && !cats.some((c) => c[0] === matUi.cat)) matUi.cat = 'all';
+    // 분류 칩의 개수: 제외하지 않은 과목의 파일 기준
+    const shown = items.filter((f) => !groups.some((g) => g.hidden && g.files.indexOf(f) >= 0));
+    const count = (id) => shown.filter((f) => matCat(f) === id).length;
+    const pick = (id) => () => { matUi.cat = id; matSave(); matRepaint(); };
+    const chips = h('div', { class: 'seg mat-cats', role: 'group', 'aria-label': '분류로 보기' },
+      h('button', { type: 'button', 'data-key': 'mat-cat-all', 'aria-pressed': matUi.cat === 'all' ? 'true' : 'false', on: { click: pick('all') } }, '전체', h('span', { class: 'mat-n' }, String(shown.length))),
+      cats.filter((c) => count(c[0]) > 0 || matUi.cat === c[0]).map((c) => h('button', { type: 'button', 'data-key': 'mat-cat-' + c[0], 'aria-pressed': matUi.cat === c[0] ? 'true' : 'false', on: { click: pick(c[0]) } },
+        MAT_CHIP[c[0]] || c[1], h('span', { class: 'mat-n' }, String(count(c[0]))))));
+    const search = h('input', { type: 'text', class: 'input mat-search', 'data-key': 'mat-q', value: matUi.q, placeholder: '파일·글 제목 찾기', 'aria-label': '자료 찾기(파일 이름·글 제목)',
+      autocomplete: 'off', spellcheck: 'false', on: { input: (e) => { matUi.q = e.target.value; matUi.shut.clear(); matFill(); } } });
+    const visible = () => groups.filter((g) => !g.hidden);
+    body.appendChild(h('div', { class: 'mat-bar' }, search, chips,
+      h('div', { class: 'mat-all' },
+        h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'mat-open-all', on: { click: () => { for (const g of visible()) matUi.open.add(g.key); matUi.shut.clear(); matSave(); matFill(); } } }, '모두 펼치기'),
+        h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'mat-close-all', on: { click: () => { matUi.open.clear(); matUi.hid = false; for (const g of groups) matUi.shut.add(g.key); matSave(); matFill(); } } }, '모두 접기'))));
+    const list = h('div', { id: 'mat-list' });
+    body.appendChild(list);
+    // 목록만 다시(검색 칸·칩은 그대로 — 입력 중 포커스가 빠지지 않게)
+    function matFill() {
+      const q = matUi.q.trim().toLowerCase();
+      const pickFiles = (g) => g.files.filter((f) => (matUi.cat === 'all' || matCat(f) === matUi.cat) && matHit(f, q));
+      const vis = [], hid = [];
+      for (const g of groups) {
+        const files = pickFiles(g);
+        if (!files.length) continue;
+        (g.hidden ? hid : vis).push({ g, files });
+      }
+      // 검색 중에는 맞는 과목을 저절로 펼친다(그 검색 동안 직접 접은 과목은 빼고)
+      const isOpen = (g) => (q ? !matUi.shut.has(g.key) : matUi.open.has(g.key));
+      const catLabel = (cats.find((c) => c[0] === matUi.cat) || [null, ''])[1];
+      const kids = [];
+      const nVis = vis.reduce((a, x) => a + x.files.length, 0), nHid = hid.reduce((a, x) => a + x.files.length, 0);
+      if (q || matUi.cat !== 'all') {
+        const what = (matUi.cat !== 'all' ? catLabel + ' ' : '') + '파일';
+        kids.push(h('p', { class: 'mat-note', role: 'status' }, nVis + nHid
+          ? (q ? '‘' + matUi.q.trim() + '’ 찾은 ' : '') + what + ' ' + nVis + '개' + (vis.length > 1 ? ' · 과목 ' + vis.length + '개' : '') + (nHid ? ' · 제외한 과목에 ' + nHid + '개' : '')
+          : (q ? '‘' + matUi.q.trim() + '’에 맞는 ' : '') + what + '이 없어요.'));
+      }
+      for (const x of vis) kids.push(matCourseBox(x.g, x.files, isOpen(x.g), cats, q));
+      if (hid.length) {
+        const open = (q && hid.some((x) => !matUi.shut.has(x.g.key))) || matUi.hid;
+        kids.push(h('div', { class: 'mat-hid' },
+          h('button', { type: 'button', class: 'mat-htog', 'data-key': 'mat-hid', 'aria-expanded': open ? 'true' : 'false', 'aria-controls': 'mat-hid-list',
+            on: { click: () => { matUi.hid = !open; if (!matUi.hid) for (const x of hid) matUi.shut.add(x.g.key); matSave(); matFill(); } } },
+            icon('chev'), '제외한 과목 ' + hid.length + '개', h('span', { class: 'tiny' }, '파일 ' + hid.reduce((a, x) => a + x.files.length, 0) + '개')),
+          open ? h('div', { id: 'mat-hid-list' }, hid.map((x) => matCourseBox(x.g, x.files, q ? !matUi.shut.has(x.g.key) : matUi.open.has(x.g.key), cats, q))) : null));
+      }
+      const a = document.activeElement;
+      const fk = a && list.contains(a) ? a.getAttribute('data-key') : null;
+      list.replaceChildren();
+      add(list, kids);
+      if (fk) { const el = list.querySelector('[data-key="' + CSS.escape(fk) + '"]'); if (el) el.focus({ preventScroll: true }); }
     }
-    for (const c of courses) {
-      body.appendChild(h('section', { class: 'mat-course', 'aria-label': c.key },
-        h('h2', { class: 'sec-h' }, c.key, h('span', { class: 'sec-n' }, '파일 ' + c.boards.reduce((a, b) => a + b.posts.reduce((x, p) => x + p.files.length, 0), 0) + '개')),
-        c.boards.map((b) => h('div', { class: 'mat-board' },
-          h('h3', { class: 'sub-h' }, b.title || b.key, b.notice ? h('span', { class: 'sec-n' }, noticeHint(c.key, b.posts.length)) : null),
-          b.posts.map((p) => {
-            const d = parseDate(p.at);
-            const fromFiles = new Set();
-            const fileLinks = p.files.map((f) => { const l = deadlinesFrom(f, 'pdf'); l.forEach((x) => fromFiles.add(x.id)); return l; });
-            const fromPost = p.files.length ? deadlinesFrom(p.files[0], 'board').filter((x) => !fromFiles.has(x.id)) : [];
-            return h('div', { class: 'mat-post' },
-              h('p', { class: 'mat-post-t' }, p.title, d ? h('span', { class: 'tiny' }, fmtShort(d)) : null),
-              deadlineLinks(fromPost, '이 글'),
-              h('ul', { class: 'mat-files' }, p.files.map((f, fi) => {
-                const dd = parseDate(f.downloaded_at);
-                const isPdf = /\.pdf$/i.test(f.filename || '');
-                const missing = f.exists === false;
-                return h('li', { class: 'mat-file' },
-                  icon('file'),
-                  h('div', null,
-                    h('div', { class: 'mat-name' }, f.filename || '파일'),
-                    h('div', { class: 'mat-meta' },
-                      fmtSize(f.size) ? h('span', null, fmtSize(f.size)) : null,
-                      dd ? h('span', null, fmtShort(dd) + ' 받음') : null,
-                      isPdf && f.pdf_ok === true ? tag('PDF 내용 읽음', 'quiet', '이 PDF의 내용도 마감 찾기에 썼어요') : null,
-                      isPdf && f.pdf_ok === false ? tag('내용을 못 읽은 PDF', 'dash', '스캔한 PDF처럼 글자를 뽑을 수 없어 마감 찾기에 쓰지 못했어요. 직접 열어 확인하세요.') : null,
-                      missing ? h('span', { class: 'warn' }, '파일이 없어요(다음 동기화 때 다시 받아요)') : null),
-                    deadlineLinks(fileLinks[fi], '이 파일')),
-                  h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'mat-open-' + f.key, disabled: missing,
-                    'aria-label': (f.filename || '파일') + ' 열기', on: { click: (e) => openMaterial(f.key, e.currentTarget, f.filename) } }, '열기'));
-              })));
-          })))));
+    // 과목 하나 펼치기/접기: 기억하고 그 묶음만 다시 그린다
+    function matToggle(g, files, nowOpen) {
+      const q = matUi.q.trim();
+      if (nowOpen) { matUi.open.delete(g.key); if (q) matUi.shut.add(g.key); } else { matUi.open.add(g.key); matUi.shut.delete(g.key); }
+      matSave();
+      const old = $(matDomId(g.key) + '-box');
+      if (!old) { matFill(); return; }
+      const box = matCourseBox(g, files, !nowOpen, cats, q.toLowerCase());
+      old.replaceWith(box);
+      const b = box.querySelector('.mat-ctog');
+      if (b) b.focus({ preventScroll: true });
     }
+    function matCourseBox(g, files, open, catsList, q) {
+      const id = matDomId(g.key);
+      const last = files.reduce((m, f) => Math.max(m, Date.parse(f.downloaded_at) || 0), 0);
+      const byCat = catsList.map((c) => [c, files.filter((f) => matCat(f) === c[0])]).filter((x) => x[1].length);
+      const tog = h('button', { type: 'button', class: 'mat-ctog', id: id + '-h', 'data-key': id, 'aria-expanded': open ? 'true' : 'false', 'aria-controls': id,
+        on: { click: () => matToggle(g, files, open) } },
+        icon('chev'),
+        h('span', { class: 'mat-cname' }, g.name),
+        h('span', { class: 'mat-ccount' }, '파일 ' + files.length + '개'),
+        h('span', { class: 'mat-cmeta' },
+          byCat.length > 1 ? h('span', null, byCat.map((x) => (MAT_CHIP[x[0][0]] || x[0][1]) + ' ' + x[1].length).join(' · ')) : null,
+          last ? h('span', null, '최근 받음 ', relEl(new Date(last).toISOString())) : null));
+      return h('section', { class: 'mat-course', id: id + '-box', 'aria-labelledby': id + '-h' },
+        h('h2', { class: 'mat-ch' }, tog),
+        open ? h('div', { class: 'mat-cbody', id }, byCat.map((x) => matCatBlock(g, x[0], x[1], q))) : h('div', { id, hidden: true }));
+    }
+    function matCatBlock(g, c, files, q) {
+      // 분류 안: 글(게시판 글 제목)마다 묶고, 그 아래 파일. 한 분류에 게시판이 여럿이면 글 옆에 게시판 이름을 붙인다
+      const posts = [];
+      const pmap = new Map();
+      for (const f of files) {
+        const k = String(f.post_key || f.post_title || f.key);
+        let p = pmap.get(k);
+        if (!p) { p = { key: k, title: String(f.post_title || f.board_title || '제목 없음'), board: String(f.board_title || ''), at: f.posted_at, files: [] }; pmap.set(k, p); posts.push(p); }
+        p.files.push(f);
+      }
+      const boards = new Set(posts.map((p) => p.board).filter(Boolean));
+      const many = boards.size > 1;
+      const notice = c[0] === 'announcement' && !q;
+      return h('div', { class: 'mat-board' },
+        h('h3', { class: 'sub-h' }, c[1], h('span', { class: 'sec-n' }, notice ? noticeHint(g.name, posts.length) + ' · 파일 ' + files.length + '개' : '파일 ' + files.length + '개')),
+        posts.map((p) => matPost(p, many)));
+    }
+    matFill();
+  }
+  // 바깥에서 다시 그릴 때(칩 고르기): 화면 전체를 다시 그리고 포커스를 그 칩에 둔다
+  function matRepaint() {
+    const snap = snapshotFocus();
+    renderMaterials();
+    restoreFocus(snap);
+  }
+  function matPost(p, showBoard) {
+    const d = parseDate(p.at);
+    const fromFiles = new Set();
+    const fileLinks = p.files.map((f) => { const l = deadlinesFrom(f, 'pdf'); l.forEach((x) => fromFiles.add(x.id)); return l; });
+    const fromPost = p.files.length ? deadlinesFrom(p.files[0], 'board').filter((x) => !fromFiles.has(x.id)) : [];
+    return h('div', { class: 'mat-post' },
+      h('p', { class: 'mat-post-t' }, p.title, showBoard && p.board && p.board !== p.title ? h('span', { class: 'tiny' }, p.board) : null, d ? h('span', { class: 'tiny' }, fmtShort(d)) : null),
+      deadlineLinks(fromPost, '이 글'),
+      h('ul', { class: 'mat-files' }, p.files.map((f, fi) => matFileRow(f, fileLinks[fi]))));
+  }
+  function matFileRow(f, links) {
+    const dd = parseDate(f.downloaded_at);
+    const isPdf = /\.pdf$/i.test(f.filename || '');
+    const missing = f.exists === false;
+    const runnable = MAT_RUN.test(String(f.filename || ''));
+    return h('li', { class: 'mat-file' },
+      icon('file'),
+      h('div', null,
+        h('div', { class: 'mat-name' }, f.filename || '파일'),
+        h('div', { class: 'mat-meta' },
+          fmtSize(f.size) ? h('span', null, fmtSize(f.size)) : null,
+          dd ? h('span', null, fmtShort(dd) + ' 받음') : null,
+          isPdf && f.pdf_ok === true ? tag('PDF 내용 읽음', 'quiet', '이 PDF의 내용도 마감 찾기에 썼어요') : null,
+          isPdf && f.pdf_ok === false ? tag('내용을 못 읽은 PDF', 'dash', '스캔한 PDF처럼 글자를 뽑을 수 없어 마감 찾기에 쓰지 못했어요. 직접 열어 확인하세요.') : null,
+          missing ? h('span', { class: 'warn' }, '파일이 없어요(다음 동기화 때 다시 받아요)') : null,
+          runnable && !missing ? h('span', null, '실행 파일이라 앱에서 열지 않아요') : null),
+        deadlineLinks(links || [], '이 파일')),
+      runnable
+        ? h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'mat-open-' + f.key, 'aria-label': (f.filename || '파일') + '이 있는 폴더 열기', on: { click: (e) => openMaterial(null, e.currentTarget) } }, '폴더 열기')
+        : h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'mat-open-' + f.key, disabled: missing,
+          'aria-label': (f.filename || '파일') + ' 열기', on: { click: (e) => openMaterial(f.key, e.currentTarget, f.filename) } }, '열기'));
   }
 
   // ---------------------------------------------------------------- 설정: 첨부 자료·AI 도움·캐릭터
@@ -5865,21 +6083,117 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   // 서버가 state.agent를 주지 않으면(예전 서버) 입구와 서랍을 숨기고 아무것도 하지 않는다
   const agState = () => (state && state.agent && typeof state.agent === 'object' ? state.agent : null);
   const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', action: '앱 동작', note: '설명' };
-  const AG_EXAMPLES = ['기말 범위 어디까지야?', '기말에서 몇 점 받아야 A?', 'LAB4 연장 문의 메일 써줘', '기말 전 2주 공부 계획 세워줘', '컴퓨터 켤 때 자동 실행해줘', '기말고사 날짜가 안 보여요'];
+  // 예시: 공부 얘기만 받는 게 아니라는 걸 보이게 학업 밖 예시 하나(계약 24-2 chat)
+  const AG_EXAMPLES = ['기말 범위 어디까지야?', '기말에서 몇 점 받아야 A?', 'LAB4 연장 문의 메일 써줘', '기말 전 2주 공부 계획 세워줘', '컴퓨터 켤 때 자동 실행해줘', '기말고사 날짜가 안 보여요', '요즘 너무 지쳐요'];
   const AG_MAX = 500;
-  // 대화 갈래(계약 22-1 kind). 옛 대화는 kind가 없으면 'missing'(놓친 것 찾기, 20장 모양 그대로)
-  const AG_KINDS = { missing: '놓친 것 찾기', question: '질문', whatif: '만약에', mail: '메일 초안', plan: '공부 계획', action: '앱 동작' };
+  // 대화 갈래(계약 22-1 kind, 24-2 chat). 옛 대화는 kind가 없으면 'missing'(놓친 것 찾기, 20장 모양 그대로)
+  const AG_KINDS = { missing: '놓친 것 찾기', question: '질문', whatif: '만약에', mail: '메일 초안', plan: '공부 계획', action: '앱 동작', chat: '대화' };
   const AG_EMPTY = { question: '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.', whatif: '계산할 재료가 부족해요. 성적 화면에서 평가 비중을 먼저 넣어 주세요.',
     mail: '초안을 만들지 못했어요. 과목과 과제 이름을 함께 적어 다시 물어봐 주세요.', plan: '계획을 세울 시험·마감을 찾지 못했어요. 과목을 고르고 다시 물어봐 주세요.', action: '할 수 있는 동작을 찾지 못했어요.' };
+  // conv: 지금 보는 대화 id(undefined = 아직 안 고름 → 가장 최근, null = 신규 대화(빈 화면), 문자열 = 그 대화)
+  // menu: 이전 대화 목록을 펼쳤는지, confirmOne: '이 대화 지우기' 확인 중, shape: 자동 스크롤용으로 마지막에 그린 대화 모양
   const ag = { opener: null, noRestore: false, sending: false, pending: null, job: null, busy: new Set(), errs: new Map(), applied: new Map(),
     seen: new Map(), unread: false, confirmClear: false, clearing: false, clearErr: '', sig: '', courseSig: '', timer: 0, downOut: false,
-    drafts: new Map(), clientDone: new Map(), planIds: new Map() };
+    drafts: new Map(), clientDone: new Map(), planIds: new Map(), conv: undefined, menu: false, confirmOne: false, shape: null, scroll: null, hintFor: '' };
   const agentOpen = () => $('agent-dlg').open;
   function agThreads() {
     const A = agState();
-    const list = A && Array.isArray(A.threads) ? A.threads.filter((t) => t && t.id !== undefined && t.id !== null) : [];
+    const list = A && Array.isArray(A.threads) ? A.threads.filter((t) => t && typeof t === 'object' && t.id !== undefined && t.id !== null) : [];
     return list.map((t, i) => ({ t, i })).sort((a, b) => (Date.parse(b.t.at) || 0) - (Date.parse(a.t.at) || 0) || b.i - a.i).map((x) => x.t);
   }
+  // ---------------------------------------------------------------- 이어지는 대화(계약 24-1)
+  // 차례(thread)를 conversation으로 묶는다. 칸이 없는 옛 차례(또는 예전 서버)는 차례 하나를 대화 하나로 본다
+  const AG_LEGACY = 'thread:';
+  const agConvKey = (t) => (t && typeof t.conversation === 'string' && t.conversation ? t.conversation : AG_LEGACY + String(t && t.id));
+  const agIsLegacy = (id) => typeof id === 'string' && id.indexOf(AG_LEGACY) === 0;
+  function agConvs(threads) {
+    const A = agState();
+    const meta = A && Array.isArray(A.conversations) ? A.conversations.filter((c) => c && typeof c === 'object' && typeof c.id === 'string' && c.id) : [];
+    const map = new Map();
+    const get = (id) => {
+      let c = map.get(id);
+      if (!c) { c = { id, legacy: agIsLegacy(id), threads: [], meta: null }; map.set(id, c); }
+      return c;
+    };
+    for (let i = threads.length - 1; i >= 0; i--) get(agConvKey(threads[i])).threads.push(threads[i]);   // threads는 최근 먼저 → 대화 안은 오래된 것 먼저
+    for (const m of meta) get(m.id).meta = m;
+    const out = [];
+    for (const c of map.values()) {
+      const m = c.meta || {};
+      const first = c.threads[0], last = c.threads[c.threads.length - 1];
+      const lastAt = Math.max(Date.parse(m.last_at) || 0, last ? Date.parse(last.at) || 0 : 0, Date.parse(m.started_at) || 0);
+      c.title = String(m.title || (first && first.message) || '제목 없는 대화').replace(/\s+/g, ' ').trim().slice(0, 60) || '제목 없는 대화';
+      c.lastIso = lastAt ? new Date(lastAt).toISOString() : '';
+      c.lastMs = lastAt;
+      c.turns = Math.max(num(m.turns), c.threads.length);
+      c.running = c.threads.some((t) => t.status === 'running');
+      out.push(c);
+    }
+    return out.sort((a, b) => b.lastMs - a.lastMs);
+  }
+  // 지금 그릴 대화 id(null = 빈 신규 대화). 고른 대화가 없어졌으면 가장 최근 대화로
+  function agCurId(convs) {
+    if (ag.conv === null) return null;
+    if (typeof ag.conv === 'string') {
+      if (convs.some((c) => c.id === ag.conv)) return ag.conv;
+      if (ag.pending && ag.pending.conv === ag.conv) return ag.conv;   // 막 보낸 첫 질문(아직 state에 없음)
+    }
+    return convs.length ? convs[0].id : null;
+  }
+  const agCurNow = () => (ag.conv === null || typeof ag.conv === 'string' ? ag.conv : agCurId(agConvs(agThreads())));
+  const agHintHere = (t) => !ag.hintFor || String(t.id) === ag.hintFor;
+  // 서랍을 열 때: 닫힌 사이 답이 왔으면 그 대화, 고른 대화가 그대로 있으면 그것, 아니면 가장 최근 대화를 이어서 보여 준다
+  function agResume() {
+    const threads = agThreads();
+    if (ag.unread && threads.length) { ag.conv = agConvKey(threads[0]); return; }
+    if (ag.conv === null) return;
+    const convs = agConvs(threads);
+    if (typeof ag.conv === 'string' && (convs.some((c) => c.id === ag.conv) || (ag.pending && ag.pending.conv === ag.conv))) return;
+    ag.conv = convs.length ? convs[0].id : null;
+  }
+  // 대화를 바꿀 때 지난 대화의 확인·오류 표시를 거둔다
+  function agResetMenu() { ag.menu = false; ag.confirmClear = false; ag.confirmOne = false; ag.clearErr = ''; }
+  function agSwitch(id) {
+    const same = id === agCurNow();
+    agResetMenu();
+    if (!same) {
+      ag.conv = id;
+      ag.scroll = 'bottom';
+      $('agent-course').value = '';   // 과목은 서버가 앞 차례에서 이어받는다(24-1). 다른 대화의 과목을 들고 가지 않게
+      agErr('');
+    }
+    renderAgent();
+    $('agent-text').focus();
+  }
+  function agNewConv() {
+    agResetMenu();
+    ag.conv = null;
+    ag.scroll = 'top';
+    const cid = view === 'grades' ? selGrade : view === 'courses' ? selCourse : null;
+    const sel = $('agent-course');
+    sel.value = cid !== null && cid !== undefined && Array.prototype.some.call(sel.options, (o) => o.value === String(cid)) ? String(cid) : '';
+    agErr('');
+    renderAgent();
+    agSay('신규 대화를 시작해요. 앞 대화는 ‘이전 대화’에 남아 있어요.');
+    $('agent-text').focus();
+  }
+  function agMenu(open) {
+    agResetMenu();
+    ag.menu = !!open;
+    renderAgent();
+    const box = $('agent-cbar');
+    const el = open ? box.querySelector('.ag-conv[aria-current="true"]') || box.querySelector('.ag-conv') : box.querySelector('[data-ak="ag-menu"]');
+    if (el) el.focus();
+  }
+  // 지운 대화의 차례에 붙은 화면 표시(반영 중·오류·초안)도 거둔다
+  function agForget(ids) {
+    const has = (k) => { k = String(k); return k.indexOf('plan:') === 0 ? ids.has(k.slice(5)) : ids.has(k.slice(0, Math.max(0, k.lastIndexOf(':')))); };
+    for (const m of [ag.applied, ag.errs, ag.clientDone]) for (const k of [...m.keys()]) if (has(k)) m.delete(k);
+    for (const k of [...ag.busy]) if (has(k)) ag.busy.delete(k);
+    for (const id of ids) { ag.drafts.delete(id); ag.planIds.delete(id); }
+  }
+  // 지우기 응답이 state가 아니면(예전 서버·다른 모양) 다시 읽는다
+  const agTakeState = (s) => { if (s && typeof s === 'object' && Array.isArray(s.items)) applyState(s); else refresh(); };
   const agRunning = () => { const A = agState(); return !!A && (!!A.busy || agThreads().some((t) => t.status === 'running')); };
   const agKey = (t, i) => String(t.id) + ':' + i;
   function agErr(text) { showMsg($('agent-error'), text); }
@@ -5891,7 +6205,11 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const ta = $('agent-text'), sel = $('agent-course');
     ag.opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
     ag.noRestore = false;
+    agResume();   // 열 때마다 빈 창이 아니라 이어지던 대화(계약 24-1)
     ag.unread = false;
+    agResetMenu();
+    ag.shape = null;
+    ag.scroll = 'bottom';
     agCourseOptions();
     if (typeof pre.text === 'string') ta.value = pre.text.slice(0, AG_MAX);
     // 과목: 넘겨받은 과목 > (새 질문이면) 지금 보는 과목(성적·과목 화면) > 그대로
@@ -5903,6 +6221,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     agCount();
     ag.sig = '';
     $('agent-dlg').showModal();
+    agGrow();
     renderAgent();
     ta.focus();
     try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { /* 무시 */ }
@@ -5913,7 +6232,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function agLeave() { ag.noRestore = true; closeAgent(); }
   $('agent-dlg').addEventListener('close', () => {
     agTick();
-    ag.confirmClear = false;
+    agResetMenu();
     const o = ag.opener;
     ag.opener = null;
     if (!ag.noRestore && o && document.contains(o) && o.getClientRects().length) o.focus({ preventScroll: true });
@@ -5921,9 +6240,27 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     agEntry();
     setTimeout(() => { maybePopups(); maybeOfferTour(); maybeHandoff(); }, 0);
   });
-  $('agent-dlg').addEventListener('cancel', (e) => {
-    if (ag.confirmClear) { e.preventDefault(); ag.confirmClear = false; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear"]'); if (b) b.focus(); }
+  // Esc: 지우기 확인 → 취소, 이전 대화 목록 → 접기, 그 밖이면 서랍을 닫는다. 키를 먼저 잡아 서랍이 같이 닫히지 않게
+  function agEsc() {
+    if (ag.confirmClear || ag.confirmOne) {
+      const k = ag.confirmOne ? 'ag-clear-one' : 'ag-clear';
+      ag.confirmClear = false;
+      ag.confirmOne = false;
+      renderAgent();
+      const b = $('agent-cbar').querySelector('[data-ak="' + k + '"]');
+      if (b) b.focus();
+      return true;
+    }
+    if (ag.menu) { agMenu(false); return true; }
+    return false;
+  }
+  $('agent-dlg').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.isComposing || !(ag.menu || ag.confirmClear || ag.confirmOne)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.repeat) agEsc();
   });
+  $('agent-dlg').addEventListener('cancel', (e) => { if (agEsc()) e.preventDefault(); });
   // 바깥(어두운 곳)을 눌렀다 떼면 닫는다. 안에서 글을 고르다 밖에서 떼면 닫지 않는다
   const agOutside = (e) => { const r = $('agent-dlg').getBoundingClientRect(); return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom; };
   $('agent-dlg').addEventListener('mousedown', (e) => { ag.downOut = e.target === e.currentTarget && agOutside(e); });
@@ -5956,18 +6293,28 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const c = $('agent-count');
     c.textContent = n + '/' + AG_MAX;
     c.classList.toggle('is-near', n >= AG_MAX - 50);
+    agGrow();
+  }
+  // 입력칸은 글 길이만큼 늘어난다(화면 높이의 32%까지, 그 뒤로는 칸 안에서 스크롤)
+  function agGrow() {
+    const ta = $('agent-text');
+    if (!agentOpen()) return;
+    ta.style.height = 'auto';
+    const max = Math.max(84, Math.round(window.innerHeight * 0.32));
+    ta.style.height = Math.min(ta.scrollHeight + 2, max) + 'px';
   }
   const needsCourse = (text) => /이\s*과목/.test(text) && !$('agent-course').value;
-  for (const ex of AG_EXAMPLES) {
-    $('agent-chips').appendChild(h('button', { type: 'button', class: 'ag-chip', on: { click: () => {
+  // 예시 칩(빈 대화에서만 보인다): 누르면 입력칸에 채운다. 보내는 건 사용자가
+  function agChip(ex, i) {
+    return h('button', { type: 'button', class: 'ag-chip', 'data-ak': 'ag-ex-' + i, on: { click: () => {
       const ta = $('agent-text');
       ta.value = ex;
       agCount();
       agErr('');
-      if (needsCourse(ex)) { agErr('‘이 과목’이 어느 과목인지 위에서 골라 주세요.'); $('agent-course').focus(); return; }
+      if (needsCourse(ex)) { agErr('‘이 과목’이 어느 과목인지 아래 과목 칸에서 골라 주세요.'); $('agent-course').focus(); return; }
       ta.focus();
       try { ta.setSelectionRange(ex.length, ex.length); } catch (e) { /* 무시 */ }
-    } } }, ex));
+    } } }, ex);
   }
   $('agent-text').addEventListener('input', () => { agCount(); if ($('agent-text').value.trim()) agErr(''); });
   $('agent-course').addEventListener('change', () => agErr(''));
@@ -5983,32 +6330,46 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     const ta = $('agent-text');
     const text = ta.value.trim();
     const cid = $('agent-course').value || null;
-    if (!text) { agErr('물어볼 내용을 적어 주세요. 아래 예시를 눌러도 돼요.'); ta.focus(); return; }
+    if (!text) { agErr('보낼 말을 적어 주세요.' + (agCurNow() === null ? ' 위 예시를 눌러도 돼요.' : '')); ta.focus(); return; }
     if (text.length > AG_MAX) { agErr(AG_MAX + '자까지 적을 수 있어요. 조금만 줄여 주세요.'); ta.focus(); return; }
-    if (needsCourse(text)) { agErr('‘이 과목’이 어느 과목인지 위에서 골라 주세요.'); $('agent-course').focus(); return; }
+    if (needsCourse(text)) { agErr('‘이 과목’이 어느 과목인지 아래 과목 칸에서 골라 주세요.'); $('agent-course').focus(); return; }
     if (ag.sending || agRunning()) { agErr('앞 질문의 답을 찾는 중이에요. 끝나면 이어서 물어봐 주세요.'); return; }
     agErr('');
+    // 지금 보는 대화에 이어서 보낸다(계약 24-1). 빈 신규 대화·옛 차례(서버 대화 id 없음)는 conversation 없이 → 서버가 대화를 만든다
+    const from = agCurNow();
+    const conv = typeof from === 'string' && !agIsLegacy(from) ? from : null;
     ag.sending = true;
     ag.job = null;
-    ag.pending = { id: '__pending', at: new Date(nowMs()).toISOString(), message: text, course_id: cid, status: 'running' };
+    agResetMenu();
+    ag.conv = from;
+    ag.pending = { id: '__pending', at: new Date(nowMs()).toISOString(), message: text, course_id: cid, status: 'running', conv: from };
+    ag.scroll = 'bottom';
+    ta.value = '';   // 보낸 말은 말풍선으로 올라간다. 못 보내면 칸에 되돌린다
+    agCount();
     renderAgent();
-    agSay('질문을 보냈어요. 모아 둔 글에서 찾아보는 중이에요.');
+    agSay('보냈어요. 답을 준비하는 중이에요.');
     const body = { message: text };
     if (cid) body.course_id = cid;
+    if (conv) body.conversation = conv;
     post('/api/agent/ask', body).then((r) => {
       ag.sending = false;
       ag.job = r && r.job !== undefined && r.job !== null ? String(r.job) : null;
       if (ag.job) ag.seen.set(ag.job, 'running');
-      ta.value = '';
-      agCount();
+      // 서버가 알려 준 대화 id(없으면 예전 서버 — 그 차례 하나가 대화 하나)
+      const nc = r && typeof r.conversation === 'string' && r.conversation ? r.conversation : ag.job ? AG_LEGACY + ag.job : from;
+      if (ag.pending) ag.pending.conv = nc;
+      if (ag.conv === from) ag.conv = nc;
       return refresh().then(() => {
-        if (!ag.job || agThreads().some((t) => String(t.id) === ag.job) || !agRunning()) ag.pending = null;
+        const nt = ag.job ? agThreads().find((t) => String(t.id) === ag.job) : null;
+        if (nt && ag.conv === nc) ag.conv = agConvKey(nt);   // 차례에 적힌 대화가 기준
+        if (!ag.job || nt || !agRunning()) ag.pending = null;
         renderAgent();
       });
     }, (err) => {
       ag.sending = false;
       ag.pending = null;
-      agErr('묻지 못했어요. ' + err.message);
+      if (!ta.value.trim()) { ta.value = text; agCount(); }
+      agErr('보내지 못했어요. ' + err.message);
       renderAgent();
       ta.focus();
     });
@@ -6028,22 +6389,28 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (P && P.local) return '보내면 질문과 관련 글 일부를 이 PC의 모델' + (who ? '(' + who + ')' : '') + '이 읽어요. 밖으로 나가지 않아요.';
     return '보내면 질문과 관련 글 일부가 선택한 AI 서비스' + (who ? '(' + who + ')' : '') + '로 가요. 이메일·전화·학번·이름은 가린 뒤 보내요.';
   }
-  function agBar(A) {
+  function agBar(A, hasTurns) {
     const wait = ag.sending || agRunning();
     const send = $('agent-send');
     send.setAttribute('aria-disabled', wait ? 'true' : 'false');
     send.replaceChildren();
-    add(send, wait ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '찾는 중…'] : ['묻기']);
+    add(send, wait ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '답하는 중…'] : ['보내기']);
+    const ph = hasTurns ? '이어서 말해 주세요. 예) 그럼 중간은?' : '예) 기말 범위 어디까지야?';
+    if ($('agent-text').placeholder !== ph) $('agent-text').placeholder = ph;
     $('agent-note').textContent = wait ? '앞 질문의 답을 찾는 중이에요. 끝나면 이어서 물을 수 있어요.'
       : A.enabled ? aiSendNote()
         : 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요. 밖으로 보내는 것은 없어요.';
   }
-  // 답이 오면 알린다: 서랍이 열려 있으면 화면 낭독기로, 닫혀 있으면 입구에 점 + 알림
+  // 답이 오면 알린다: 서랍이 열려 있으면 화면 낭독기로(다른 대화의 답이면 그렇다고), 닫혀 있으면 입구에 점 + 알림
   function agAnnounce(t) {
     const props = Array.isArray(t.proposals) ? t.proposals : [];
     const ok = props.filter((p) => p && p.type !== 'note' && !p.rejected_reason && p.ok !== false).length;
     const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (ok ? ' 누를 수 있는 제안 ' + ok + '개.' : '');
-    if (agentOpen()) { agSay(head + (t.status !== 'error' && t.answer ? ' ' + String(t.answer).slice(0, 160) : '')); return; }
+    if (agentOpen()) {
+      if (agConvKey(t) !== agCurNow()) { agSay('다른 대화에 ' + head + ' 위 ‘이전 대화’에서 볼 수 있어요.'); return; }
+      agSay(head + (t.status !== 'error' && t.answer ? ' ' + String(t.answer).slice(0, 160) : ''));
+      return;
+    }
     ag.unread = true;
     if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('mail-dlg').open) return;   // 모서리 카드는 알림이 비켜 감(has-corner)
     toast('에이전트가 ' + (t.status === 'error' ? '답을 못 찾았어요' : '답했어요') + (ok ? ' · 제안 ' + ok + '개' : ''));
@@ -6076,66 +6443,153 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     if (ag.pending && ag.job && threads.some((t) => String(t.id) === ag.job)) ag.pending = null;
     agEntry();
     if (!agentOpen()) { agTick(); return; }
+    // 지금 대화: 그 대화의 차례(오래된 것 → 최근) + 막 보낸 말(아직 state에 없으면)
+    const convs = agConvs(threads);
+    const cur = agCurId(convs);
+    ag.conv = cur;   // 열려 있는 동안은 고정(다른 곳에서 대화가 생겨도 화면이 저절로 바뀌지 않게)
+    const conv = cur === null ? null : convs.find((c) => c.id === cur) || null;
+    const turns = conv ? conv.threads.slice() : [];
+    if (ag.pending && ag.pending.conv === cur && !turns.some((t) => String(t.id) === ag.job)) turns.push(ag.pending);
+    // 'AI 도움 켜기' 안내는 대화마다 되풀이하지 않고 마지막 답에만
+    const lastDone = turns.filter((t) => t.status !== 'running' && t !== ag.pending).pop();
+    ag.hintFor = lastDone ? String(lastDone.id) : '';
     agHead(A);
-    agBar(A);
+    agBar(A, turns.length > 0);
     agCourseOptions();
     // 메일 초안을 고치는 중인 글자(ag.drafts)는 sig에 넣지 않는다(칠 때마다 다시 그리지 않게)
     const plansSig = (plansList() || []).map((p) => String(p.id) + ':' + (Array.isArray(p.blocks) ? p.blocks.length : 0));
-    const sig = JSON.stringify([threads, ag.pending, A.enabled, [...ag.busy], [...ag.errs], [...ag.applied], ag.confirmClear, ag.clearing, ag.clearErr,
+    const convSig = convs.map((c) => [c.id, c.title, c.lastIso, c.turns, c.running]);
+    const sig = JSON.stringify([cur, turns, convSig, ag.menu, ag.confirmOne, A.enabled, [...ag.busy], [...ag.errs], [...ag.applied], ag.confirmClear, ag.clearing, ag.clearErr,
       state.last_sync, state.items.length, ag.courseSig, [...ag.clientDone], [...ag.planIds], plansSig, !!state.grades]);
     if (sig !== ag.sig) {
       ag.sig = sig;
       const list = $('agent-list');
-      const a = document.activeElement;
-      const fk = a && list.contains(a) ? a.getAttribute('data-ak') : null;
-      let selr = null;
-      try { if (fk && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && typeof a.selectionStart === 'number') selr = [a.selectionStart, a.selectionEnd]; } catch (e) { selr = null; }
-      const top = list.scrollTop;
-      list.replaceChildren();
-      add(list, [agListBody(A, threads)]);
-      list.scrollTop = top;
-      if (fk) {
-        const el = list.querySelector('[data-ak="' + CSS.escape(fk) + '"]');
-        (el || list).focus({ preventScroll: true });
-        if (el && selr && el.setSelectionRange) { try { el.setSelectionRange(selr[0], selr[1]); } catch (e) { /* 무시 */ } }
-      }
+      agPaint($('agent-cbar'), agCbar(A, convs, cur, conv, turns), $('agent-text'));
+      agPaint(list, agListBody(A, conv, turns, convs), list);
+      agAutoScroll(list, cur, turns);
     }
     agTick();
   }
-  function agListBody(A, threads) {
-    const all = ag.pending ? [ag.pending].concat(threads) : threads;
-    if (!all.length) {
-      return h('div', { class: 'ag-empty' }, mascot('start', 64, { slot: 'agent' }),
-        h('div', null, h('p', { class: 'ag-empty-t' }, '물어보면 답해요'),
-          h('p', { class: 'help' }, '‘기말 범위 어디까지야?’처럼 물으면 지나온 코스(이 PC에 모아 둔 공지·게시판·메시지·강의계획서)에서 근거를 붙여 답해요. 몇 점 받아야 하는지는 성적 화면과 같은 계산으로, 문의 메일·공부 계획은 초안으로 보여 드려요. 놓친 마감도 찾아요.'),
-          h('p', { class: 'help', style: 'margin-top:4px' }, '일정·성적·설정을 바꾸는 건 [반영]·[실행]을 직접 눌러야만 해요. 메일은 보내지 않아요.')));
+  // 칸 하나를 다시 그리되, 그 안에 있던 포커스·글자 선택·스크롤은 지킨다(data-ak로 같은 요소를 찾음)
+  function agPaint(box, kids, fallback) {
+    const a = document.activeElement;
+    const fk = a && box.contains(a) ? a.getAttribute('data-ak') : null;
+    const had = !!a && box.contains(a);
+    let selr = null;
+    try { if (fk && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && typeof a.selectionStart === 'number') selr = [a.selectionStart, a.selectionEnd]; } catch (e) { selr = null; }
+    const top = box.scrollTop;
+    box.replaceChildren();
+    add(box, [kids]);
+    box.scrollTop = top;
+    if (!had) return;
+    const el = fk ? box.querySelector('[data-ak="' + CSS.escape(fk) + '"]') : null;
+    (el || fallback).focus({ preventScroll: true });
+    if (el && selr && el.setSelectionRange) { try { el.setSelectionRange(selr[0], selr[1]); } catch (e) { /* 무시 */ } }
+  }
+  // 자동 스크롤: 대화를 열거나 바꿨을 때·말을 보냈을 때 = 맨 아래(최근). 답이 막 왔을 때 = 그 차례가 길면 차례의 처음, 아니면 맨 아래.
+  // 그 밖에 다시 그릴 때(반영·되돌리기 등)는 보던 자리 그대로
+  function agAutoScroll(list, cur, turns) {
+    const last = turns.length ? turns[turns.length - 1] : null;
+    const shape = { id: cur, n: turns.length, lastId: last ? String(last.id) : '', lastSt: last ? String(last.status) : '' };
+    const prev = ag.shape;
+    let mode = ag.scroll;
+    if (!mode) {
+      if (!prev || prev.id !== shape.id || shape.n > prev.n) mode = 'bottom';
+      else if (prev.lastSt === 'running' && shape.lastSt !== 'running') mode = 'answer';
     }
-    const head = threads.length ? h('div', { class: 'ag-lhead' },
-      h('span', null, '최근 질문 ' + threads.length + '개'),
-      ag.confirmClear ? [h('span', null, '대화 기록만 지워요. 반영한 것은 그대로예요.'),
-        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-clear-no', on: { click: () => { ag.confirmClear = false; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear"]'); if (b) b.focus(); } } }, '취소'),
-        h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-ak': 'ag-clear-yes', 'aria-disabled': ag.clearing ? 'true' : null, on: { click: agClear } },
-          ag.clearing ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '지우는 중…'] : '지우기')]
-        : h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-clear', 'aria-disabled': agRunning() ? 'true' : null,
-          on: { click: () => { if (agRunning()) return; ag.confirmClear = true; ag.clearErr = ''; renderAgent(); const b = $('agent-list').querySelector('[data-ak="ag-clear-no"]'); if (b) b.focus(); } } }, '대화 지우기'),
-      ag.clearErr ? h('p', { class: 'inline-error', role: 'alert', style: 'flex-basis:100%' }, ag.clearErr) : null) : null;
-    return [head, all.map((t) => agThread(A, t))];
+    ag.shape = shape;
+    ag.scroll = null;
+    if (mode === 'top') { list.scrollTop = 0; return; }
+    if (mode === 'bottom') { list.scrollTop = list.scrollHeight; return; }
+    if (mode !== 'answer') return;
+    const el = list.lastElementChild;
+    if (!el) return;
+    const lr = list.getBoundingClientRect(), er = el.getBoundingClientRect();
+    if (er.height > list.clientHeight - 24) list.scrollTop = Math.max(0, list.scrollTop + (er.top - lr.top) - 12);
+    else list.scrollTop = list.scrollHeight;
+  }
+  // 지금 대화 줄: 제목 · [이전 대화 n] · [신규 대화]. 대화가 하나도 없고 빈 화면이면 줄을 숨긴다
+  function agCbar(A, convs, cur, conv, turns) {
+    const empty = !turns.length;
+    if (!convs.length && empty) return null;
+    const title = conv ? conv.title : empty ? '신규 대화' : String(turns[0].message || '').replace(/\s+/g, ' ').slice(0, 60);
+    const row = h('div', { class: 'ag-cbar' },
+      h('span', { class: 'ag-ctitle' + (empty ? ' is-new' : ''), title: empty ? null : title }, title),
+      convs.length ? h('button', { type: 'button', class: 'btn btn-line btn-sm ag-cbtn', 'data-ak': 'ag-menu', 'aria-expanded': ag.menu ? 'true' : 'false', 'aria-controls': 'agent-convs',
+        'aria-label': '이전 대화 ' + convs.length + '개', on: { click: () => agMenu(!ag.menu) } },
+        '이전 대화', h('span', { class: 'ag-cn', 'aria-hidden': 'true' }, String(convs.length)), h('span', { class: 'ag-chev', style: 'display:inline-flex' }, icon('chev'))) : null,
+      empty ? null : h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-new', title: '빈 대화로 시작해요. 지금 대화는 이전 대화에 남아요', on: { click: agNewConv } }, icon('plus'), '신규 대화'));
+    return [row, ag.menu && convs.length ? agConvList(A, convs, cur, conv) : null];
+  }
+  // 이전 대화 목록(최근 먼저): 누르면 그 대화로. 아래에 '이 대화 지우기'(서버 대화만)·'모든 대화 지우기'(확인 후)
+  function agConvList(A, convs, cur, conv) {
+    const running = agRunning();
+    const one = conv && !conv.legacy && conv.threads.length ? conv : null;
+    const confirm = (text, noKey, yesKey, yesText, onYes, backKey) => h('div', { class: 'ag-confirm' }, h('span', null, text),
+      h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': noKey, on: { click: () => { ag.confirmClear = false; ag.confirmOne = false; renderAgent(); const b = $('agent-cbar').querySelector('[data-ak="' + backKey + '"]'); if (b) b.focus(); } } }, '취소'),
+      h('button', { type: 'button', class: 'btn btn-primary btn-sm', 'data-ak': yesKey, 'aria-disabled': ag.clearing ? 'true' : null, on: { click: onYes } },
+        ag.clearing ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '지우는 중…'] : yesText));
+    const ask = (which) => () => {
+      if (agRunning() || ag.clearing) return;
+      ag.confirmOne = which === 'one';
+      ag.confirmClear = which === 'all';
+      ag.clearErr = '';
+      renderAgent();
+      const b = $('agent-cbar').querySelector('[data-ak="' + (which === 'one' ? 'ag-one-no' : 'ag-clear-no') + '"]');
+      if (b) b.focus();
+    };
+    let foot;
+    if (ag.confirmOne && one) foot = confirm('‘' + one.title.slice(0, 30) + '’ 대화의 기록만 지워요. 반영한 것은 그대로예요.', 'ag-one-no', 'ag-one-yes', '지우기', () => agClearOne(one), 'ag-clear-one');
+    else if (ag.confirmClear) foot = confirm('모든 대화 기록을 지워요. 반영한 것은 그대로예요.', 'ag-clear-no', 'ag-clear-yes', '모두 지우기', agClear, 'ag-clear');
+    else {
+      const dis = running ? 'true' : null;
+      foot = [one ? h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-clear-one', 'aria-disabled': dis, on: { click: ask('one') } }, '이 대화 지우기') : null,
+        h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-clear', 'aria-disabled': dis, on: { click: ask('all') } }, '모든 대화 지우기'),
+        running ? h('span', { class: 'help' }, '답하는 중에는 지울 수 없어요') : null];
+    }
+    return h('div', { id: 'agent-convs', class: 'ag-convs', role: 'group', 'aria-label': '이전 대화' },
+      h('p', { class: 'ag-convs-h' }, '이전 대화 ' + convs.length + '개 · 최근 순'),
+      convs.map((c) => h('button', { type: 'button', class: 'ag-conv', 'data-ak': 'ag-conv-' + c.id, 'aria-current': c.id === cur ? 'true' : null, on: { click: () => agSwitch(c.id) } },
+        h('span', { class: 'ag-conv-t' }, c.title),
+        c.running ? h('span', { class: 'ag-spin', 'aria-hidden': 'true' }) : null,
+        h('span', { class: 'ag-conv-m' }, h('span', null, '질문 ' + c.turns + '개'), c.lastIso ? relEl(c.lastIso) : null,
+          c.running ? h('span', null, '답하는 중') : null, c.id === cur ? h('b', null, '지금 대화') : null))),
+      h('div', { class: 'ag-convs-f' }, foot, ag.clearErr ? h('p', { class: 'inline-error', role: 'alert' }, ag.clearErr) : null));
+  }
+  function agListBody(A, conv, turns, convs) {
+    if (!turns.length) return agEmpty(A, convs);
+    const gone = conv ? conv.turns - conv.threads.length : 0;
+    return [gone > 0 ? h('p', { class: 'help' }, '이 대화의 오래된 앞 질문 ' + gone + '개는 남아 있지 않아요.') : null, turns.map((t) => agThread(A, t))];
+  }
+  // 빈 대화: 무엇을 할 수 있는지 + 예시 칩(학업 밖 예시 하나 포함)
+  function agEmpty(A, convs) {
+    return h('div', { class: 'ag-empty' }, mascot('start', 64, { slot: 'agent' }),
+      h('div', null, h('p', { class: 'ag-empty-t' }, '물어보면 답해요'),
+        h('p', { class: 'help' }, '‘기말 범위 어디까지야?’처럼 물으면 지나온 코스(이 PC에 모아 둔 공지·게시판·메시지·강의계획서)에서 근거를 붙여 답해요. 몇 점 받아야 하는지는 성적 화면과 같은 계산으로, 문의 메일·공부 계획은 초안으로 보여 드려요. 놓친 마감도 찾아요.'),
+        h('p', { class: 'help', style: 'margin-top:4px' }, '‘그럼 중간은?’처럼 이어서 물으면 앞 대화를 이어받아요. 공부 얘기가 아니어도 괜찮아요' + (A.enabled ? '.' : '(AI 도움을 켜면 더 길게 나눌 수 있어요).')),
+        h('p', { class: 'help', style: 'margin-top:4px' }, '일정·성적·설정을 바꾸는 건 [반영]·[실행]을 직접 눌러야만 해요. 메일은 보내지 않아요.'),
+        h('div', { class: 'ag-empty-chips' }, h('p', { class: 'help' }, '이렇게 말해 보세요'),
+          h('div', { class: 'ag-chips', role: 'group', 'aria-label': '예시(누르면 입력칸에 채워져요)' }, AG_EXAMPLES.map(agChip))),
+        convs.length ? h('p', { class: 'help', style: 'margin-top:8px' }, '앞 대화는 위 ‘이전 대화’에서 이어 갈 수 있어요.') : null));
   }
   function agThread(A, t) {
     const c = t.course_id ? courseById(t.course_id) : null;
     const running = t.status === 'running' || t === ag.pending;
     let body;
     if (running) {
-      body = h('div', { class: 'ag-run' }, h('span', { class: 'ag-spin', 'aria-hidden': 'true' }), h('span', null, '모아 둔 글에서 찾아보는 중이에요…'),
+      // 답하는 자리에 '쓰는 중' 표시(그 차례 자리 그대로 — 답이 오면 이 자리에 답이 들어간다)
+      body = h('div', { class: 'ag-run' }, h('span', { class: 'ag-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), h('span', null, '답을 준비하는 중이에요'),
         h('span', { class: 'ag-since', 'data-ag-since': t.at || '', 'aria-hidden': 'true' }),
-        h('p', { class: 'help' }, A.enabled ? '보통 몇십 초 걸려요. 창을 닫아도 계속 찾고, 답이 오면 메뉴에 점을 찍어 둘게요.' : '규칙으로 찾는 중이라 금방 끝나요.'));
+        h('p', { class: 'help' }, A.enabled ? '보통 몇십 초 걸려요. 창을 닫아도 계속하고, 답이 오면 메뉴에 점을 찍어 둘게요.' : '이 PC 안에서 찾는 중이라 금방 끝나요.'));
     } else if (t.status === 'error') {
       body = h('div', { class: 'ag-a' }, h('p', { class: 'inline-error' }, '답을 찾다가 막혔어요.' + (t.error ? ' ' + String(t.error) : '')),
         h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-retry-' + t.id, on: { click: () => agRetry(t) } }, '다시 묻기')));
     } else body = agAnswer(A, t);
-    return h('article', { class: 'ag-thread', 'data-thread': String(t.id), 'aria-label': '질문: ' + String(t.message || '') },
+    return h('article', { class: 'ag-thread', 'data-thread': String(t.id), 'aria-label': '내 말: ' + String(t.message || '') },
       h('div', { class: 'ag-qbox' }, h('p', { class: 'ag-q' }, String(t.message || '')),
-        h('p', { class: 'ag-qmeta' }, h('span', null, c ? courseShort(c) : '전체 과목'), parseDate(t.at) ? relEl(t.at) : null)),
+        c || parseDate(t.at) ? h('p', { class: 'ag-qmeta' }, c ? h('span', null, courseShort(c)) : null, parseDate(t.at) ? relEl(t.at) : null) : null,
+        // 앞 차례에서 과목을 이어받았으면 그렇다고 밝힌다(계약 24-1) — 다른 과목을 물은 거라면 과목 이름을 넣어 다시 물으면 된다
+        !c && t.carried && t.carried.course_short ? h('p', { class: 'ag-qmeta' }, '앞 대화의 과목 ‘' + String(t.carried.course_short) + '’에서 찾았어요') : null),
       body);
   }
   // 막힌 질문을 다시: 같은 글·과목으로 칸을 채운다(보내는 건 사용자가)
@@ -6151,6 +6605,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
   function agAnswer(A, t) {
     // 갈래(계약 22-1): 질문·만약에·메일·계획·명령은 따로 그린다. kind가 없거나 'missing'이면 20장 모양 그대로
     const kind = typeof t.kind === 'string' && AG_KINDS[t.kind] ? t.kind : 'missing';
+    if (kind === 'chat') return agChat(A, t);
     if (kind !== 'missing') return agAnswerKind(A, t, kind);
     const rules = t.by === 'rules';
     const props = Array.isArray(t.proposals) ? t.proposals.filter((p) => p && typeof p === 'object') : [];
@@ -6159,11 +6614,20 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
     return h('div', { class: 'ag-a' },
       h('div', { class: 'ag-ahead' }, rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai'), num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
       // AI가 꺼져 있으면 답 끝에 서버가 'AI CLI를 켜면…' 안내를 붙이므로 여기서는 단추만(같은 말을 두 번 하지 않게)
-      rules ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : toAi) : null,
+      rules && (A.enabled || agHintHere(t)) ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : toAi) : null,
       t.answer ? h('p', { class: 'ag-answer' }, String(t.answer))
         : !props.length && !snips.length ? h('p', { class: 'ag-answer' }, '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.') : null,
       props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null,
       snips.length ? h('ul', { class: 'ag-snips', 'aria-label': '찾은 글' }, snips.map((s, i) => agSnip(t, s, i, props.some((p) => p.type === 'add_deadline' && p.source_key && p.source_key === s.source_key)))) : null);
+  }
+  // 일반 대화(계약 24-2 chat): 말풍선 하나(인용·제안·단추 없음). AI가 꺼진 규칙 답이 AI 켜기를 권하면 그 설정으로 가는 길만
+  function agChat(A, t) {
+    const text = t.answer !== null && t.answer !== undefined ? String(t.answer).trim() : '';
+    const offer = t.by === 'rules' && !A.enabled && agHintHere(t) && /AI/.test(text) && /(켜|설정)/.test(text);
+    return h('div', { class: 'ag-a is-chat' },
+      h('p', { class: 'ag-answer' }, text || '뭐라고 답할지 찾지 못했어요. 한 번 더 말해 주세요.'),
+      offer ? h('p', { class: 'ag-rules' }, h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id,
+        on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기')) : null);
   }
   // 서버의 applied(bool)가 기준. 다시 반영하면 undone_at이 남아 있어도 applied가 이긴다
   function agApplied(t, p, i) {
@@ -6367,18 +6831,43 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       }
     });
   }
+  // 모든 대화 지우기(지금처럼 전부). 반영한 것은 그대로
   function agClear() {
-    if (ag.clearing) return;
+    if (ag.clearing || agRunning()) return;
     ag.clearing = true;
     ag.clearErr = '';
     renderAgent();
     post('/api/agent/clear', {}).then((s) => {
       ag.clearing = false;
-      ag.confirmClear = false;
+      agResetMenu();
       ag.applied.clear();
       ag.errs.clear();
-      applyState(s);
-      agSay('대화 기록을 지웠어요.');
+      ag.clientDone.clear();
+      ag.drafts.clear();
+      ag.conv = null;
+      ag.scroll = 'top';
+      agTakeState(s);
+      agSay('대화 기록을 모두 지웠어요. 반영한 것은 그대로예요.');
+      $('agent-text').focus();
+    }, (err) => {
+      ag.clearing = false;
+      ag.clearErr = '지우지 못했어요. ' + err.message;
+      renderAgent();
+    });
+  }
+  // 이 대화만 지우기(계약 24-1 clear {conversation}). 서버 대화 id가 있는 것만(옛 차례는 '모든 대화 지우기'로)
+  function agClearOne(c) {
+    if (ag.clearing || agRunning() || !c || c.legacy) return;
+    ag.clearing = true;
+    ag.clearErr = '';
+    renderAgent();
+    post('/api/agent/clear', { conversation: c.id }).then((s) => {
+      ag.clearing = false;
+      agResetMenu();
+      agForget(new Set(c.threads.map((t) => String(t.id))));
+      if (ag.conv === c.id) { ag.conv = null; ag.scroll = 'top'; }
+      agTakeState(s);
+      agSay('이 대화를 지웠어요. 반영한 것은 그대로예요.');
       $('agent-text').focus();
     }, (err) => {
       ag.clearing = false;
@@ -6454,7 +6943,7 @@ textarea.ag-input { display: block; min-height: 76px; max-height: 32vh; padding:
       h('div', { class: 'ag-ahead' }, tag(AG_KINDS[kind], 'quiet'),
         kind === 'question' ? (rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai')) : null,
         kind === 'question' && num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
-      kind === 'question' && rules && !A.enabled ? h('p', { class: 'ag-rules' }, 'AI 도움이 꺼져 있어 찾은 문장을 그대로 보여 드려요. ', toAi) : null,
+      kind === 'question' && rules && !A.enabled && agHintHere(t) ? h('p', { class: 'ag-rules' }, 'AI 도움이 꺼져 있어 찾은 문장을 그대로 보여 드려요. ', toAi) : null,
       t.answer ? h('p', { class: 'ag-answer' }, String(t.answer)) : !extra && !props.length ? h('p', { class: 'ag-answer' }, AG_EMPTY[kind] || '답을 찾지 못했어요.') : null,
       extra,
       props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null);

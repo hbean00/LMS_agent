@@ -118,12 +118,20 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                  '<p>보고서는 PDF 한 파일로 만들고, 파일 이름은 Report_Lab4_이름_학번.pdf 형식으로 해 주세요.</p>'
                  '<p>분량은 A4 10쪽 이내이며, 시뮬레이션 파형 스크린샷과 Verilog 코드를 보고서에 포함해야 합니다.</p>'
                  '<p>개인 과제입니다. 늦게 제출하면 감점됩니다.</p>')
+    # 과제 설명에 링크된 파일(계약 24-3): 실제 Canvas 편집기가 넣는 instructure_file_link 모양. 요건은 PDF 안에만 있다
+    # (날짜 없음) → core._linked_files가 가상 게시판 '과제'로 모아 받고, 체크리스트가 그 PDF에서 요건을 찾는다.
+    lab5_desc = ('<p>예비보고서 작성 요령은 첨부 파일을 확인하세요: '
+                 f'<a class="instructure_file_link instructure_scribd_file" title="Lab5_prelab.pdf" '
+                 f'href="{base_url}/courses/101/files/{PRELAB_FILE}?wrap=1" '
+                 f'data-api-endpoint="{base_url}/api/v1/courses/101/files/{PRELAB_FILE}" '
+                 'data-api-returntype="File">Lab5_prelab.pdf</a></p>')
     assignments = {
         "101": [
             assignment(101, 1011, "LAB3 보고서", at(-5, 23, 59), ["online_upload"], "graded", -19,
                        submitted_at=at(-5, 21, 47), score=9.0),
             assignment(101, 1012, "LAB4 보고서", None, ["none"], "unsubmitted", -12, description=lab4_desc),
-            assignment(101, 1013, "LAB5 예비보고서", at(10, 23, 59), ["online_upload"], "unsubmitted", -2),
+            assignment(101, 1013, "LAB5 예비보고서", at(10, 23, 59), ["online_upload"], "unsubmitted", -2,
+                       description=lab5_desc),
         ],
         "102": [assignment(102, 1021, "Homework 5", at(4, 18), ["online_upload"], "unsubmitted", -9)],
         "103": [],
@@ -132,7 +140,7 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     }
     quiz_day = day(5)
     # 실제 ASIC의 'Updated Grading Policy'·'Announcement about Midterm Week'·'Lab0, Lab1 Score Announcement'와 같은 모양(계약 14장).
-    # 점수 공지는 본문에 Canvas 파일 링크만 있다 → core._announcement_files가 가상 게시판 '공지'로 모아 받는다.
+    # 점수 공지는 본문에 Canvas 파일 링크만 있다 → core._linked_files가 가상 게시판 '공지'로 모아 받는다.
     policy = ("<p>Dear All,</p><p>I have attached the updated grading policy, which includes the midterm quiz (5%) "
               "and the final quiz (5%).</p><ul><li>Homework assignments: 30% (w/ short reports)</li>"
               "<li>Midterm project: 25% (w/ midterm report)</li><li>Midterm quiz: 5%</li>"
@@ -203,8 +211,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                     "content": "<p>11주차 강의자료입니다.</p>", "attachments": [attach(8002, "Week11.pdf", slides)]}],
         }}}
     files = {8001: lab6_pdf, 8002: slides,
-             SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1)}
-    file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf"}
+             SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1),
+             PRELAB_FILE: prelab_pdf()}
+    file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf", PRELAB_FILE: "Lab5_prelab.pdf"}
     return {
         "user": {"id": USER_ID, "name": "데모 학생", "short_name": "데모 학생",
                  "sortable_name": "학생, 데모", "login_id": "demo"},
@@ -221,6 +230,7 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
 # 점수표 PDF의 학번은 모두 가짜(2026000001…). 데모 화면은 DEMO_STUDENT_ID로 내 줄을 찾는다(cli demo만 넣는다).
 DEMO_STUDENT_ID = "2026000002"
 SCORE_FILES = (8101, 8102)
+PRELAB_FILE = 8201         # 'LAB5 예비보고서' 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
 _SCORE_ROWS = [(18, 25), (17, 27), (15, 20), (19, 28), (12, 18), (16, 24), (20, 29), (14, 22)]
 
 
@@ -231,6 +241,14 @@ def score_table_pdf(label: str, shift: int = 0) -> bytes:
         a, b = max(0, a - shift * (i % 3)), min(30, b + shift * (i % 2))
         lines.append(f"{i} {2026000000 + i} {a} {b} {a + b}")
     return tiny_pdf(lines)
+
+
+def prelab_pdf() -> bytes:
+    """과제 설명에 링크된 안내 PDF: 날짜 없는 제출 요건만(형식·제출처·포함할 것·개인 과제)."""
+    return tiny_pdf(["Lab 5 Prelab Report Guide",
+                     "Submit the prelab report as a single PDF file on Canvas.",
+                     "Include your Verilog code and the simulation waveform screenshots in the report.",
+                     "This is an individual assignment."])
 
 
 def tiny_pdf(lines: list[str]) -> bytes:

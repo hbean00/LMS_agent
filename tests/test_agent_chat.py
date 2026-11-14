@@ -516,12 +516,14 @@ def test_http_routes_ask_apply_undo_clear(tmp_path):
         httpd.shutdown()
 
 
-def test_threads_keep_last_20(tmp_path):
+def test_threads_keep_last_80(tmp_path):
+    """계약 24-1: 이어지는 대화를 위해 남기는 차례 수 20 → 80(오래된 것부터 지움)."""
     s = make_store(tmp_path / "s.json")
-    for i in range(25):
+    for i in range(85):
         agent.new_thread(s, f"q{i}", None)
     ts = agent.threads(s)
-    assert len(ts) == 20 and ts[0]["message"] == "q5" and ts[-1]["message"] == "q24"
+    assert agent.MAX_THREADS == 80
+    assert len(ts) == 80 and ts[0]["message"] == "q5" and ts[-1]["message"] == "q84"
 
 
 def test_daily_cap_is_shared_with_other_ai_tasks(tmp_path):

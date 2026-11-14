@@ -14,6 +14,7 @@ import hashlib
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -88,7 +89,7 @@ def collect(canvas: Canvas, now: datetime | None = None, lookback_days: int = 12
         errors.append(f"메시지함을 읽지 못했습니다: {e}")
     cache["boards"], cache["lx_tools"], lx_requests, posts_fetched = _collect_boards(canvas, cache["courses"], prev,
                                                                                   full, errors)
-    cache["boards"] += _announcement_files(canvas, cache["announcements"], prev, errors)
+    cache["boards"] += _linked_files(canvas, cache, prev, errors)
     cache["pdf_texts"] = dict((prev or {}).get("pdf_texts") or {})  # sync가 다운로드 뒤 새 글자를 더한다
     cache["probe"] = {"requests": canvas.request_count - start_requests + lx_requests,
                       "conversations_fetched": fetched, "conversations_reused": reused,
@@ -96,39 +97,96 @@ def collect(canvas: Canvas, now: datetime | None = None, lookback_days: int = 12
     return cache
 
 
-_FILE_LINK = re.compile(r"/(?:api/v1/)?(?:courses/\d+/)?files/(\d+)")
+# Canvas 파일 링크(본문 HTML 안): /courses/<c>/files/<id>, /files/<id>, /api/v1/(courses/<c>/)files/<id>,
+# /groups|users/<n>/files/<id>, /courses/<c>/files?preview=<id> — 절대·상대 주소, 뒤의 /download·/preview·?wrap=1·
+# ?verifier=…는 상관없다. 주소 경로의 맨 앞에서 시작해야 한다('/a/b/files/1' 같은 다른 사이트 경로는 아님).
+_FILE_LINK = re.compile(r"/(?:api/v1/)?(?:(?:courses|groups|users)/\d+/)?files"
+                        r"(?:/(?P<id>\d+)(?!\d)|/?\?(?:[^\s\"'<>#]*?&(?:amp;)?)?preview=(?P<pid>\d+))")
+# 다른 서버 주소면 Canvas만의 모양(/courses/<c>/files/<id>, /api/v1/…)일 때만 받는다(별칭 주소로 쓴 Canvas 글 대비)
+_CANVAS_ONLY = re.compile(r"/(?:api/v1/|courses/\d+/files)")
+_URL_STOP = re.compile(r"[\s\"'<>()\[\]]")
+LINKED_BOARDS = (("announcements", "공지"), ("assignments", "과제"), ("syllabus", "강의계획서"))
 
 
-def _announcement_files(canvas: Canvas, announcements: list[dict], prev: dict | None, errors: list[str]) -> list[dict]:
-    """Canvas 공지 본문에 링크된 파일(예: 'Lab0_score-1.pdf', 'Update Grading Policy.pdf')을 첨부처럼 모은다.
-    다운로드(materials)가 같은 모양으로 처리하도록 과목마다 가상 게시판 '공지'(source="canvas")로 묶는다.
-    공지 본문은 announcement 출처가 이미 읽으므로 board 출처에서는 건너뛴다. 새 파일만 파일 API로 이름·크기를 묻는다."""
+def file_links(html, host: str | None = None) -> list[int]:
+    """본문에 링크된 Canvas 파일 id(나온 순서, 겹침 없음). host: Canvas 주소의 호스트(소문자) — 다른 호스트의
+    절대 주소는 Canvas만의 경로 모양일 때만 센다."""
+    s = str(html or "")
+    out: list[int] = []
+    for m in _FILE_LINK.finditer(s):
+        i, floor = m.start(), max(0, m.start() - 2048)     # 주소 하나의 시작(따옴표·공백·괄호 뒤)까지만 거슬러 본다
+        while i > floor and not _URL_STOP.match(s[i - 1]):
+            i -= 1
+        token = s[i:m.end()]
+        if i != m.start():                       # 주소의 한가운데: 절대 주소의 경로 맨 앞이어야 한다
+            if not re.match(r"(?i)(?:https?:)?//", token):
+                continue
+            parts = urllib.parse.urlsplit(token if "://" in token else "https:" + token)
+            if not parts.netloc or i + token.index(parts.netloc) + len(parts.netloc) != m.start():
+                continue
+            if host and parts.netloc.lower() != host and not _CANVAS_ONLY.match(m.group(0)):
+                continue
+        fid = int(m.group("id") or m.group("pid"))
+        if fid not in out:
+            out.append(fid)
+    return out
+
+
+def _linked_files(canvas: Canvas, cache: dict, prev: dict | None, errors: list[str]) -> list[dict]:
+    """Canvas 공지 본문·과제 설명·강의계획서에 링크된 파일(예: 'Lab0_score-1.pdf', 'project2-1.pdf')을 첨부처럼 모은다
+    (계약 10장·24-3). 다운로드(materials)가 같은 모양으로 처리하도록 과목마다 가상 게시판(source "canvas")으로 묶는다:
+    board_id "announcements"(공지 — 글 = 공지) · "assignments"(과제 — 글 = 과제, id = 과제 id) · "syllabus"(강의계획서 — 글 id = 과목 id).
+    본문은 각 출처(announcement·assignment·syllabus)가 이미 읽으므로 board 출처에서는 건너뛴다(글 content는 "").
+    새 파일만 파일 API로 이름·크기를 묻고 지난번에 안 파일은 그대로 쓴다. 한 실행에서 같은 파일은 한 번만 묻는다."""
+    host = urllib.parse.urlsplit(str(getattr(canvas, "base_url", "") or "")).netloc.lower() or None
     known = {a.get("canvas_file_id"): a for b in (prev or {}).get("boards", []) if b.get("source") == "canvas"
              for p in b.get("posts", []) for a in p.get("attachments", [])}
-    by_course: dict[str, list[dict]] = {}
-    for n in announcements:
-        ids = list(dict.fromkeys(int(m.group(1)) for m in _FILE_LINK.finditer(str(n.get("message") or ""))))
-        if not ids:
-            continue
-        attachments = []
-        for fid in ids:
+    failed: set = set()
+    boards: dict[str, dict[str, list[dict]]] = {bid: {} for bid, _ in LINKED_BOARDS}
+
+    def attachments(html, what: str) -> list[dict]:
+        out = []
+        for fid in file_links(html, host):
             if fid in known:
-                attachments.append(known[fid])
+                out.append(dict(known[fid]))
+                continue
+            if fid in failed:
                 continue
             try:
                 info = canvas._get_one(f"/api/v1/files/{fid}")
             except CanvasError as e:
-                errors.append(f"공지 '{n.get('title')}'의 첨부를 확인하지 못했습니다: {e}")
+                failed.add(fid)
+                errors.append(f"{what}의 첨부를 확인하지 못했습니다: {e}")
                 continue
-            attachments.append({"id": f"cf{fid}", "filename": info.get("display_name") or info.get("filename"),
-                                "filesize": info.get("size"), "canvas_file_id": fid, "url": info.get("url")})
-        if attachments:
-            cid = str(n.get("context_code", "")).replace("course_", "")
-            by_course.setdefault(cid, []).append({
-                "id": n["id"], "title": n.get("title") or "공지", "content": "", "created_at": n.get("posted_at"),
-                "updated_at": n.get("posted_at"), "post_url": n.get("html_url"), "attachments": attachments})
-    return [{"course_id": cid, "tool_id": None, "board_id": "announcements", "board_title": "공지",
-             "source": "canvas", "posts": posts} for cid, posts in by_course.items()]
+            known[fid] = {"id": f"cf{fid}", "filename": info.get("display_name") or info.get("filename"),
+                          "filesize": info.get("size"), "canvas_file_id": fid, "url": info.get("url")}
+            out.append(dict(known[fid]))
+        return out
+
+    def add(board_id, cid, post, html, what):
+        atts = attachments(html, what)
+        if atts:
+            boards[board_id].setdefault(str(cid), []).append({**post, "content": "", "attachments": atts})
+
+    for n in cache.get("announcements") or []:
+        add("announcements", str(n.get("context_code", "")).replace("course_", ""),
+            {"id": n["id"], "title": n.get("title") or "공지", "created_at": n.get("posted_at"),
+             "updated_at": n.get("posted_at"), "post_url": n.get("html_url")},
+            n.get("message"), f"공지 '{n.get('title')}'")
+    for a in cache.get("assignments") or []:
+        name = " ".join(str(a.get("name") or "").split()) or "과제"
+        add("assignments", a.get("course_id"),
+            {"id": a["id"], "title": name, "created_at": a.get("created_at") or a.get("updated_at"),
+             "updated_at": a.get("updated_at") or a.get("created_at"), "post_url": a.get("html_url")},
+            a.get("description"), f"과제 '{name}'")
+    base = str(getattr(canvas, "base_url", "") or "")
+    for c in cache.get("courses") or []:
+        add("syllabus", c["id"],
+            {"id": str(c["id"]), "title": "강의계획서", "created_at": c.get("start_at"), "updated_at": c.get("start_at"),
+             "post_url": f"{base}/courses/{c['id']}/assignments/syllabus"},
+            c.get("syllabus_body"), f"'{c.get('name')}' 강의계획서")
+    return [{"course_id": cid, "tool_id": None, "board_id": bid, "board_title": title, "source": "canvas",
+             "posts": posts} for bid, title in LINKED_BOARDS for cid, posts in boards[bid].items()]
 
 
 def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full: bool, errors: list[str]):
@@ -180,7 +238,8 @@ def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full
                             "board_title": b.get("title") or "게시판", "posts": posts})
         except LearningXError as e:
             errors.append(f"'{c['name']}' LearningX 게시판을 읽지 못해 지난번 내용을 씁니다: {e}")
-            out += [b for b in prev.get("boards", []) if b["course_id"] == cid]
+            # 가상 게시판(source "canvas")은 _linked_files가 매번 새로 만든다 — 지난 것을 더하면 두 벌이 된다
+            out += [b for b in prev.get("boards", []) if b["course_id"] == cid and b.get("source") != "canvas"]
         requests += lx.requests
     return out, tools, requests, fetched
 
@@ -249,10 +308,69 @@ def board_source(cache, manual, now):
 
 @source
 def pdf_source(cache, manual, now):
-    """내려받은 첨부 PDF에서 뽑은 글자(materials가 채운 pdf_texts)."""
-    return [_text(t.get("course_id"), "pdf", key, f"첨부 '{t.get('filename')}'", t.get("text"), False,
+    """내려받은 첨부 PDF에서 뽑은 글자(materials가 채운 pdf_texts). 글마다 더하는 칸(계약 24-3):
+    board_id·post = 받을 때의 글(옛 기록은 post_key에서), attached_to = 그 파일이 붙거나 링크된 모든 글
+    [{"board_id", "post", "title", "url"}] — 같은 key이거나 같은 과목·같은 Canvas 파일 id(한 번만 받았어도 모두).
+    체크리스트는 board_id "assignments"·post = 과제 id인 곳으로 그 과제에 붙은 PDF를 찾는다."""
+    places = _file_places(cache)
+    out = []
+    for key, t in (cache.get("pdf_texts") or {}).items():
+        if not t.get("text"):
+            continue
+        s = _text(t.get("course_id"), "pdf", key, f"첨부 '{t.get('filename')}'", t.get("text"), False,
                   t.get("posted_at"), now)
-            for key, t in (cache.get("pdf_texts") or {}).items() if t.get("text")]
+        s["board_id"], s["post"] = pdf_place(t)
+        s["attached_to"] = places(key, t, s["board_id"], s["post"])
+        out.append(s)
+    return out
+
+
+def pdf_place(rec: dict) -> tuple[str | None, str | None]:
+    """pdf_texts·downloads 기록의 (board_id, post) — 문자열. 옛 기록(칸 없음)은 post_key "board:<board_id>-<post id>"에서."""
+    if rec.get("board_id") is not None and rec.get("post") is not None:
+        return str(rec["board_id"]), str(rec["post"])
+    pk = str(rec.get("post_key") or "")
+    if pk.startswith("board:") and "-" in pk[6:]:
+        board_id, post = pk[6:].split("-", 1)
+        return board_id, post
+    return None, None
+
+
+def _file_places(cache: dict):
+    """첨부 key → 그 파일이 붙은 글 목록을 돌려주는 함수(cache["boards"] 한 번 훑기)."""
+    by_key: dict = {}
+    by_file: dict = {}
+    file_of: dict = {}
+    for b in cache.get("boards") or []:
+        cid = str(b.get("course_id") or "")
+        for p in b.get("posts") or []:
+            ref = {"board_id": str(b.get("board_id")), "post": str(p.get("id")), "title": p.get("title"),
+                   "url": p.get("post_url")}
+            for a in p.get("attachments") or []:
+                if not isinstance(a, dict) or a.get("id") is None:
+                    continue
+                key = f"{cid}:{a['id']}"
+                by_key.setdefault(key, []).append(ref)
+                if a.get("canvas_file_id") not in (None, ""):
+                    f = (cid, str(a["canvas_file_id"]))
+                    file_of.setdefault(key, f)
+                    by_file.setdefault(f, []).append(ref)
+
+    def places(key: str, rec: dict, board_id, post) -> list[dict]:
+        refs = list(by_key.get(key) or [])
+        fid = rec.get("canvas_file_id")
+        f = (str(rec.get("course_id") or key.split(":")[0]), str(fid)) if fid not in (None, "") else file_of.get(key)
+        refs += by_file.get(f) or []
+        if board_id is not None:
+            refs.insert(0, next((r for r in refs if (r["board_id"], r["post"]) == (board_id, post)),
+                                {"board_id": board_id, "post": post, "title": None, "url": None}))
+        out, seen = [], set()
+        for r in refs:
+            if (r["board_id"], r["post"]) not in seen:
+                seen.add((r["board_id"], r["post"]))
+                out.append(dict(r))
+        return out
+    return places
 
 
 @source

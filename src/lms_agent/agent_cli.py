@@ -6,7 +6,9 @@
   재시도(검사 오류를 그대로 인용해 고쳐 달라고 한 번 더), 시간 제한.
   작업: grading_weights(평가 비중), deadline_from_text(마감), triage_review(확인함 후보 정리 — 계약 12장),
   map_score_item(점수·마감 → 평가 항목), count_items(세부 항목 개수 — 계약 14장), grade_distribution(학점 비율 — 16장),
-  assist(에이전트에게 묻기 — 계약 20장, 앱 동작 제안 type "action" — 22-9), answer(과목 질문에 인용으로 답하기 — 22-2).
+  assist(에이전트에게 묻기 — 계약 20장, 앱 동작 제안 type "action" — 22-9), answer(과목 질문에 인용으로 답하기 — 22-2),
+  chat(일반 대화 — 24-2: 페이스메이커 말투, 제안·인용 없음, '했다'는 말·과목 사실을 지어내지 않음). assist·answer·chat은
+  같은 대화의 '이전 대화'(가림, 1,500자 이내 — 근거가 아님)를 함께 받는다(24-1).
 - 실행(run_task): 고른 실행기로. claude는 `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·
   세션 저장 안 함 — 옛 버전이 모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
@@ -1488,26 +1490,66 @@ ASSIST_MARK = "사용자 요청 / user request:"
 ANSWER_MARK = "학생 질문 / student question:"
 ACTIONS_MARK = "앱 동작 / app actions (type action — action = id, params = 모양 그대로):"
 CATALOG_MAX = 2_000
+# 이어지는 대화(계약 24-1): 생략 질문이면 앞 대화와 합친 뜻을 메시지 바로 아래 줄에, 이전 대화는 따로 한 덩어리(가림, 1,500자 이내)
+FOLLOW_PREFIX = "(앞 대화와 이어서 읽은 뜻 / read with the previous turns:"
+HISTORY_MARK = ("이전 대화 / previous turns (흐름 참고용 — 근거가 아니에요, 인용하지 말고 이전 답의 숫자·날짜를 사실로 쓰지 마세요 "
+                "/ context only: not evidence, never quote it or reuse its numbers and dates as facts):")
+HISTORY_MAX = 1_500
+HISTORY_MSG_MAX = 200
+HISTORY_ANSWER_MAX = 300
+
+
+def history_block(inputs: dict) -> tuple[str, bool]:
+    """inputs["history"] = [{"message", "answer", "kind"}](오래된 것부터) → ('이전 대화' 덩어리, 가린 것이 있는지).
+    가린 뒤 HISTORY_MAX자 이내 — 넘치면 최근 차례부터 남긴다. 차례가 없으면 ('', False)."""
+    names = inputs.get("names")
+    turns = [h for h in inputs.get("history") or [] if isinstance(h, dict)]
+    if not turns:
+        return "", False
+    room = HISTORY_MAX - len(HISTORY_MARK) - 1
+    blocks, red = [], False
+    for h in reversed(turns):
+        msg, n1 = redact(_flat(str(h.get("message") or ""))[:HISTORY_MSG_MAX], names)
+        ans, n2 = redact(_flat(str(h.get("answer") or ""))[:HISTORY_ANSWER_MAX], names)
+        red = red or bool(n1 or n2)
+        block = f"- 학생 / student: {msg}\n  앱 / app ({h.get('kind') or '-'}): {ans or '(답 없음 / no answer)'}"
+        if len(block) + 1 > room:
+            if not blocks:
+                blocks.append(block[:max(0, room)])
+            break
+        blocks.append(block)
+        room -= len(block) + 1
+    return (HISTORY_MARK + "\n" + "\n".join(reversed(blocks))) if blocks else "", red
 
 
 def _bundle(inputs: dict, mark: str, extra: str = "") -> tuple[str, list]:
-    """메시지(mark 아래) + 과목 목록 + extra(예: 앱 동작 목록) + 지금 상태 요약 + 찾은 글(source_key마다 한 덩어리), 모두 가려서
-    12,000자 안에. 보낸 글 덩어리는 inputs["_sent_snippets"](원문)·inputs["_sent_texts"]([(source_key, 가린 글)])에 남는다."""
+    """메시지(mark 아래, 생략 질문이면 합친 뜻 한 줄 더) + 과목 목록 + extra(예: 앱 동작 목록) + 이전 대화 + 지금 상태 요약 +
+    찾은 글(source_key마다 한 덩어리), 모두 가려서 12,000자 안에. 보낸 글 덩어리는 inputs["_sent_snippets"](원문)·
+    inputs["_sent_texts"]([(source_key, 가린 글)])에, 이전 대화 덩어리는 inputs["_history_text"]에 남는다(근거 검사에서 뺀다)."""
     names = inputs.get("names")
     notes, red = [], 0
     msg, n = redact(_flat(str(inputs.get("message") or ""))[:500], names)
     red += bool(n)
-    head = [mark, msg, "", "과목 / courses (course_id: 이름):"]
+    head = [mark, msg]
+    fu = _flat(str(inputs.get("followup") or ""))
+    if fu and fu != _flat(str(inputs.get("message") or "")):
+        fu, n = redact(fu[:500], names)
+        red += bool(n)
+        head.append(f"{FOLLOW_PREFIX} {fu})")
+    head += ["", "과목 / courses (course_id: 이름):"]
     for c in list(inputs.get("courses") or [])[:40]:
         head.append(f"- {c.get('id')}: {redact(_flat(str(c.get('short') or '')), names)[0][:80]}")
     if extra:
         head += ["", extra]
+    hist, n = history_block(inputs)
+    red += bool(n)
+    inputs["_history_text"] = hist
     state, n = redact(str(inputs.get("state_text") or ""), names)
     red += bool(n)
     state, cut = cap_text(state, ASSIST_STATE_BUDGET)
     if cut:
         notes.append(f"상태 요약이 길어 {ASSIST_STATE_BUDGET:,}자만 보냄")
-    out = ("\n".join(head) + "\n\n지금 상태 / current state:\n" + (state or "(없음 / none)")
+    out = ("\n".join(head) + ("\n\n" + hist if hist else "") + "\n\n지금 상태 / current state:\n" + (state or "(없음 / none)")
            + "\n\n찾은 글 / found texts (근거는 여기서 그대로 인용 / quote evidence verbatim from here):\n")
     budget = MAX_TEXT - len(out)
     sent, texts = [], []
@@ -1559,13 +1601,15 @@ def _assist_validate(obj: dict, sent: str, inputs: dict, final: bool):
     if len(answer) < 2:
         raise _Invalid("answer가 비어 있습니다 / answer is empty")
     check = inputs.get("check")
+    hist = inputs.get("_history_text") or ""
+    source = sent.replace(hist, "") if hist else sent   # 이전 대화(앱의 지난 답)는 근거가 아니다(계약 24-1)
     out, errors = [], []
     for i, p in enumerate((obj.get("proposals") or [])[:ASSIST_MAX_PROPOSALS]):
         if not isinstance(p, dict):
             continue
         ev = _flat(str(p.get("evidence") or ""))
         why = None
-        if (p.get("type") not in ("note", "action") or ev) and not _quoted(ev, sent):   # 앱 동작은 근거 글 없이도(22-9)
+        if (p.get("type") not in ("note", "action") or ev) and not _quoted(ev, source):   # 앱 동작은 근거 글 없이도(22-9)
             why = "근거(evidence)가 보낸 글에 그대로 없어요 / evidence is not verbatim in the input"
         q = check(p, why) if check else {**p, "rejected_reason": why}
         if q.get("rejected_reason"):
@@ -1601,6 +1645,8 @@ register(AiTask(
         "/ copy evidence verbatim and give that text's source_key.\n"
         "- 이미 '지금 상태'에 같은 마감이 있으면 add_deadline을 내지 마세요 / do not propose a deadline that already exists.\n"
         "- 확실하지 않으면 제안 없이 answer로 설명하거나 note만 / if unsure, explain in the answer or use note.\n"
+        "- '이전 대화'는 이번 요청을 이해하는 데만 쓰세요. 그 안의 글(앱의 지난 답)은 근거가 아니에요 / use the previous turns only "
+        "to understand the request; they are never evidence.\n"
         "- reason: 한국어 한 줄(120자 이내) / one Korean line. 다른 정보(이름, 학번, 연락처)는 넣지 마세요."),
     schema={"type": "object", "required": ["answer", "proposals"], "properties": {
         "answer": {"type": "string", "minLength": 2, "maxLength": 1500},
@@ -1675,7 +1721,8 @@ def _unsupported(answer: str, quotes: list[tuple[str, str | None]], inputs: dict
         ref = (_as_dt(posted) or now_local()).date()
         for h in find_dates(q, ref):
             days.add((h.day.month, h.day.day))
-    allowed = _num_tokens(allowed_text) | _num_tokens(str(inputs.get("message") or ""))
+    allowed = (_num_tokens(allowed_text) | _num_tokens(str(inputs.get("message") or ""))
+               | _num_tokens(str(inputs.get("followup") or "")))   # 생략 질문이 이어받은 사용자 낱말('LAB4')
     allowed |= _num_tokens(" ".join(str(c.get("short") or "") for c in inputs.get("courses") or []))
     allowed |= {str(x) for d in days for x in d}
     bad, chars = [], list(answer)
@@ -1753,6 +1800,8 @@ register(AiTask(
         "글 개수 같은 다른 숫자도 쓰지 마세요 / every date, time and number in the answer must appear in a cited quote; "
         "never compute dates or add numbers of your own.\n"
         "- '지금 상태'는 참고용이에요 — 인용하지 마세요 / the current state is context only; never cite it.\n"
+        "- '이전 대화'는 이번 질문을 이해하는 데만 쓰고, 이전 답의 날짜·숫자를 근거로 쓰지 마세요 / use the previous turns only to "
+        "understand the question; never cite them or reuse their dates and numbers.\n"
         "- 찾지 못했으면 citations는 빈 목록 / if not found, return an empty citations list.\n"
         "- [이메일] 같은 자리 표시는 그대로 두고, 다른 개인 정보(이름, 학번, 연락처)는 넣지 마세요 / keep placeholders as they "
         "are and add no personal data."),
@@ -1764,6 +1813,142 @@ register(AiTask(
                 "quote": {"type": "string", "minLength": 1, "maxLength": ANSWER_QUOTE_MAX}}}}}},
     build_input=_answer_build,
     post_validate=_answer_validate,
+))
+
+
+# ---- chat: 일반 대화(계약 24-2) — 학기 마라톤을 같이 달리는 페이스메이커 말투. 제안·인용 없음, 했다고 하지 않음, 과목 사실을 지어내지 않음
+
+CHAT_MARK = "학생이 건넨 말 / student message:"
+CHAT_GENERAL = ("모드 / mode: general — 학업 질문인데 이 PC의 강의 글에 답이 없었어요. 일반 지식으로만 짧게 설명하고, 그 과목에서는 "
+                "다르게 정했을 수 있으니 강의 글·교수님 안내를 확인하라고 덧붙이세요 / the course texts do not answer this academic "
+                "question: give a short general-knowledge explanation and remind them the course may differ.")
+CHAT_APP = ("앱이 할 수 있는 일 / what the app can do (안내만 — 했다고 하지 않기 / mention only, never claim it was done): "
+            "과목 질문에 글을 인용해 답하기, 놓친 마감 찾기, 성적 '만약에' 계산, 문의 메일 초안, 공부 계획, 설정 바꾸기·동기화 "
+            "(실행은 학생이 [실행]·[반영] 단추로).")
+CHAT_MAX = 1_200
+CHAT_MAX_SENTENCES = 8
+CHAT_STATE_BUDGET = 800
+_URL = re.compile(r"https?://\S+|www\.\S+", re.I)
+_SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+# 앱 동작을 했다는 말(계약 24-2: 실행은 [실행] 단추로만) — 묻는 말('잘 보냈어요?')은 빼고
+_CLAIM_DONE = re.compile(
+    r"(?:켰|껐|꺼\s*(?:뒀|놨|드렸)|켜\s*(?:뒀|놨|드렸)|바꿨|바꿔\s*(?:뒀|놨|드렸)|동기화했|반영했|추가했|등록했|삭제했|지웠|"
+    r"보냈|전송했|실행했|설정했|저장했|예약했|넣어\s*(?:뒀|놨|드렸)|넣었|만들어\s*(?:뒀|놨|드렸)|제출했|업데이트했|승인했|제외했)"
+    r"(?:어요|습니다|어|다|음)(?![가-힣])(?!\s*[?？])"
+    r"|(?<![a-z])i(?:'ve|\s+have)?\s+(?:turned|switched|enabled|disabled|synced|added|deleted|removed|sent|scheduled|"
+    r"saved|updated|submitted|approved|set\s+up)(?![a-z])", re.I)
+_GRADE_CLAIM = re.compile(r"(?<![A-Za-z0-9])[A-D](?:\+|0)(?![A-Za-z0-9])|(?<![A-Za-z0-9])[A-DF]\s*학점")
+_POINTS = re.compile(r"(\d+(?:\.\d+)?)\s*점(?![심수])")
+
+
+def _chat_build(inputs: dict) -> tuple[str, list]:
+    """학생이 건넨 말 + (일반 지식 모드면 그 줄) + 짧은 지금 상태(시각·주차·이번 주 마감 수·페이스, 성적 없음) + 이전 대화 +
+    앱이 할 수 있는 일, 모두 가려서."""
+    names = inputs.get("names")
+    notes, red = [], False
+    msg, n = redact(_flat(str(inputs.get("message") or ""))[:500], names)
+    red = red or bool(n)
+    lines = [CHAT_MARK, msg]
+    if inputs.get("mode") == "general":
+        lines += ["", CHAT_GENERAL]
+    state, n = redact(str(inputs.get("state_text") or ""), names)
+    red = red or bool(n)
+    state, _ = cap_text(state, CHAT_STATE_BUDGET)
+    lines += ["", "지금 상태 / current state (참고용, 성적 없음 / context only, no grades):", state or "(없음 / none)"]
+    hist, n = history_block(inputs)
+    red = red or bool(n)
+    if hist:
+        lines += ["", hist]
+    lines += ["", CHAT_APP]
+    if red:
+        notes.append("보내기 전에 이메일·학번·이름 등을 가림")
+    return "\n".join(lines), notes
+
+
+def _chat_unsupported(answer: str, inputs: dict) -> list[str]:
+    """답에 지어낸 과목 사실로 보이는 것: 학생 말·지금 상태에 없는 (상대 날짜가 아닌) 날짜, 학점 글자(A+·B0·'C 학점'), 'N점'."""
+    allowed = _flat(str(inputs.get("message") or "") + " " + str(inputs.get("state_text") or ""))
+    today = now_local().date()
+    days = {(today.month, today.day)} | {(h.day.month, h.day.day) for h in find_dates(allowed, today)}
+    bad = []
+    for h in find_dates(answer, today):
+        if not h.relative and (h.day.month, h.day.day) not in days:
+            bad.append(_flat(answer[h.start:h.end]))
+    squeezed = allowed.replace(" ", "")
+    for m in _GRADE_CLAIM.finditer(answer):
+        if m.group(0).replace(" ", "") not in squeezed:
+            bad.append(m.group(0))
+    allowed_nums = _num_tokens(allowed)
+    for m in _POINTS.finditer(answer):
+        if _num_norm(m.group(1)) not in allowed_nums:
+            bad.append(m.group(0))
+    return list(dict.fromkeys(bad))
+
+
+def _chat_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    """답 하나(제안·인용 없음). 고칠 수 있는 것(1,200자·8문장·링크)은 마지막 시도가 아니면 다시 묻고 마지막이면 잘라 낸다.
+    앱 동작을 했다는 말, 학생 말·상태에 없는 날짜·학점·점수는 마지막 시도까지 어기면 실패(→ 규칙 답)."""
+    answer = unplace(_flat(str(obj.get("answer") or "")))
+    if len(answer) < 2:
+        raise _Invalid("answer가 비어 있습니다 / answer is empty")
+    claim = _CLAIM_DONE.search(answer)
+    if claim:
+        raise _Invalid(f"앱 동작을 했다고 하면 안 됩니다('{claim.group(0)}') — 실행은 학생이 [실행] 단추로 해요 "
+                       "/ never claim you performed an app action")
+    bad = _chat_unsupported(answer, inputs)
+    if bad:
+        raise _Invalid("과목 사실(날짜·학점·점수)을 지어내면 안 됩니다: " + ", ".join(bad[:5])
+                       + " / never invent course facts (dates, grades, scores)")
+    problems = []
+    if _URL.search(answer):
+        problems.append("링크를 넣지 마세요 / no links")
+    sentences = [s for s in _SENT_SPLIT.split(answer) if s.strip()]
+    if len(sentences) > CHAT_MAX_SENTENCES:
+        problems.append(f"{CHAT_MAX_SENTENCES}문장 이하로 답하세요 / at most {CHAT_MAX_SENTENCES} sentences")
+    if len(answer) > CHAT_MAX:
+        problems.append(f"{CHAT_MAX:,}자 이하로 답하세요 / at most {CHAT_MAX} characters")
+    if problems and not final:
+        raise _Invalid("; ".join(problems))
+    answer = _flat(_URL.sub("", " ".join(sentences[:CHAT_MAX_SENTENCES])))
+    if len(answer) > CHAT_MAX:
+        answer = answer[:CHAT_MAX - 1].rstrip() + "…"
+    return {"answer": answer}
+
+
+register(AiTask(
+    name="chat",
+    purpose="학업 밖의 말(인사·고민·일반 지식 …)이나 강의 글에 답이 없는 질문에 페이스메이커 말투로 짧게 답한다(제안·인용 없음)",
+    instructions=(
+        "작업: 학생이 LMS Agent 앱의 채팅에 말을 건넸습니다(아래 '학생이 건넨 말'). 당신은 학기 마라톤을 같이 달리는 페이스메이커 "
+        "친구예요. 한국어로 짧고 따뜻하게, 이전 대화의 흐름을 이어서 답하세요.\n"
+        "Task: a student said something in the LMS Agent app's chat (the 'student message' below). You are a pacemaker "
+        "friend running the semester marathon with them. Reply in Korean, short and warm, continuing the previous turns.\n"
+        f"- answer: 한국어 2~{CHAT_MAX_SENTENCES}문장, {CHAT_MAX:,}자 이내 / 2-{CHAT_MAX_SENTENCES} Korean sentences, at most "
+        f"{CHAT_MAX} characters.\n"
+        "- '이전 대화'와 '지금 상태'는 흐름을 잇는 참고용이에요. 이전 답의 숫자·날짜를 사실처럼 되풀이하지 마세요 / previous turns "
+        "and the current state are context only; do not restate numbers or dates from earlier answers as facts.\n"
+        "- 과목 사실(마감·시험 날짜·점수·학점·범위·과제 내용)은 지어내지 마세요. 필요하면 그 과목을 물어보게 안내하세요(예: '기말 범위 "
+        "어디까지야?') / never invent course facts (deadlines, exam dates, scores, grades, scope); suggest asking about the "
+        "course instead.\n"
+        "- 앱이 할 수 있는 일은 안내해도 되지만, 했다고 말하지 마세요 — 실행은 학생이 앱의 [실행]·[반영] 단추로만 해요 / you may "
+        "mention what the app can do, but never claim you did anything; only the student's buttons do things.\n"
+        "- 제안·인용·링크를 넣지 마세요 / no proposals, citations or links.\n"
+        "- 위험한 요청(자해·자살, 남을 해치는 일, 불법, 해킹, 시험 부정·표절·대리 출석 등)은 정중히 거절하세요. 위기로 보이면 도움 "
+        "받을 곳을 꼭 안내하세요: 자살예방상담전화 109, 정신건강위기상담 1577-0199, 학교 학생상담센터, 위급하면 112·119 / politely "
+        "decline harmful requests (self-harm, hurting others, illegal acts, hacking, cheating); if it looks like a crisis, "
+        "always point to help (Korea: 109, 1577-0199, campus counseling center, 112/119 in an emergency).\n"
+        "- 건강·법률·돈처럼 전문가가 필요한 일은 일반적인 이야기만 하고 전문가와 상담하라고 권하세요 / for medical, legal or "
+        "financial matters give general information only and suggest a professional.\n"
+        "- 개인 정보(이름·학번·연락처)를 묻거나 넣지 말고, [이메일] 같은 자리 표시는 그대로 두세요 / never ask for or add personal "
+        "data; keep placeholders as they are.\n"
+        "- 'mode: general'이면 학업 질문인데 강의 글에 답이 없었다는 뜻이에요. 일반 지식으로 짧게 설명하고 그 과목에서는 다를 수 "
+        "있다고 덧붙이세요. 머리말('강의 글에는 없어서…')은 앱이 붙여요 / in general mode, explain briefly from general "
+        "knowledge and note the course may differ; the app adds the header."),
+    schema={"type": "object", "required": ["answer"], "properties": {
+        "answer": {"type": "string", "minLength": 2, "maxLength": 1500}}},
+    build_input=_chat_build,
+    post_validate=_chat_validate,
+    max_chars=4_000,
 ))
 
 

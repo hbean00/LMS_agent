@@ -1,4 +1,4 @@
-"""과제 체크리스트(계약 22-6): 과제 설명·근거 사슬의 글·같은 과목 공지에서 제출 요건 문장을 규칙으로 찾는다.
+"""과제 체크리스트(계약 22-6): 과제 설명(과 거기 링크된 PDF, 24-3)·근거 사슬의 글·같은 과목 공지에서 제출 요건 문장을 규칙으로 찾는다.
 
 특정 과목·문장에 맞추지 않는다. 문장마다 '무엇에 관한 요건인지'를 말하는 낱말 묶음(파일 형식·파일 이름·분량·
 포함할 것·제출처·팀/개인·지각/감점/표절 규정)과 '학생이 하는 일'을 말하는 낱말(제출·첨부·포함·보내·submit·include …)로
@@ -511,23 +511,41 @@ def _evidence(item: dict, items_all: list[dict]) -> list[dict]:
     return [e for e in out if isinstance(e, dict)]
 
 
+def _attached_pdfs(srcs: list[dict], course: str, aid: str):
+    """그 과제(설명에 링크된 파일 = 가상 게시판 'assignments'의 글, 계약 24-3)에 붙은 PDF 글과 그 자리."""
+    for s in srcs:
+        if s.get("type") != "pdf" or str(s.get("course_id")) != course:
+            continue
+        ref = next((r for r in s.get("attached_to") or [] if isinstance(r, dict)
+                    and str(r.get("board_id")) == "assignments" and str(r.get("post")) == aid), None)
+        if ref is not None:
+            yield s, ref
+
+
 def texts_for(item: dict, srcs: list[dict], items_all: list[dict] | None = None) -> list[dict]:
-    """항목 하나의 대상 글(계약 22-6): Canvas 과제 설명 → 근거 사슬의 글 → 같은 과목 공지·게시판·첨부 중 제목이 맞는 것.
-    srcs는 agent.sources(store) 모양(key, type, course_id, title, plain, url). 글을 못 찾은 근거는 그 문장만 쓴다."""
+    """항목 하나의 대상 글(계약 22-6·24-3): Canvas 과제 설명과 그 설명에 링크된 PDF → 근거 사슬의 글 →
+    같은 과목 공지·게시판·첨부 중 제목이 맞는 것. srcs는 agent.sources(store) 모양(key, type, course_id, title, plain, url,
+    PDF는 attached_to). 글을 못 찾은 근거는 그 문장만 쓴다."""
     items_all = items_all or [item]
     by_key = {s["key"]: s for s in srcs}
     out, seen = [], set()
 
-    def add(s):
+    def add(s, url=None):
         if s["key"] in seen:
             return
         seen.add(s["key"])
-        out.append({"text": s.get("plain") or "", "source_title": s.get("title"), "url": s.get("url"), "key": s["key"]})
+        out.append({"text": s.get("plain") or "", "source_title": s.get("title"), "url": url or s.get("url"),
+                    "key": s["key"]})
 
     for cid in _assignment_ids(item, items_all):
-        s = by_key.get("assignment:" + cid.rsplit("-", 1)[-1])
-        if s and str(s.get("course_id")) == cid.split("-")[1]:
+        course, aid = cid.split("-")[1], cid.rsplit("-", 1)[-1]
+        s = by_key.get("assignment:" + aid)
+        if s and str(s.get("course_id")) != course:
+            s = None
+        if s:
             add(s)
+        for pdf, ref in _attached_pdfs(srcs, course, aid):
+            add(pdf, url=ref.get("url") or (s or {}).get("url"))     # [원문]은 그 과제 화면
     course = str(item.get("course_id")) if item.get("course_id") is not None else None
     for e in _evidence(item, items_all):
         sentence = _flat(e.get("text"))

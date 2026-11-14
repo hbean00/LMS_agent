@@ -306,9 +306,12 @@ def test_answer_task_redacts_and_shows_original_quote(tmp_path):
 
 
 def test_answer_without_results_does_not_call_ai(tmp_path):
+    """관련 글이 없으면 작업 answer(글 인용)를 부르지 않는다. 계약 24-2부터 학업 말이 없는 'zzqx'는 일반 대화(chat)라 AI가 켜져
+    있으면 작업 chat이 한 번 답한다(예전: AI를 아예 부르지 않고 규칙 '찾지 못했어요')."""
     s = make_store(tmp_path / "s.json")
-    r, seen = ask_ai(s, "zzqx", [lambda inp: {"answer": "x", "citations": []}])
-    assert seen == [] and r["by"] == "rules" and r["attempts"] == 0 and r["error"] is None
+    r, seen = ask_ai(s, "zzqx", [lambda inp: {"answer": "무슨 말인지 잘 모르겠어요. 다시 말해 줄래요?"}])
+    assert all(agent_cli.ANSWER_MARK not in x for x in seen) and len(seen) == 1 and agent_cli.CHAT_MARK in seen[0]
+    assert (r["kind"], r["by"], r["attempts"], r["error"], r["citations"]) == ("chat", "ai", 1, None, [])
     assert "AI CLI를 켜면" not in r["answer"]
 
 

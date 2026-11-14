@@ -1,5 +1,6 @@
-"""첨부 자료 자동 저장: LearningX 게시판 글의 첨부(과제 PDF·강의 슬라이드)를 내 PC 폴더에 받고, PDF는 글자를 뽑아
-마감 찾기 출처(type "pdf")로 넘긴다. 계약 10장 "첨부 자료(materials) — B".
+"""첨부 자료 자동 저장: LearningX 게시판 글의 첨부(과제 PDF·강의 슬라이드)와 Canvas 공지·과제 설명·강의계획서에 링크된
+파일(core._linked_files의 가상 게시판, 계약 24-3)을 내 PC 폴더에 받고, PDF는 글자를 뽑아 마감 찾기 출처(type "pdf")로 넘긴다.
+계약 10장 "첨부 자료(materials) — B". 기록(downloads·pdf_texts)에는 어느 글에서 받았는지(board_id·post)와 canvas_file_id를 남긴다.
 
 - plan(): 수집 결과(cache["boards"])에서 아직 안 받은 첨부만 고르고 안전한 저장 위치를 정한다(네트워크 없음).
 - fetch(): 실제로 받는다. 받는 함수(get_bytes)와 PDF 읽는 함수(pdf_reader)는 넘겨받는다(테스트는 가짜).
@@ -148,12 +149,35 @@ def _posted_at(post: dict) -> str | None:
     return iso(parse_iso(raw)) or raw
 
 
+def _have(old: dict | None, size, folder: Path) -> bool:
+    """같은 크기로 받아 둔 파일이 (지금 폴더 안에) 그대로 있나."""
+    return bool(old and old.get("size") == size and old.get("path")
+                and inside(old["path"], folder) and os.path.isfile(old["path"]))
+
+
+def _file_id(cid: str, att: dict):
+    """같은 파일인지 볼 기준: (과목, Canvas 파일 id). 없으면 None(그 첨부 key로만 가린다)."""
+    fid = att.get("canvas_file_id")
+    return (cid, str(fid)) if fid not in (None, "") else None
+
+
 def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path) -> list[dict]:
     """받아야 할 첨부 목록. 같은 key·같은 크기이고 파일이 (지금 폴더 안에) 그대로 있으면 건너뛴다.
-    파일을 지웠거나, 교수가 파일을 바꿨거나(크기 다름), 저장 폴더를 바꿨으면 다시 받는다."""
+    파일을 지웠거나, 교수가 파일을 바꿨거나(크기 다름), 저장 폴더를 바꿨으면 다시 받는다.
+    한 파일이 여러 글에 붙거나 링크돼 있으면(같은 key, 또는 같은 과목·같은 Canvas 파일 id — 예: 공지와 과제 설명에 같은 PDF)
+    한 번만 받는다: 이미 받아 둔 쪽이 있으면 그것, 없으면 게시판 순서상 처음 글(LearningX → 공지 → 과제 → 강의계획서)."""
     folder = Path(folder)
     taken: set = set()
     jobs: list[dict] = []
+    planned: set = set()
+    covered: set = set()      # 이미 받았거나 이번에 받기로 한 (과목, Canvas 파일 id)
+    for board in boards or []:
+        cid = str(board.get("course_id") or "")
+        for post in board.get("posts") or []:
+            for att in post.get("attachments") or []:
+                f = _file_id(cid, att) if cid and att.get("id") is not None else None
+                if f and _have(downloads.get(key_of(cid, att["id"])), att.get("filesize"), folder):
+                    covered.add(f)
     for board in boards or []:
         cid = str(board.get("course_id") or "")
         board_id = board.get("board_id")
@@ -166,9 +190,10 @@ def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path) -
                     continue
                 key = key_of(cid, att["id"])
                 size = att.get("filesize")
-                old = downloads.get(key) or {}
-                if (old and old.get("size") == size and old.get("path")
-                        and inside(old["path"], folder) and os.path.isfile(old["path"])):
+                if key in planned or _have(downloads.get(key), size, folder):
+                    continue
+                f = _file_id(cid, att)
+                if f in covered:
                     continue
                 filename = str(att.get("filename") or att.get("display_name") or f"첨부 {att['id']}")
                 dest = folder.joinpath(*dest_parts(folder, course_short, board_title, post_title, filename))
@@ -176,11 +201,15 @@ def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path) -
                     continue
                 dest = _free_path(dest, taken)
                 taken.add(_norm(dest))
+                planned.add(key)
+                if f:
+                    covered.add(f)
                 jobs.append({
                     "key": key, "dest": str(dest), "root": str(folder), "filename": filename,
                     "size": size if isinstance(size, int) else None,
                     "course_id": cid, "course_short": course_short, "board_title": board_title,
                     "post_title": post_title, "post_key": f"board:{board_id}-{post.get('id')}",
+                    "board_id": board_id, "post": post.get("id"), "canvas_file_id": att.get("canvas_file_id"),
                     "posted_at": _posted_at(post), "attachment": att,
                 })
     return jobs
@@ -258,12 +287,13 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
             errors.append(f"'{name}': 저장하지 못했습니다")
             continue
         taken.add(_norm(dest))
+        place = {"board_id": job.get("board_id"), "post": job.get("post"), "canvas_file_id": job.get("canvas_file_id")}
         entry = {
             "path": str(dest), "filename": name,
             "size": job["size"] if job.get("size") is not None else len(data),
             "course_id": job["course_id"], "course_short": job.get("course_short"),
             "board_title": job["board_title"], "post_title": job["post_title"], "post_key": job["post_key"],
-            "posted_at": job.get("posted_at"), "downloaded_at": at, "pdf_ok": None, "pdf_notes": [],
+            **place, "posted_at": job.get("posted_at"), "downloaded_at": at, "pdf_ok": None, "pdf_notes": [],
         }
         is_pdf = name.lower().endswith(".pdf") or bytes(data[:5]) == b"%PDF-"
         if is_pdf and pdf_reader is not None:
@@ -277,7 +307,7 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
             entry["pdf_ok"], entry["pdf_notes"] = ok, notes
             if ok:
                 texts[job["key"]] = {"text": text[:PDF_TEXT_LIMIT], "course_id": job["course_id"], "filename": name,
-                                     "post_key": job["post_key"], "posted_at": job.get("posted_at")}
+                                     "post_key": job["post_key"], **place, "posted_at": job.get("posted_at")}
         updates[job["key"]] = entry
     return updates, texts, errors
 

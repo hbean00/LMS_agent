@@ -84,6 +84,9 @@ def _decide(text: str) -> dict:
 
 ASSIST_MARK = "사용자 요청 / user request:"
 ANSWER_MARK = "학생 질문 / student question:"   # agent_cli.ANSWER_MARK(계약 22-2 작업 answer)
+CHAT_MARK = "학생이 건넨 말 / student message:"   # agent_cli.CHAT_MARK(계약 24-2 작업 chat)
+FOLLOW_PREFIX = "(앞 대화와 이어서 읽은 뜻 / read with the previous turns:"   # agent_cli.FOLLOW_PREFIX(계약 24-1)
+HISTORY_HEAD = "이전 대화 / previous turns"
 _ITEM = re.compile(r"^- item_id (\S+) \| (.*?) \| (\S+) \| due (\S+) \| (\S+)")
 _COMP = re.compile(r"^- (.+?) ([\d.]+)% \| 일정/dates: (\w+)")
 _CAND = re.compile(r"^- key (\S+) \| 라벨/label: (.*?) \| 출처/source: (.*?) \| 연결/linked: (.*?)(?: \| 글/text: (.*))?$")
@@ -92,7 +95,10 @@ _TERM = re.compile(r"^학기 / term: (\d+)주차 / (\d+)주")
 
 
 def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
-    msg = text.split(mark, 1)[1].split("\n", 2)[1].strip()
+    after = text.split(mark, 1)[1].split("\n", 3)
+    msg = after[1].strip()
+    if len(after) > 2 and after[2].startswith(FOLLOW_PREFIX):   # 생략 질문 — 앞 대화와 합친 뜻으로 읽는다(계약 24-1)
+        msg = after[2][len(FOLLOW_PREFIX):].strip().removesuffix(")").strip()
     state_part = text.split("지금 상태 / current state:", 1)[-1].split("찾은 글 / found texts", 1)[0]
     found_part = text.split("찾은 글 / found texts", 1)[-1].split("=== 입력 글 끝", 1)[0]
     courses: dict = {}
@@ -282,10 +288,48 @@ def _answer(text: str) -> dict:
             "citations": [{"source_key": sn["key"], "quote": quote}]}
 
 
+# ---------------------------------------------------------------- chat(일반 대화, 계약 24-2)
+# 진짜 모델이 아니므로 말의 갈래만 보고 정해진 문장으로 답한다. 날짜·점수·학점은 쓰지 않고(하네스 검사), 했다고 하지 않는다.
+# 보낸 글에 '이전 대화'가 있으면 이어서 말한다고 밝힌다(대화를 이어받는지 데모·테스트에서 보이게).
+
+_CRISIS = re.compile(r"죽고\s*싶|자살|자해|극단\s*적|살기\s*싫|사라지고\s*싶|suicid|kill\s+myself|self[-\s]?harm", re.I)
+_HARM = re.compile(r"해킹|훔치|불법|대리\s*출석|커닝|컨닝|답\s*(?:좀\s*)?(?:알려|보내)|hack|cheat", re.I)
+_HELLO = re.compile(r"^\s*(?:안녕|하이|헬로|반가|hi|hello|hey)", re.I)
+_TIRED = re.compile(r"힘들|힘드|지쳤|지친|지쳐|피곤|우울|스트레스|응원|화이팅|파이팅|tired|stressed", re.I)
+
+
+def _chat(text: str) -> dict:
+    msg = text.split(CHAT_MARK, 1)[1].split("\n", 2)[1].strip()
+    general = "모드 / mode: general" in text
+    state = text.split("지금 상태 / current state", 1)[-1]
+    week = next((ln.split(":", 1)[1].strip() for ln in state.splitlines() if ln.startswith("이번 주 마감 / this week:")), None)
+    head = "앞 이야기에 이어서 말해 볼게요. " if HISTORY_HEAD in text else ""
+    if _CRISIS.search(msg):
+        answer = ("많이 힘들었겠어요. 혼자 견디지 않아도 돼요. 자살예방상담전화 109나 정신건강위기상담 1577-0199, "
+                  "학교 학생상담센터에 꼭 이야기해 주세요. 위급하면 112나 119예요.")
+    elif _HARM.search(msg):
+        answer = ("그건 도와드릴 수 없어요 — 학교 규정이나 법을 어기는 일이라서요. 대신 정당하게 준비하는 방법이라면 "
+                  "같이 고민해 볼게요.")
+    elif general:
+        answer = (head + "일반적으로는 개념을 작은 예로 직접 풀어 보는 게 가장 빨라요. 다만 그 과목에서는 다르게 정했을 수 "
+                  "있으니 강의 글이나 교수님 안내를 꼭 확인해 주세요.")
+    elif _HELLO.search(msg):
+        answer = head + "안녕하세요! 오늘도 같이 달려 봐요." + (f" 이번 주 마감은 {week}예요." if week else "")
+    elif _TIRED.search(msg):
+        answer = (head + "많이 지쳤죠. 여기까지 온 것만으로도 잘 달리고 있어요. 오늘은 가장 가까운 것 하나만 같이 "
+                  "끝내 봐요.")
+    else:
+        answer = (head + "저는 데모의 가짜 AI라 깊은 이야기는 못 하지만, 같이 달리는 페이스메이커로 여기 있을게요. "
+                  "학기 이야기라면 '기말 범위 어디까지야?'처럼 물어봐 주세요.")
+    return {"answer": answer}
+
+
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """triage_review·assist·answer만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지 못함'으로
-    답한다(데모는 규칙이 찾는다)."""
-    if ANSWER_MARK in (input or ""):   # answer(과목 질문 — 계약 22-2)
+    """triage_review·assist·answer·chat만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지
+    못함'으로 답한다(데모는 규칙이 찾는다)."""
+    if CHAT_MARK in (input or ""):   # chat(일반 대화 — 계약 24-2)
+        model = json.dumps(_chat(input), ensure_ascii=False)
+    elif ANSWER_MARK in (input or ""):   # answer(과목 질문 — 계약 22-2)
         model = json.dumps(_answer(input), ensure_ascii=False)
     elif ASSIST_MARK in (input or ""):   # assist(에이전트에게 묻기)
         model = json.dumps(_assist(input), ensure_ascii=False)

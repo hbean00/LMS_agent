@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -14,8 +15,32 @@ from .. import materials
 from ..api import ApiError, router
 from ..store import hidden_courses
 
-ANNOUNCEMENT_POST = "board:announcements-"   # core._announcement_files의 가상 게시판(board_id "announcements")
+ANNOUNCEMENT_POST = "board:announcements-"   # core._linked_files의 가상 게시판(board_id "announcements")
 ANNOUNCEMENT_FILES = "공지 첨부 파일"
+
+# 자료 화면의 분류(계약 24-4): 가상 게시판(공지·과제·강의계획서에 링크된 파일)은 post_key로, 그 밖은 게시판 이름의 낱말로.
+# 과목마다 게시판 이름이 달라도(예: '과제 제출', 'Assignments', '실습 자료실') 같은 분류가 되게 특정 과목 이름에 기대지 않는다.
+CATEGORIES = [("assignment", "과제"), ("announcement", "공지"), ("lecture", "강의자료"), ("syllabus", "강의계획서"),
+              ("board", "기타 게시판")]
+_VIRTUAL = {"board:announcements-": "announcement", "board:assignments-": "assignment", "board:syllabus-": "syllabus"}
+_CAT_WORDS = [
+    ("syllabus", re.compile(r"강의\s*계획서|syllabus", re.I)),
+    ("announcement", re.compile(r"공지|알림|notice|announce", re.I)),
+    ("assignment", re.compile(r"과제|숙제|레포트|리포트|보고서|실습|프로젝트|assignment|homework|\bhw\b|\blabs?\b|project|report", re.I)),
+    ("lecture", re.compile(r"강의\s*자료|수업\s*자료|자료실|강의\s*노트|강의록|교안|lecture|\bslides?\b|\bmaterials?\b|\bnotes?\b", re.I)),
+]
+
+
+def category_of(post_key, board_title) -> str:
+    pk = str(post_key or "")
+    for prefix, cat in _VIRTUAL.items():
+        if pk.startswith(prefix):
+            return cat
+    title = str(board_title or "")
+    for cat, rx in _CAT_WORDS:
+        if rx.search(title):
+            return cat
+    return "board"
 
 # 앱에서 바로 열면 프로그램이 실행되는 형식. 게시판 첨부는 누구나 올릴 수 있으니 폴더에서 직접 확인하게 한다.
 RUNNABLE = {".exe", ".com", ".bat", ".cmd", ".scr", ".pif", ".msi", ".msp", ".msc", ".cpl", ".lnk", ".url",
@@ -73,10 +98,12 @@ def materials_state(app, ctx):
             "post_title": m.get("post_title"), "filename": m.get("filename"),
             "size": m.get("size"), "posted_at": m.get("posted_at"), "downloaded_at": m.get("downloaded_at"),
             "pdf_ok": m.get("pdf_ok"), "post_key": m.get("post_key"), "exists": bool(path) and os.path.isfile(path),
+            "category": category_of(m.get("post_key"), m.get("board_title")),
         })
     items.sort(key=lambda x: (x["posted_at"] or x["downloaded_at"] or "", x["downloaded_at"] or ""), reverse=True)
     return {"folder": str(folder_of(app)), "auto_download": bool(_settings(app).get("auto_download", True)),
-            "count": len(items), "items": items, "errors": list(d.get("materials_errors") or [])}
+            "count": len(items), "items": items, "errors": list(d.get("materials_errors") or []),
+            "categories": [{"id": c, "label": label} for c, label in CATEGORIES]}
 
 
 @router.route("POST", r"/api/materials/open")

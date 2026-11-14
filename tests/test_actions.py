@@ -30,9 +30,18 @@ def demo_ids(store) -> dict:
     return {LAB4_A: lab4[0]["id"], LAB4_B: lab4[1]["id"], FINAL_103: final["id"]}
 
 
+def md(store, key) -> str:
+    """그 데모 항목 마감의 '월/일'(앱 글과 같은 방식 — 데모 날짜는 오늘 기준이라 매일 바뀐다)."""
+    v = next(x for x in store.view() if x["id"] == demo_ids(store)[key])
+    d = parse_iso(v["due"])
+    return f"{d.month}/{d.day}"
+
+
 def real(x, store, ids=None):
     """자리표시(LAB4_A …)를 이 실행의 실제 항목 id로."""
     ids = ids or demo_ids(store)
+    if isinstance(x, str) and "<LAB4_B_MD>" in x:
+        return x.replace("<LAB4_B_MD>", md(store, LAB4_B))
     if isinstance(x, dict):
         return {k: real(v, store, ids) for k, v in x.items()}
     if isinstance(x, list):
@@ -167,7 +176,7 @@ def test_catalog_routes_exist_for_built_in_features():
     ("ASIC P/NP로 바꿔줘", "course_mode", {"course_id": "101", "mode": "pass_fail"}),
     ("연구실 안전 교육 제외해줘", "course_mode", {"course_id": "105", "mode": "hidden"}),
     ("기말고사 승인해줘", "item_decision", {"item_id": FINAL_103, "decision": "approved"}),
-    ("LAB4 11/21 마감 승인해줘", "item_decision", {"item_id": LAB4_B, "decision": "approved"}),
+    ("LAB4 <LAB4_B_MD> 마감 승인해줘", "item_decision", {"item_id": LAB4_B, "decision": "approved"}),
     ("Weekly log 9 제출함으로 표시해줘", "item_submitted", {"item_id": WEEKLY_LOG, "submitted": True}),
     ("캐릭터 바꿔줘", "mascot", {"choice": "original"}),
     ("브리핑 닫아줘", "coach_dismiss", {"kind": "briefing"}),
@@ -181,6 +190,7 @@ def test_catalog_routes_exist_for_built_in_features():
     ("캘린더 파일 받아줘", "download_calendar", {}),
 ])
 def test_handle_recognizes_commands(store, message, action, params):
+    message = real(message, store)
     r = actions.handle(store, message)
     assert r is not None, message
     p = r["proposals"][0]
@@ -204,7 +214,7 @@ def test_handle_returns_none_for_non_commands(store, message):
 def test_handle_same_title_candidates_and_already_state(store):
     r = actions.handle(store, "LAB4 승인해줘")
     assert [p["params"]["item_id"] for p in r["proposals"]] == real([LAB4_A, LAB4_B], store)     # 날짜를 안 말하면 둘 다 보여 주고 고르게
-    assert "골라" in r["answer"] and "11/19" in r["answer"] and "11/21" in r["answer"]
+    assert "골라" in r["answer"] and md(store, LAB4_A) in r["answer"] and md(store, LAB4_B) in r["answer"]
     r = actions.handle(store, "주간 요약 켜줘")                                       # 이미 켜져 있음 → 단추 없이 이유
     assert r["proposals"][0]["rejected_reason"] == r["answer"] and "이미" in r["answer"]
 

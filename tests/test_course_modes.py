@@ -98,7 +98,8 @@ def test_demo_courses_modes_suggestions_and_read_counts(demo):
     assert cs["104"]["mode_suggest"]["mode"] == "pass_fail" and "P/NP" in cs["104"]["mode_suggest"]["evidence"]
     assert cs["105"]["mode_suggest"]["mode"] == "hidden" and cs["105"]["short_name"] == "연구실 안전 교육"
     assert cs["101"]["mode_suggest"] is None and cs["102"]["mode_suggest"] is None
-    assert cs["101"]["read_counts"] == {"announcements": 5, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 4}
+    # attachments 5 = LearningX 2 + 공지 점수표 2 + 'LAB5 예비보고서' 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
+    assert cs["101"]["read_counts"] == {"announcements": 5, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 5}
     assert cs["105"]["read_counts"] == {"announcements": 0, "board_posts": 0, "messages": 0, "pdfs": 0, "attachments": 0}
     # 사용자가 [맞아요]로 정한다 — 한 번 정하면 다시 제안하지 않는다(normal로 정해도)
     code, st = call(app, "POST", "/api/course/104/mode", {"mode": "normal"})
@@ -158,12 +159,16 @@ def test_hidden_course_downloads_and_news(tmp_path):
         store.data["course_prefs"] = {}
         core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=tmp_path / "dl")
         got = store.data["downloads"]
-        assert len(got) == 4 and all(m["course_id"] == "101" for m in got.values())
+        # 5 = LearningX 2 + 공지 점수표 2 + 과제 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
+        assert len(got) == 5 and all(m["course_id"] == "101" for m in got.values())
         app = App(store, tmp_path, cfg={}, scheduler=_Sched())
         mats = app.state()["materials"]["items"]
         ann = [m for m in mats if m["filename"] in ("Lab0_score.pdf", "Lab1_score.pdf")]
         assert len(ann) == 2 and all(m["board_title"] == "공지 첨부 파일" and m["board_folder"] == "공지" for m in ann)
-        assert all(("/공지/" in m.replace("\\", "/")) for m in [got[k]["path"] for k in got if "cf" in k])  # 폴더 이름은 그대로
+        assert all(("/공지/" in got[k]["path"].replace("\\", "/")) for k in got
+                   if got[k]["post_key"].startswith("board:announcements-"))  # 폴더 이름은 그대로
+        prelab = next(m for m in mats if m["filename"] == "Lab5_prelab.pdf")
+        assert (prelab["board_title"], prelab["post_title"]) == ("과제", "LAB5 예비보고서")
         board = next(m for m in mats if m["filename"] == "Lab6.pdf")
         assert board["board_title"] == "과제" and not board["course_hidden"]
         store.data["course_prefs"] = {"101": {"mode": "hidden", "at": "2026-11-13T00:00:00+09:00"}}
