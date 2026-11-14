@@ -3,6 +3,8 @@
 공지 본문만 보던 것을 과제 설명(assignments[].description)·강의계획서(syllabus_body)까지 넓혔다:
 과목마다 가상 게시판(source "canvas") "announcements"·"assignments"·"syllabus" → materials가 받고 → pdf_texts → pdf_source·
 에이전트 검색·체크리스트. 가짜 Canvas(mock_canvas)만 쓴다(네트워크 없음). 과목·파일·문장은 모두 지어낸 것."""
+from __future__ import annotations   # 파이썬 3.9에서도 `X | None` 표기를 읽게(CI)
+
 from datetime import datetime, time, timedelta
 
 import pytest

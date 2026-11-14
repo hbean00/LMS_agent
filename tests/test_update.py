@@ -551,7 +551,8 @@ def test_pending_lets_an_open_screen_wait_for_the_first_check(served):
     start_background_checks(app, first_delay=1.0)
     u = _get_update(app)
     assert u["pending"] is True and u["latest"] is None          # 아직 묻기 전
-    assert _wait(lambda: _get_update(app)["latest"] == NEW)
+    # 최신 버전은 확인 중에 먼저 저장되고 phase는 그 뒤에 idle로 돌아간다 — 둘 다 끝날 때까지 기다린다(맥 CI에서 그 틈에 걸렸음)
+    assert _wait(lambda: (lambda x: x["latest"] == NEW and x["phase"] == "idle")(_get_update(app)))
     u = _get_update(app)
     assert u["pending"] is False and u["available"] and u["can_apply"]
     assert _get_state(app)["update"] == u                        # 전체 state의 칸과 같은 모양
