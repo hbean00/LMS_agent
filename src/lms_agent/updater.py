@@ -39,7 +39,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import __version__, net
+from . import __version__, changelog, net
 from .config import CONFIG_FILE, STATE_FILE
 from .timeutil import iso, now_local, parse_iso
 
@@ -566,6 +566,9 @@ class Updater:
             "result": self.result,
             "dismissed": bool(available and c.get("dismissed") == c.get("latest")),
             "updated": updated,
+            # 바뀐 점(계약 19-6): 방금 업데이트했으면 지난 버전 다음부터 지금까지, 설정 화면용 최근 목록
+            "changes": changelog.between(updated.get("from"), updated.get("to")) if updated else [],
+            "changelog": changelog.recent(__version__),
             "data_newer": data_from if is_newer(data_from, __version__) else None,
         }
 

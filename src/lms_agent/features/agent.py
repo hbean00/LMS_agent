@@ -11,6 +11,9 @@
   답을 합친 뒤 app.lock 안에서 반영한다(auto_applied). 항목이 바뀌면 "changed". limits.per_day = 설정의 하루 한도(None = 제한 없음).
 - 액션 제안(type "action", 계약 22-9)은 /api/agent/apply·undo에서 actions.run/undo로 실행한다. 액션은 화면 단추와 같은 API 경로를
   앱 안에서 부르므로(그 경로가 잠금을 잡는다) **잠금 밖에서** 실행하고, 결과만 파일 잠금 안에서 제안에 남긴다.
+- 말로 시킨 일(type "act", 계약 28-3)도 같은 길: [실행] → 지금 상태로 다시 capabilities.plan → capabilities.run(잠금 밖),
+  [되돌리기] → capabilities.undo. 바로 할 것(등급 direct·시키는 말·바꾸기 하나)은 run_job이 답을 합친 뒤 act_apply로 같은 _run_act를
+  부른다(auto_applied). 루프의 plan은 이 앱을 읽되 store만 작업 사본(agent.PlanApp).
 """
 from __future__ import annotations
 
@@ -69,10 +72,12 @@ def ask(app, body):
         ai_on = bool((app.store.data.get("settings") or {}).get("ai_cli"))
         # 실행기는 작업이 읽은 설정대로(settings.ai_provider, 계약 21-3). ai_command는 테스트·데모가 넣은 claude
         # 바로 반영(계약 26-4)은 반영·되돌리기 단추와 같은 잠금(app.lock → 파일 잠금)으로, 항목이 바뀌면 "changed"(구글 캘린더)
+        # 말로 시킨 일(계약 28-3): 루프의 plan은 이 앱을 읽고(store만 작업 사본), 바로 할 act는 잠금 밖에서 _run_act로
         t = threading.Thread(target=agent.run_job, daemon=True, args=(app.store, th["id"], msg, cid),
                              kwargs={"ai_enabled": ai_on, "runner": getattr(app, "ai_runner", None),
                                      "command": getattr(app, "ai_command", None), "names": _names(app),
-                                     "lock": app.lock, "emit": lambda: app.emit("changed")})
+                                     "lock": app.lock, "emit": lambda: app.emit("changed"), "app": app,
+                                     "act_apply": lambda tid, idx: _run_act(app, tid, idx, undo=False, auto=True)})
         app.agent_jobs = {k: v for k, v in app.agent_jobs.items() if v.is_alive()}
         app.agent_jobs[th["id"]] = t
         t.start()
@@ -171,12 +176,69 @@ def _run_action(app, tid: str, idx: int, undo: bool) -> None:
         app.agent_action_guard.release()
 
 
+def _run_act(app, tid: str, idx: int, undo: bool, auto: bool = False) -> None:
+    """말로 시킨 일(type "act", 계약 28-3) 실행·되돌리기. 실행: 지금 상태로 다시 plan(AI가 낸 값 그대로 → 그 사이 바뀌었으면 막힘)
+    → capabilities.run(app, …) — 화면과 같은 경로 처리기를 부르므로 **잠금 밖에서**(처리기가 app.lock·파일 잠금을 스스로 잡고
+    "changed"도 알린다) → 결과를 파일 잠금 안에서 제안에 남김(agent.record_act — 되돌리기 기록은 _undo). 되돌리기: capabilities.undo
+    (그 사이 직접 바꿨으면 409, 기록하지 않음). 거절 등급은 실행하지 않는다(400). auto = run_job이 바로 하는 것(auto_applied)."""
+    from .. import capabilities
+    if not app.agent_action_guard.acquire(blocking=False):
+        raise ApiError(409, "다른 동작을 실행하는 중이에요. 끝나면 다시 눌러 주세요")
+    try:
+        p = _peek(app, tid, idx)
+        if undo:
+            if not p.get("applied"):
+                raise ApiError(409, "실행하지 않은 일이에요")
+            if not p.get("_undo"):
+                raise ApiError(409, "되돌릴 수 없는 일이에요")
+        else:
+            if p.get("applied"):
+                raise ApiError(409, "이미 한 일이에요")
+            if p.get("tier") == "refuse" or p.get("refuse"):
+                raise ApiError(400, str(p.get("refuse") or "에이전트가 하지 않는 일이에요 — 설정에서 직접 바꿔 주세요")[:300])
+            if p.get("rejected_reason"):
+                raise ApiError(400, f"할 수 없는 일이에요: {p['rejected_reason']}"[:300])
+        status = 400
+        try:
+            if undo:
+                res = capabilities.undo(app, p["_undo"])
+            else:
+                raw = p.get("_raw_params") if isinstance(p.get("_raw_params"), dict) else p.get("params") or {}
+                again = capabilities.plan(app, p.get("capability"), raw)   # 지금 상태로 다시 검사(아무것도 바꾸지 않음)
+                if not isinstance(again, dict) or not again.get("ok"):
+                    why = (again or {}).get("error") if isinstance(again, dict) else None
+                    raise ValueError(f"지금 다시 확인해 보니 할 수 없어요: {why or '확인하지 못했어요'}")
+                if again.get("tier") == "refuse":
+                    raise ValueError(str(p.get("refuse") or "에이전트가 하지 않는 일이에요"))
+                res = capabilities.run(app, again)
+            if not isinstance(res, dict):
+                res = {"ok": False, "message": "결과를 알 수 없어요"}
+        except ApiError as e:            # 그 경로가 거절함(동기화하는 중 409, 되돌리기 충돌 409 등)
+            res, status = {"ok": False, "message": str(e)}, e.status
+        except ValueError as e:          # 검사(한국어 문구)
+            res = {"ok": False, "message": str(e)}
+        except Exception as e:  # noqa: BLE001 — 실패도 대화에 남기고 화면에는 오류 문구만(내용·비밀값 없이)
+            res, status = {"ok": False, "message": f"실행하지 못했어요({type(e).__name__})"}, 500
+        with app.store.locked():
+            app.store.reload_if_changed()
+            agent.record_act(app.store, tid, idx, res, undo=undo, auto=auto)
+            app.store.write()
+        if not res.get("ok"):
+            raise ApiError(status, str(res.get("message") or ("되돌리지 못했어요" if undo else "실행하지 못했어요"))[:300])
+    finally:
+        app.agent_action_guard.release()
+
+
 @router.route("POST", r"/api/agent/apply")
 def apply_proposal(app, body):
-    """{"thread", "proposal": idx} → 다시 검증한 뒤 반영(액션이면 실행) → 새 state."""
+    """{"thread", "proposal": idx} → 다시 검증한 뒤 반영(액션이면 실행, 말로 시킨 일이면 capabilities.run) → 새 state."""
     tid, idx = _index(body)
-    if _peek(app, tid, idx).get("type") == "action":
+    typ = _peek(app, tid, idx).get("type")
+    if typ == "action":
         _run_action(app, tid, idx, undo=False)
+        return app.state()
+    if typ == "act":
+        _run_act(app, tid, idx, undo=False)
         return app.state()
     p = _change(app, lambda: agent.apply(app.store, tid, idx, names=_names(app)))
     if p.get("type") in agent.ITEM_TYPES:   # 마감 추가·고치기·항목 빼기·합치기 → 구글 캘린더 반영 등(계약 26-4)
@@ -186,10 +248,14 @@ def apply_proposal(app, body):
 
 @router.route("POST", r"/api/agent/undo")
 def undo_proposal(app, body):
-    """{"thread", "proposal": idx} → 반영 전 값으로(액션이면 actions.undo) → 새 state."""
+    """{"thread", "proposal": idx} → 반영 전 값으로(액션이면 actions.undo, 말로 시킨 일이면 capabilities.undo) → 새 state."""
     tid, idx = _index(body)
-    if _peek(app, tid, idx).get("type") == "action":
+    typ = _peek(app, tid, idx).get("type")
+    if typ == "action":
         _run_action(app, tid, idx, undo=True)
+        return app.state()
+    if typ == "act":
+        _run_act(app, tid, idx, undo=True)
         return app.state()
     p = _change(app, lambda: agent.undo(app.store, tid, idx))
     if p.get("type") in agent.ITEM_TYPES:

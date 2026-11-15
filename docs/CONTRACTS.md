@@ -1411,3 +1411,70 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
 - **확인(사용자 계정, 임시 폴더 동기화)**: ASIC 'Updated Grading Policy'의 첨부 칸 PDF를 이제 받고 읽음(점수표 아님 — 평가 정책), 인권과 성평등 교육 퀴즈가 Canvas 성적부 후보
   (그 과목은 평가 항목이 없어 '연결'에서 멈춤 — 화면이 그렇게 말함), ASIC Lab0·Lab1은 추정까지. 남은 다듬을 것: 학번 표가 든 과제 안내 PDF(Midterm_project)를 점수표로 보는 것.
 
+
+## 28. 말로 시키면 해석해서 직접 한다 — 능력 목록·공통 되돌리기 — v0.8.3 (사용자 요청 2026-11-15, 설계 `docs/AGENT_V3.md`)
+
+요청: "ASIC 학점 잘 주신대 비율 조정도 해줘"가 근거가 없다며 거절됨 → "AI CLI가 어떤 명령에 해당하는지 해석하고 변경할 수 있는 하네스", "'구글 캘린더 일정 반영해줘' 하면
+반영해 주는 것처럼 직접 행동", "AI 끄기·AI 허용 횟수·개인정보 변경은 거절", "0.9.0 계획을 0.8.3으로".
+
+### 28-0. 원칙과 파일 소유
+- **사용자의 지시가 권한**: 사용자가 직접 시킨 변경은 강의 글 근거가 필요 없다(`decided_by "user"`, 이유 = 사용자의 말). AI가 스스로 찾은 것(놓친 마감·점수)은 지금처럼 근거 인용(20·26장).
+- 애매한 지시는 거절하지 않고 구체적인 값으로 확인 카드(예: "A 30→40% · B 40→40%").
+- 등급: `direct`(바로 하고 [되돌리기]) · `confirm`(확인 카드 — 되돌리기 어려운 것: 업데이트 설치·앱 끄기·자동 실행 OS 등록·구글 연결 해제) ·
+  `refuse`(하지 않음, 그 설정 칸을 열어 줌 — AI 켜기·끄기·실행기, 하루 AI 한도, 학번·토큰·로그인·로그아웃·구글 동의·데이터 지우기).
+  '구글 캘린더에 반영해줘'·동기화는 분명히 시켰으면 `direct`(되돌릴 수는 없음 → undoable False, 카드에 그렇게 표시).
+
+| 담당 | 파일 | 테스트 |
+|---|---|---|
+| H1 능력·되돌리기 | `capabilities.py`(리드가 만든 뼈대 — 이름·모양 고정, 몸통과 성적 밖 모든 능력), `actions.py`는 읽기만(`_call`·`_settings_now` 재사용) | `tests/test_capabilities.py`(새, 커버리지 시험 포함) |
+| H2 성적 능력 | `capabilities_grades.py`(뼈대 — `register_all()`), `gradebook.py`는 읽기만(필요하면 리드에게) | `tests/test_capabilities_grades.py`(새) |
+| H3 에이전트·화면 | `agent_loop.py`·`agent.py`·`agent_cli.py`(도구·act 제안·바로 반영), `features/agent.py`(act 실행·되돌리기), `mock_ai.py`, `web/index.html` | `tests/test_agent_act.py`(새), 기존 `test_agent*.py` |
+| 리드 | 문서·버전·통합, 실제 AI 평가 | 전체 |
+
+### 28-1. 능력 목록·실행·되돌리기 (H1, `capabilities.py` 머리말의 모양 그대로)
+- 화면의 모든 POST 경로는 능력 하나 이상의 `route`이거나 `EXCLUDED_ROUTES`(이유 있음 — 대화 자체 `/api/agent/*`, 첫 설정, 미리 보기 등). **커버리지 시험**이 router에 등록된 POST 경로를 모두 훑어
+  빠진 것이 있으면 실패(기능이 늘면 능력도 늘게).
+- `plan`: 값 검사(모양·enum·범위), 이름 → id(과목: 짧은 이름·부분 이름·과목 코드, 항목: 과목 안의 제목·번호 토큰, 평가 항목: 별칭 포함 — 하나로 정해질 때만, 여럿이면 후보를 담아 오류),
+  미리 보기(전→후). 아무것도 바꾸지 않는다.
+- `run`: 거절 등급이면 ValueError. 실행 전 `store.data`의 칸(cache·ai_runs·agent·runs·report 같은 기록 칸 빼고)을 사본으로 → `actions._call`로 화면과 같은 경로 →
+  바뀐 칸만 `{"cap", "keys": {칸: {"before", "after"}}, "at"}`로 되돌리기 기록(undoable일 때). 항목·일정이 바뀌면 `changed`를 알린다.
+- `undo`: 칸마다 지금 == after면 before로, 아니면 409. 되돌린 뒤에도 `changed`.
+- 성적 밖 능력(예): 설정 켜기/끄기(알림·주간 요약·Canvas 과제 포함·업데이트 확인·자동 업데이트·튜토리얼 등), 항목 제목·마감·결정·제출 표시 고치기, 직접 입력 글 더하기,
+  과목 종류, 첨부 자동 저장·폴더, 백그라운드 동기화, 자동 실행, 동기화, 구글 캘린더 반영·다른 일정 보기/캘린더 고르기·다시 가져오기, 공부 계획 넣기/빼기,
+  체크리스트, 코치 카드 닫기, 축하 카드 읽음/미루기, 마스코트, 업데이트 확인/설치/다시 시작/미루기, 앱 끄기. 거절: AI 설정·실행기·한도, 학번, 로그인/로그아웃, 구글 연결/해제, 데이터 지우기.
+### 28-2. 성적 능력 (H2)
+`grades.set_weights`(과목, [{name, weight}] — 전체를 이것으로), `grades.set_component`(하나 더하거나 비중 바꾸기), `grades.remove_component`(merge_into 선택),
+`grades.set_score`(과목, 항목, 점수, 만점·평균·표준편차 선택), `grades.set_dist`(상대: 'A 40·B 40·C 20'처럼 글자별 % 또는 누적 / 절대: 글자별 최저 점수), `grades.set_class_size`,
+`grades.link_score`·`grades.unlink_score`(점수 후보 → 평가 항목), `grades.set_count`(평가 항목의 학기 전체 개수), `items.set_component`(마감·시험 → 평가 항목), `grades.settings`(성적 기본 설정).
+모두 지금 성적 설정을 읽어 바꾼 전체 본문으로 화면과 같은 경로(`/api/grades/{course_id}` 등)를 부르고, 미리 보기는 바뀌는 칸만(예: "학점 비율 A 30% → 40%").
+### 28-3. 에이전트·화면 (H3)
+- 루프 도구: `list_capabilities(area?)`(읽기 — catalog_text), `act(capability, params, reason?)`(제안 — `plan` → 제안 type "act":
+  `{type "act", capability, params, title, tier, summary, changes, external, undoable, reason, auto, can_apply}`). 확인할 것은 `act` 대신 이 제안으로.
+- 바로 반영: 등급 direct + 시키는 말 + 이번 묻기의 바꾸기 제안 하나 + plan 통과 → `run_job`이 앱의 잠금 밖에서 `capabilities.run(app, …)`(경로 처리기가 스스로 잠금) →
+  `auto_applied`·되돌리기 기록. confirm → 카드 [실행]. refuse → 답에 이유 + [설정 열기](client 동작 open_view).
+- 화면: act 카드(제목·전→후 표·등급 꼬리표·'되돌릴 수 없음' 표시·[실행]/[되돌리기]), 거절 카드.
+- 데모(가짜 AI): "ASIC 학점 비율 A 40%로 바꿔줘" → grades.set_dist 바로 반영, "구글 캘린더에 반영해줘" → 바로, "AI 꺼줘" → 거절 + 설정 열기.
+
+### 28-4. 업데이트 뒤 바뀐 점 보기 (계약 19-6, 사용자 추가 요청 2026-11-15: "업데이트 완료되고 바뀐 점을 UI 내부에서 볼 수 있게")
+- 앱에 함께 든 `data/changelog.json`([{version, date, title, items[]}] — 사용자가 읽을 말로, 버전을 낼 때마다 리드가 적음. 테스트가 지금 버전이 있는지 확인).
+- `state.update.changes`: 방금 업데이트했으면(`updated`가 있을 때) 지난 버전 다음부터 지금 버전까지(높은 것부터 — 건너뛴 버전도 모두), 배너를 닫으면(`/api/update/dismiss`) 빈 목록.
+  `state.update.changelog`: 지금 버전 이하 최근 6개(설정 → 업데이트의 '바뀐 점 보기').
+- 화면(H3): 업데이트 뒤 한 번 '업데이트 완료 — 바뀐 점'(버전별), 닫으면 dismiss.
+
+### 28-5. 구현 결과 (v0.8.3, 서브에이전트 H1 능력·H2 성적·H3 에이전트·화면 병렬 → 리드 통합)
+- **H1**: 능력 60개(H2의 11개 포함) — direct 35(설정·알림·항목 고치기·직접 입력·과목 종류·자료·동기화·백그라운드·마스코트·구글 반영/다른 일정/캘린더 고르기·
+  공부 계획·체크리스트·코치), confirm 4(자동 실행·업데이트 설치·다시 시작·앱 끄기), refuse 10(ai.enable·auto_triage·provider·daily_limit, account.login·logout·wipe_data·
+  student_id, calendar.connect·disconnect). 되돌릴 수 없음: 구글 반영·다시 가져오기·동기화·업데이트·앱 끄기·폴더 열기·메일 초안. `EXCLUDED_ROUTES`: /api/agent/*·/api/setup·
+  /api/plan/preview·/api/ai/rescan·test·triage. 커버리지 시험이 router의 POST 경로를 모두 확인(`uncovered_routes() == []`).
+  되돌리기: 기록 칸(cache·items·extracted·pdf_texts·downloads·report·runs·agent·ai_runs·celebrated…·weights_auto·dist_ai·grade_links_ai·gcal·update 등) 빼고 사본 →
+  dict는 칸마다(`settings/…`, `user/<항목>`, `grades/<과목>`), id 있는 목록은 id마다 비교 → `{cap, title, keys: {label: {path, before, after}}, side?, at}`.
+  되돌릴 때 모두 확인한 뒤에만 쓰고(하나라도 바뀌었으면 409, 아무것도 안 씀), manual·agent_items를 되돌리면 항목을 다시 만든다.
+- **H2**: grades.set_weights·set_component·remove_component·set_score·set_dist·set_class_size·link_score·unlink_score·set_count, items.set_component, grades.settings(refuse — 학번).
+  본문은 성적 화면의 saveGrades와 같고, 보내기 전에 save_course를 사본에 돌려 통과를 확인. 학점 비율: 'A'=A+·A0 묶음, 'C 이하'·'B 이상'(누적)·범위(C+~F)·'나머지',
+  안 말한 학점은 지금 모양대로 나머지를 나눔, 합 100(소수 둘째 자리). 절대평가(글자별 최저 점수)는 리드가 `save_course`의 `cutoffs`·`distribution.effective`의 사용자 기준표를 더해 저장됨(USER_CUTOFFS).
+- **H3**: 도구 `list_capabilities(area?)`·`act(capability, params, reason?)`, 첫 입력에 능력 개요(약 1.6천 자). act 제안 → direct + 시키는 말 + 바꾸기 하나 + plan 통과 + AI가 auto false를 안 냄 →
+  `run_job`이 잠금을 다 푼 뒤 `features/agent._run_act`(지금 앱으로 다시 plan → capabilities.run) → `_undo`·`auto_applied`. 애매한 지시는 AI가 구체적인 값 + auto false → [실행] 카드.
+  거절: act를 안 내도 하네스가 거절 문장을 알아보고 [설정 열기] 카드. 화면: act 카드(등급·'이 PC 밖'·'되돌릴 수 없음'·전→후 표), 거절 카드, 업데이트 뒤 '바뀐 점' 창(`#changes-dlg`, 버전마다 한 번),
+  설정 → 업데이트 '바뀐 점 보기', 직접 넣은 절대평가 기준 표시.
+- **리드**: 절대평가 사용자 기준표(gradebook·distribution), 추정 메모의 '절대평가 기준(강의계획서)' → '절대평가 기준'(출처는 학점 기준 표시가 말함), AI 없이도 '구글 캘린더 일정 반영해줘'.
+

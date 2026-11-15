@@ -3,6 +3,9 @@
 에이전트 v2(계약 26장, v0.8.0): AI가 켜져 있으면 answer가 먼저 agent_loop(도구를 쓰는 AI 루프 — AI가 먼저 판단하고 필요할 때만
 읽기·제안 도구)를 돈다. 루프가 막히거나 실패하면 아래 갈래(v0.7.3)로 답하고 notes에 이유를 남긴다. run_job은 루프의 진행
 (progress·steps)을 앱 Store에 쓰고, 바로 반영할 제안(auto)은 답을 합친 뒤 같은 잠금 안에서 apply로 반영한다(auto_applied).
+말로 시킨 일(계약 28장, v0.8.3): 루프의 act 도구 → act_proposal(type "act" — capabilities.plan으로 검사·전→후, 사용자의 지시가 권한이라
+근거 글 없음). 등급 direct + 시키는 말 + 바꾸기 하나면 run_job이 잠금 밖에서 act_apply(features/agent._run_act → capabilities.run)로
+바로 하고, confirm은 [실행] 카드, refuse(AI 켜기·끄기·한도·개인정보)는 [설정 열기]가 붙은 거절 카드(refusal_for).
 
 메시지를 갈래(kind)로 나눈다(22-1, answer): 명령(actions) → 메일 초안(maildraft) → 공부 계획(plan) → 성적 '만약에'(whatif)
 → 놓친 것(missing, 20장) → 그 밖의 질문(question, 22-2). 앞의 넷은 각 모듈의 handle이 맡고, 첫 번째로 None이 아닌 결과를 대화에 합친다.
@@ -1618,6 +1621,9 @@ def _finish(out: dict, fu: dict, message: str, courses: list) -> dict:
     # 제안·인용이 모두 다른 과목이면(예: 루프가 다른 과목의 'LAB 6'을 찾음) '앞 대화의 과목에서 찾았어요'는 틀린 말이라 뺀다
     found_in = {str(x.get("course_id")) for x in list(out.get("proposals") or []) + list(out.get("citations") or [])
                 if isinstance(x, dict) and x.get("course_id") is not None}
+    if out.get("kind") == "act" and not found_in:   # 과목 없는 일(구글 반영·AI 끄기 거절 등)에는 이어받은 과목을 붙이지 않는다(계약 28-3)
+        out["carried"], carried = None, {}
+        out["course_context"] = None
     if carried.get("course_short") and (not found_in or str(carried.get("course_id")) in found_in):
         out["notes"] = list(out.get("notes") or []) + [f"앞 대화의 과목 '{carried['course_short']}'에서 찾았어요"]
     out["finished_at"] = iso(now_local())
@@ -1644,16 +1650,17 @@ _BASE = {"status": "done", "searched": 0, "results": [], "error": None, "by": "r
          "citations": [], "attempts": 0, "steps": []}
 
 
-def _try_loop(store, message: str, fu: dict, hist: list, names, session, now, progress, intent, notes: list):
+def _try_loop(store, message: str, fu: dict, hist: list, names, session, now, progress, intent, notes: list,
+              app=None):
     """AI 에이전트 루프(계약 26-1)를 먼저 돈다 → (루프 결과, 규칙 갈래가 쓸 세션). 하루 한도 등으로 막혔으면 돌지 않는다
     (규칙 갈래가 그 이유를 오류로 보여 준다). 실패하면 notes에 이유를 남기고, 검사 실패면 남은 호출(최대 ROUTE_PER_ASK)을,
-    실행기 문제면 '다 쓴' 창구를 규칙 갈래에 넘긴다."""
+    실행기 문제면 '다 쓴' 창구를 규칙 갈래에 넘긴다. app: act의 capabilities.plan이 읽을 앱(PlanApp — store는 이 사본)."""
     from . import agent_loop
     if session.blocked():
         return None, session
     try:
         res = agent_loop.run(store, message, eff=fu["message"], course_id=fu["course_id"], history=hist, names=names,
-                             session=session, now=now, progress=progress, intent=intent)
+                             session=session, now=now, progress=progress, intent=intent, app=PlanApp(app, store))
     except Exception as e:  # noqa: BLE001 — 루프가 고장 나도 규칙 갈래로 답한다(예외 내용은 남기지 않음)
         res = {"ok": False, "error": f"에이전트 루프 오류({type(e).__name__})", "failure": "cli", "steps": [],
                "attempts": 0}
@@ -1668,7 +1675,7 @@ def _try_loop(store, message: str, fu: dict, hist: list, names, session, now, pr
 
 def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner=None, command: str | None = None,
            names: list | None = None, session=None, history: list | None = None, loop: bool | None = None,
-           progress=None) -> dict:
+           progress=None, app=None) -> dict:
     """질문 하나에 답한다(잠금 밖에서, 몇십 초 걸릴 수 있음). store는 이 작업만 쓰는 사본(Store(path))이 좋다 —
     AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 차례 칸(status, kind, answer, proposals, citations, searched, results,
     error, by, carried, course_context, steps …).
@@ -1678,7 +1685,8 @@ def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner
     때만 도구를 쓴다. 한 번 묻기에 AI 호출 PER_ASK(4)회까지. 위기 말은 루프 없이 일반 대화 갈래(도움 받을 곳을 하네스가 보장).
     루프가 막히거나 실패하면(또는 AI가 꺼져 있으면) v0.7.3 갈래(계약 22-1·24-2): actions → fix → maildraft → plan → whatif의
     handle 중 첫 번째로 None이 아닌 것 → 처음부터 일반 대화인 말(chat_intent) → missing(놓친 것 — 20장) / question(22-2) →
-    학업 말이 없고 관련 글도 없으면 chat. 갈래의 AI 호출은 ROUTE_PER_ASK(2)회까지. progress(문구|None, steps): 루프의 진행 표시."""
+    학업 말이 없고 관련 글도 없으면 chat. 갈래의 AI 호출은 ROUTE_PER_ASK(2)회까지. progress(문구|None, steps): 루프의 진행 표시.
+    app: 루프의 act(말로 시킨 일, 계약 28-3)가 capabilities.plan에 넘길 앱(없으면 store만 가진 앱 — 테스트·CLI)."""
     notes: list[str] = []
     now = now_local()
     hist = _history_list(history)
@@ -1692,7 +1700,7 @@ def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner
                             max_calls=PER_ASK if use_loop else ROUTE_PER_ASK)
     tried = None
     if use_loop:
-        tried, session = _try_loop(store, message, fu, hist, names, session, now, progress, intent, notes)
+        tried, session = _try_loop(store, message, fu, hist, names, session, now, progress, intent, notes, app=app)
         if tried is not None and tried.get("ok"):
             return _finish({**_BASE, **tried["out"]}, fu, message, courses)
     out = _route(store, message, course_id, ai_enabled, runner, command, names, session, hist, courses, intent, fu,
@@ -1913,8 +1921,8 @@ def _auto_apply(target, thread_id: str, th: dict, names) -> bool:
     notes에 이유 + 답에 한 줄(했다고 한 말이 틀리지 않게). 마감·항목이 바뀌었으면 True(→ changed). 부르는 쪽이 잠금을 잡는다."""
     changed = False
     for i, p in enumerate(th.get("proposals") or []):
-        if not isinstance(p, dict) or not p.get("auto") or p.get("applied"):
-            continue
+        if not isinstance(p, dict) or not p.get("auto") or p.get("applied") or p.get("type") == "act":
+            continue   # act(계약 28-3)는 잠금 밖에서 따로(run_job → act_apply)
         try:
             q = apply(target, thread_id, i, names=names)
         except (LookupError, ValueError, AgentConflict) as e:
@@ -1930,15 +1938,21 @@ def _auto_apply(target, thread_id: str, th: dict, names) -> bool:
     return changed
 
 
+ACT_PROGRESS = "말한 일을 하는 중…"   # act를 바로 하는 동안의 진행 문구(계약 28-3)
+
+
 def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bool = False, runner=None,
             command: str | None = None, names: list | None = None, history: list | None = None, lock=None,
-            emit=None) -> dict:
+            emit=None, app=None, act_apply=None) -> dict:
     """백그라운드 작업 하나: 파일에서 새로 읽은 사본으로 답을 만들고(잠금 밖), target(앱의 Store)에 잠금을 잡고 다시 읽은 뒤
     그 차례와 AI 실행 기록만 합쳐 저장한다(그 사이 다른 프로세스가 저장한 것을 지우지 않게). 그 사이 차례가 지워졌으면 버린다.
     history를 주지 않으면 사본에서 같은 대화의 앞 차례를 읽는다(history_for).
     루프의 진행(progress·steps)은 차례 사이마다 target에 쓴다. 바로 반영할 제안(auto)이 있으면 lock(앱의 동기화 잠금 app.lock —
     features/agent._change와 같은 순서: app.lock → 파일 잠금)을 잡고, 합친 뒤 같은 잠금 안에서 agent.apply로 반영한다
-    (auto_applied). 마감·항목이 바뀌었으면 잠금을 놓은 뒤 emit()(앱의 "changed" — 구글 캘린더)."""
+    (auto_applied). 마감·항목이 바뀌었으면 잠금을 놓은 뒤 emit()(앱의 "changed" — 구글 캘린더).
+    말로 시킨 일(type "act", 계약 28-3): app이 있으면 루프의 capabilities.plan이 그 앱을 읽는다(store만 이 작업의 사본 — PlanApp).
+    바로 할 act(auto)는 차례를 '하는 중'(ACT_PROGRESS)으로 합친 뒤 **모든 잠금을 놓고** act_apply(thread_id, idx)로 한다
+    (features/agent._run_act → capabilities.run — 화면과 같은 경로 처리기가 스스로 잠금을 잡고 "changed"도 알린다). 끝나면 '다 함'."""
     from .agent_cli import RUN_LOG_KEEP
     from .store import Store
     work = Store(target.path)
@@ -1950,13 +1964,15 @@ def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bo
         if history is None:
             history = history_for(work, thread_id)
         result = answer(work, message, course_id, ai_enabled=ai_enabled, runner=runner, command=command, names=names,
-                        history=history, progress=progress)
+                        history=history, progress=progress, app=app)
     except Exception as e:  # noqa: BLE001 — 화면이 '답하는 중'에 멈춰 있지 않게
         result = {"status": "error", "error": f"답을 만들지 못했어요({type(e).__name__})", "answer": None,
                   "proposals": [], "by": "rules", "finished_at": iso(now_local())}
     result["progress"] = None
     new_runs = [r for r in work.data.get("ai_runs") or [] if r not in before]
-    auto = any(isinstance(p, dict) and p.get("auto") for p in result.get("proposals") or [])
+    props = [p for p in result.get("proposals") or []]
+    auto = any(isinstance(p, dict) and p.get("auto") and p.get("type") != "act" for p in props)
+    acts = [i for i, p in enumerate(props) if isinstance(p, dict) and p.get("auto") and p.get("type") == "act"]
     held = bool(lock is not None and auto and lock.acquire(timeout=AUTO_LOCK_SECONDS))
     changed = False
     try:
@@ -1967,11 +1983,13 @@ def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bo
                 th.update(result)
                 if auto and lock is not None and not held:
                     for p in th.get("proposals") or []:
-                        if isinstance(p, dict) and p.get("auto"):
+                        if isinstance(p, dict) and p.get("auto") and p.get("type") != "act":
                             p["notes"] = list(p.get("notes") or []) + ["동기화하는 중이라 바로 반영하지 못했어요 — [반영]을 눌러 주세요"]
                     th["notes"] = list(th.get("notes") or []) + ["동기화하는 중이라 바로 반영하지 못했어요"]
                 elif auto:
                     changed = _auto_apply(target, thread_id, th, names)
+                if acts:   # 화면에는 '하는 중'으로(답은 보이되 [실행]을 누르기 전에 앱이 한다)
+                    th["status"], th["progress"] = "running", ACT_PROGRESS
                 result = copy.deepcopy(th)
             if new_runs:
                 runs = target.data.setdefault("ai_runs", [])
@@ -1981,12 +1999,43 @@ def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bo
     finally:
         if held:
             lock.release()
+    if acts and find_thread(target, thread_id) is not None:
+        result = _auto_act(target, thread_id, acts, act_apply) or result
     if changed and callable(emit):
         try:
             emit()
         except Exception:  # noqa: BLE001 — 구글 반영이 실패해도 답은 저장됐다
             pass
     return result
+
+
+def _auto_act(target, thread_id: str, idxs: list, act_apply) -> dict | None:
+    """바로 할 act(계약 28-3)를 잠금 밖에서 하나씩: act_apply가 결과를 제안에 남긴다(record_act). act_apply가 없거나 결과를
+    남기기 전에 막혔으면(다른 동작 실행 중 등) 여기서 카드로 남기고 이유를 적는다. 끝나면 차례를 '다 함'으로."""
+    errors: dict = {}
+    for i in idxs:
+        if not callable(act_apply):
+            errors[i] = "앱 밖에서 답해서 바로 하지 못했어요"
+            continue
+        try:
+            act_apply(thread_id, i)
+        except Exception as e:  # noqa: BLE001 — ApiError(409 등)·ValueError — 결과는 카드에 남긴다(내용·비밀값 없이)
+            errors[i] = _flat(e)[:200] or f"실행하지 못했어요({type(e).__name__})"
+    with target.locked():
+        target.reload_if_changed()
+        th = find_thread(target, thread_id)
+        if th is None:
+            return None
+        for i, why in errors.items():
+            props = th.get("proposals") or []
+            p = props[i] if i < len(props) and isinstance(props[i], dict) else None
+            if p is not None and p.get("result") is None and not p.get("applied"):
+                _act_auto_failed(th, p, why)
+        if th.get("status") == "running":
+            th["status"] = "done"
+        th["progress"] = None
+        target.write()
+        return copy.deepcopy(th)
 
 
 STALE_SECONDS = 300
@@ -1998,6 +2047,8 @@ def can_apply(p: dict) -> bool:
         return False
     if p.get("type") == "action":
         return not p.get("client")
+    if p.get("type") == "act":   # 말로 시킨 일(계약 28-3): 거절 등급은 [실행] 없이 [설정 열기]만
+        return p.get("tier") in ("direct", "confirm") and not p.get("refuse")
     return p.get("type") in _APPLY
 
 
@@ -2238,7 +2289,7 @@ def apply(store, thread_id, idx, names: list | None = None) -> dict:
     th, p = _proposal(store, thread_id, idx)
     if p.get("applied"):
         raise AgentConflict("이미 반영한 제안이에요")
-    if p.get("type") == "action":   # 앱 동작은 화면의 [실행](features/agent.py → actions.run)으로만 — 계약 22-9
+    if p.get("type") in ("action", "act"):   # 앱 동작·말로 시킨 일은 [실행](features/agent.py → actions/capabilities.run)으로만
         raise ValueError("앱 동작은 앱 화면의 채팅에서 [실행]을 눌러 주세요")
     if p.get("type") == "note" or p.get("type") not in _APPLY:
         raise ValueError("설명만 있는 제안이라 반영할 것이 없어요")
@@ -2266,7 +2317,7 @@ def apply(store, thread_id, idx, names: list | None = None) -> dict:
 def undo(store, thread_id, idx) -> dict:
     """반영 전 값으로 되돌린다(항목은 지우고, 연결·개수·비중·학점 비율은 이전 값). 그 사이 직접 바꿨으면 AgentConflict."""
     th, p = _proposal(store, thread_id, idx)
-    if p.get("type") == "action":
+    if p.get("type") in ("action", "act"):
         raise ValueError("앱 동작은 앱 화면의 채팅에서 [되돌리기]를 눌러 주세요")
     if not p.get("applied") or not p.get("_undo"):
         raise AgentConflict("반영하지 않은 제안이에요")
@@ -2297,6 +2348,188 @@ def record_action(store, thread_id, idx, res: dict, undo: bool = False) -> dict 
     elif ok:
         p.update(applied=False, undone_at=now)
         p.pop("_undo", None)
+    return p
+
+
+# ---------------------------------------------------------------- 말로 시킨 일(계약 28-3): act 제안·거절 카드·실행 기록
+
+ACT_TIERS = ("direct", "confirm", "refuse")
+ACT_KEEP_CHANGES = 12
+_LIMIT_WORDS = re.compile(r"한도|허용\s*(?:횟수|량)|사용\s*(?:횟수|량)|횟수\s*제한|(?<![a-z])limit(?![a-z])", re.I)
+_LIMIT_SUBJECT = re.compile(r"(?<![a-z])ai(?![a-z])|에이아이|인공지능|하루|일일|daily", re.I)
+
+
+class PlanApp:
+    """capabilities.plan이 읽을 앱(계약 28-3, 담당 H3의 선택): 진짜 앱의 기능(구글·업데이트·백그라운드 등 app의 속성)은 그대로
+    쓰고 store만 이 작업의 사본으로 바꾼다. 루프는 잠금 밖에서 돌고 plan은 아무것도 바꾸지 않으므로, 앱 Store를 잠금 없이 읽지
+    않고 이 작업만 쓰는 사본을 읽는다. 앱이 없으면(agent.answer를 바로 부르는 테스트·CLI) store만 가진 앱 — 다른 속성은 AttributeError
+    (plan이 고장 나면 act_proposal이 '확인하지 못했어요'로 막는다). 실행(run)은 늘 진짜 앱으로(features/agent._run_act)."""
+
+    def __init__(self, app, store):
+        self._app = app.__dict__.get("_app") if isinstance(app, PlanApp) else app
+        self.store = store
+
+    def __getattr__(self, name):
+        if name.startswith("__") or self.__dict__.get("_app") is None:
+            raise AttributeError(name)
+        return getattr(self.__dict__["_app"], name)
+
+
+def _act_value(v):
+    """전→후 칸 값(화면용 짧은 글): 글자·숫자는 그대로, None은 None, 그 밖은 글로(120자)."""
+    if v is None or isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v
+    return _flat(v if isinstance(v, str) else str(v))[:120]
+
+
+def _shorts(store) -> dict:
+    return {str(c["id"]): core.short_course_name(c.get("name"))
+            for c in ((getattr(store, "data", None) or {}).get("cache") or {}).get("courses") or []
+            if isinstance(c, dict) and c.get("id") is not None}
+
+
+def _act_base(by: str, reason: str) -> dict:
+    return {"type": "act", "by": by, "decided_by": "user", "capability": None, "area": None, "params": {}, "title": "",
+            "tier": None, "summary": "", "changes": [], "external": False, "undoable": False, "pane": None, "refuse": None,
+            "reason": reason, "course_id": None, "course_short": None, "evidence": None, "source_key": None,
+            "source_type": None, "source_title": None, "posted_at": None, "url": None, "rejected_reason": None,
+            "applied": False, "applied_at": None, "undone_at": None, "result": None, "notes": [], "date_basis": None,
+            "auto": False, "auto_applied": False}
+
+
+def _act_course(cap, resolved: dict, store) -> str | None:
+    """카드의 과목 꼬리표: 능력의 과목 칸(resolve "course" — 보통 이름이 'course', id로 바뀐 값) → 'course'·'course_id' →
+    항목 칸(resolve "item")이면 그 항목의 과목."""
+    def ok(v):
+        return str(v) if v not in (None, "") and not isinstance(v, (dict, list, bool)) else None
+    specs = getattr(cap, "params", None) or {}
+    for name, spec in specs.items():
+        if (spec or {}).get("resolve") == "course" and ok(resolved.get(name)):
+            return ok(resolved.get(name))
+    for name in ("course", "course_id"):
+        if ok(resolved.get(name)):
+            return ok(resolved.get(name))
+    for name, spec in specs.items():
+        iid = ok(resolved.get(name)) if (spec or {}).get("resolve") == "item" else None
+        if iid:
+            it = next((v for v in (getattr(store, "data", None) or {}).get("items") or []
+                       if isinstance(v, dict) and str(v.get("id")) == iid), None)
+            if it and ok(it.get("course_id")):
+                return ok(it.get("course_id"))
+    return None
+
+
+def act_proposal(app, cap_id, params, reason: str = "", by: str = "ai") -> dict:
+    """act(capability, params) → 화면용 제안(type "act", 계약 28-3). capabilities.plan(app, …)으로 검사·이름→id·전→후 미리 보기를
+    한다(아무것도 바꾸지 않음). 통과하지 못하면 rejected_reason — 루프가 다음 차례에 그대로 AI에게 돌려준다(여럿이면 후보까지).
+    거절 등급은 rejected가 아니라 refuse(이유)·pane(열어 줄 설정 칸)이 붙은 거절 카드. 학생이 직접 시킨 일이라 근거 글이 필요 없다
+    (decided_by "user", reason = 학생의 말). 칸: 제안 공통 칸 + capability·area·params(이름을 id로 바꾼 값)·title·tier·summary·
+    changes[{label, before, after}]·external·undoable·pane·refuse. '_raw_params'(AI가 낸 그대로)는 [실행] 때 지금 상태로 다시 plan."""
+    from . import capabilities
+    cid = _flat(cap_id)[:80]
+    raw = copy.deepcopy(params) if isinstance(params, dict) else {}
+    cap = capabilities.REGISTRY.get(cid)
+    try:
+        pl = capabilities.plan(app, cid, raw)
+        if not isinstance(pl, dict):
+            raise TypeError("plan은 dict를 돌려줘야 해요")
+    except (ValueError, LookupError) as e:
+        pl = {"ok": False, "error": _flat(e)[:300] or "확인하지 못했어요"}
+    except Exception as e:  # noqa: BLE001 — 확인하지 못한 일은 [실행] 없이(내용·비밀값 없이)
+        pl = {"ok": False, "error": f"이 일을 확인하지 못했어요({type(e).__name__})"}
+    out = _act_base(by, _flat(reason)[:300])
+    tier = pl.get("tier") if pl.get("tier") in ACT_TIERS else (cap.tier if cap is not None else None)
+    resolved = pl.get("params") if isinstance(pl.get("params"), dict) and pl.get("params") else raw
+    title = _flat(pl.get("title") or (cap.title if cap is not None else "") or cid or "알 수 없는 일")[:120]
+    changes = [{"label": _flat(c.get("label"))[:80], "before": _act_value(c.get("before")), "after": _act_value(c.get("after"))}
+               for c in pl.get("changes") or [] if isinstance(c, dict)][:ACT_KEEP_CHANGES]
+    store = getattr(app, "store", None)
+    course = _act_course(cap, resolved, store)
+    out.update(capability=cid or None, area=pl.get("area") or (cap.area if cap is not None else None),
+               params=copy.deepcopy(resolved), title=title, tier=tier, summary=_flat(pl.get("summary"))[:300] or title,
+               changes=changes, external=bool(pl.get("external", cap.external if cap is not None else False)),
+               undoable=bool(pl.get("undoable", cap.undoable if cap is not None else False)),
+               pane=pl.get("pane") or (cap.pane if cap is not None else None),
+               course_id=course, course_short=_shorts(store).get(course) if course else None, _raw_params=raw)
+    if tier == "refuse":
+        why = (cap.refuse if cap is not None else None) or pl.get("error")
+        out.update(refuse=_flat(why)[:300] or "사용자가 직접 정할 일이라 에이전트가 하지 않아요 — 설정에서 직접 바꿔 주세요",
+                   undoable=False)
+    elif not pl.get("ok"):
+        out["rejected_reason"] = _flat(pl.get("error"))[:400] or "할 수 없는 일이에요"
+        out["candidates"] = [{"id": str(c.get("id"))[:80], "label": _flat(c.get("label"))[:80]}
+                             for c in pl.get("candidates") or [] if isinstance(c, dict) and c.get("id") is not None][:8]
+    elif tier == "confirm":
+        out["notes"].append("되돌리기 어려운 일이라 앱이 바로 하지 않아요 — 맞으면 [실행]을 눌러 주세요")
+    if tier != "refuse" and not out["rejected_reason"] and out["external"] and not out["undoable"]:
+        out["notes"].append("이 PC 밖(구글 캘린더 등)에 반영돼 [되돌리기]가 없어요")
+    return out
+
+
+def refusal_for(store, message: str, by: str = "ai") -> dict | None:
+    """하지 않는 일(계약 28-0 refuse — AI 켜기·끄기·실행기, 하루 AI 한도, 학번·Canvas 토큰·로그인·로그아웃·구글 동의·데이터 지우기)을
+    시켰으면 거절 카드(type "act", tier "refuse", refuse = 이유, pane = 열어 줄 설정 칸). 시키는 말이 아니거나 그런 일이 아니면 None.
+    AI가 act 없이 '못 해요'라고만 답해도 [설정 열기]가 붙게 루프가 마지막에 부른다(규칙 갈래는 actions.handle의 open_view)."""
+    from . import actions
+    msg = _flat(message)
+    if not msg or len(msg) > MAX_MESSAGE or not actions._is_command(msg):
+        return None
+    low = msg.lower()
+    fid = "ai_limit" if _LIMIT_WORDS.search(low) and _LIMIT_SUBJECT.search(low) else actions._forbidden(low)
+    if not fid or fid not in actions.FORBIDDEN:
+        return None
+    name, pane = actions.FORBIDDEN[fid]
+    reason = actions._forbidden_reason(fid)
+    if fid in ("ai_enable", "ai_provider", "ai_limit"):
+        reason = (f"‘{name}’ — 에이전트가 자기 자신을 끄거나 바꾸는 일이라 하지 않아요. "
+                  f"설정 → {actions.PANES.get(pane, '설정')}에서 직접 바꿔 주세요.")
+    out = _act_base(by, f"요청: “{msg[:80]}”")
+    out.update(title=name, tier="refuse", summary=reason, refuse=reason, pane=pane, area="ai" if pane == "ai" else "account",
+               _forbidden=fid)
+    return out
+
+
+def _act_auto_failed(th: dict, p: dict, why: str) -> None:
+    """바로 하지 못한 act: 카드로 남기고(다시 [실행]할 수 있게) 이유를 제안·차례·답 끝에 — '바꿨어요'가 틀린 말로 남지 않게."""
+    p["auto_applied"] = False
+    p["notes"] = list(p.get("notes") or []) + [f"바로 하지 못했어요({why}) — 맞으면 [실행]을 눌러 주세요"]
+    th["notes"] = list(th.get("notes") or []) + [f"바로 하지 못했어요: {why}"]
+    th["answer"] = (f"{th.get('answer') or ''}\n\n(바로 하지 못했어요 — {why}. 카드에서 [실행]을 눌러 주세요.)").strip()
+
+
+def record_act(store, thread_id, idx, res: dict, undo: bool = False, auto: bool = False) -> dict | None:
+    """capabilities.run/undo의 결과({"ok", "message", "undo"?})를 그 act 제안에 남긴다(부르는 쪽이 잠금·저장, 계약 28-3).
+    실행 성공: applied·applied_at·result{ok, message}·_undo(되돌리기 기록 — 화면에 안 나감)·undoable(기록이 있을 때만)·auto_applied(바로 한 것).
+    실행 실패: result(다시 누를 수 있게), 바로 하던 것이면 카드·이유. 되돌리기 성공: applied false·undone_at(실패는 기록하지 않음 — 화면이
+    오류만 보여 줌). 그 사이 대화·제안이 지워졌으면 None."""
+    try:
+        th, p = _proposal(store, thread_id, idx)
+    except (LookupError, ValueError):
+        return None
+    if p.get("type") != "act":
+        return None
+    ok = bool(res.get("ok"))
+    msg = _flat(res.get("message"))[:300] or None
+    now = iso(now_local())
+    if undo:
+        if ok:
+            p.update(applied=False, undone_at=now, result={"ok": True, "message": msg or "되돌렸어요"})
+            p.pop("_undo", None)
+        return p
+    p["result"] = {"ok": ok, "message": msg}
+    if ok:
+        rec = res.get("undo")
+        p.update(applied=True, applied_at=now, undone_at=None, _undo=rec, auto_applied=bool(auto),
+                 undoable=bool(p.get("undoable") and rec))
+        if isinstance(res.get("data"), dict):   # 경로가 돌려준 보여 줄 것(메일 초안 등 — capabilities.run의 data)
+            p["data"] = copy.deepcopy(res["data"])
+        if auto:
+            p["notes"] = list(p.get("notes") or []) + ["분명히 시킨 일이라 앱이 확인한 뒤 바로 했어요"
+                                                       + (" — [되돌리기]로 되돌릴 수 있어요" if p["undoable"] else "")]
+    elif auto:
+        _act_auto_failed(th, p, msg or "실행하지 못했어요")
     return p
 
 

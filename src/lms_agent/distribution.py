@@ -998,10 +998,16 @@ def from_groups(kind: str, groups: list | None = None, cutoffs: dict | None = No
 
 
 def effective(cfg: dict | None) -> dict:
-    """과목 성적 설정에서 실제로 쓸 학점 기준(계약 16장): 사용자 비율(config.dist) > 자동 비율(config.dist_auto) > 기본값.
+    """과목 성적 설정에서 실제로 쓸 학점 기준(계약 16장·28-2): 사용자 기준표(config.cutoffs) > 사용자 비율(config.dist) > 자동 비율(config.dist_auto) > 기본값.
     → {"by": "user"|"syllabus"|"default", "kind": "relative"|"absolute", "dist": {9학점 %}, "cutoffs": {...}|None,
        "auto": config.dist_auto|None}. 절대평가면 dist는 기본 비율(상위 % 계산에만 쓰임)이고 학점은 cutoffs로 정한다."""
     cfg = cfg or {}
+    uc = cfg.get("cutoffs")   # 사용자 절대평가 기준표(계약 28-2) — 사용자 상대 비율과 함께 저장되지 않는다(save_course)
+    if isinstance(uc, dict) and uc:
+        cut = {k: float(v) for k, v in uc.items() if k in _IDX and isinstance(v, (int, float))}
+        vals = [cut[x] for x in GRADES if x in cut]
+        if vals and all(b < x for x, b in zip(vals, vals[1:])):
+            return {"by": "user", "kind": "absolute", "dist": DEFAULT_DISTRIBUTION, "cutoffs": cut, "auto": None}
     if cfg.get("dist"):
         return {"by": "user", "kind": "relative", "dist": cfg["dist"], "cutoffs": None, "auto": None}
     a = cfg.get("dist_auto")

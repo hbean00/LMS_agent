@@ -16,6 +16,13 @@ AI가 먼저 판단하고 필요할 때만 도구를 쓴다(docs/AGENT_V2.md).
 진행 표시: steps [{"round", "tool", "label", "ok", "note"}], progress(문구 — "마감 목록 보는 중…")는 progress 콜백으로 차례 사이마다.
 AI에게 보내지 않는 것: 토큰·비밀값, 다른 학생 정보(점수표는 내 값·반 집계만), 구글 캘린더 개인 일정(gcal_events — 어떤 도구도 읽지
   않음), 이메일·학번·이름(agent_cli.redact로 가림).
+말로 시킨 일(계약 28-3, v0.8.3): list_capabilities(area?)(읽기 — capabilities.catalog_text)와 act(capability, params, reason?, auto?)
+  (제안 — agent.act_proposal → capabilities.plan: 검사·이름→id·전→후, 바꾸지 않음). 학생의 지시가 권한이라 근거 글이 필요 없다.
+  plan이 막히면(모르는 이름·여럿이 맞음 등) 그 이유를 다음 차례 도구 결과로 AI에게 돌려준다(done이었어도 차례가 남았으면 이어 감).
+  바로 하기: 등급 direct + 시키는 말(is_command — 바꿔줘·반영해줘·켜줘 …, 묻는 말 아님) + 이번 묻기의 바꾸기 제안 하나 + AI가
+  auto: false를 내지 않음(애매한 지시를 구체적인 값으로 바꾼 것은 확인 카드) → auto. 실제 실행은 agent.run_job이 잠금 밖에서.
+  confirm 등급은 [실행] 카드, refuse 등급(AI 켜기·끄기·한도·개인정보)은 거절 카드 — AI가 act 없이 '못 해요'라고만 해도 시킨 말이
+  그런 일이면 하네스가 거절 카드(agent.refusal_for, [설정 열기])를 붙인다.
 """
 from __future__ import annotations
 
@@ -59,6 +66,7 @@ PROPOSE = {
     "propose_weights": ("set_weights", ("course_id", "components", "evidence", "source_key", "reason")),
     "propose_dist": ("set_dist", ("course_id", "groups", "dist_kind", "cutoffs", "evidence", "source_key", "reason")),
     "propose_action": ("action", ("action", "params", "reason", "title")),
+    "act": ("act", ("capability", "params", "reason", "auto")),   # 말로 시킨 일(계약 28-3) — 근거 글 없음
 }
 assert set(PROPOSE) == set(agent_cli.AGENT_PROPOSE_TOOLS)
 
@@ -71,6 +79,8 @@ LABELS = {
     "whatif": ("성적 계산", "성적 계산하는 중…"),
     "list_materials": ("자료 목록 보기", "자료 목록 보는 중…"),
     "get_settings": ("설정 보기", "설정 보는 중…"),
+    "list_capabilities": ("할 수 있는 일 보기", "할 수 있는 일 보는 중…"),
+    "act": ("직접 하기", "말한 일 확인하는 중…"),
     "draft_mail": ("메일 초안 쓰기", "메일 초안 쓰는 중…"),
     "make_plan": ("공부 계획 짜기", "공부 계획 짜는 중…"),
     "propose_item_remove": ("항목 빼기 제안", "제안 검사 중…"),
@@ -87,6 +97,7 @@ LABELS = {
 }
 ASK_FIRST = "AI에게 묻는 중…"
 ASK_AGAIN = "AI가 결과를 읽는 중…"
+ACT_NOTE = {"direct": "바로 할 수 있음", "confirm": "확인 카드", "refuse": "하지 않는 일"}
 
 # 시키는 말(계약 26-4): 지워·없애·삭제·빼·합쳐·고쳐·바꿔·추가·넣어·등록·연결·remove·delete·fix … — 조사·띄어쓰기와 상관없이,
 # '지워야 할까?'·'삭제해도 돼?'·'빼고'·'왜 지웠어?'처럼 묻는 말·다른 뜻은 아니다(QUESTION이 이긴다).
@@ -123,6 +134,16 @@ def is_imperative(message: str) -> bool:
     """학생 말이 분명히 시키는 말인지(바로 반영 조건, 계약 26-4)."""
     msg = _flat(message)
     return bool(msg and IMPERATIVE.search(msg) and not QUESTION.search(msg))
+
+
+def is_command(message: str) -> bool:
+    """말로 시킨 일(act)을 바로 할 조건(계약 28-3): 시키는 말 — is_imperative의 말에 더해 '반영해줘·켜줘·꺼줘·동기화해줘·
+    40%로 해줘'처럼 '…줘/주세요'로 시키는 말(actions._is_command) — 이고 묻는 말이 아님('바꿔도 돼?'·'바꿀 수 있어?'는 카드)."""
+    from . import actions
+    msg = _flat(message)
+    if not msg or QUESTION.search(msg):
+        return False
+    return bool(IMPERATIVE.search(msg) or actions._is_command(msg))
 
 
 def claims_done(say: str):
@@ -195,11 +216,16 @@ def auto_targets(ctx, message: str, texts: tuple[str, str], proposals: list[dict
     want = [i for i, p in enumerate(proposals) if p.get("_auto")]
     if not want:
         return set(), {}
-    if not is_imperative(message):
-        return set(), {i: "분명히 시킨 말(지워줘·고쳐줘·추가해줘…)일 때만 바로 반영해요" for i in want}
+    # 말로 시킨 일(act, 계약 28-3)은 '반영해줘·켜줘'도 시키는 말(is_command), 그 밖은 지금처럼 is_imperative
+    told = {i for i in want if (is_command(message) if proposals[i].get("type") == "act" else is_imperative(message))}
+    if not told:
+        return set(), {i: ("분명히 시킨 말(바꿔줘·반영해줘·켜줘…)일 때만 바로 해요" if proposals[i].get("type") == "act"
+                           else "분명히 시킨 말(지워줘·고쳐줘·추가해줘…)일 때만 바로 반영해요") for i in want}
     changes = [i for i, p in enumerate(proposals)
                if not p.get("rejected_reason") and p.get("type") not in ("note", "action") and agent.can_apply(p)]
-    ok = [i for i in want if i in changes and proposals[i].get("type") in AUTO_TYPES]
+    ok = [i for i in want if i in changes and i in told
+          and (proposals[i].get("type") in AUTO_TYPES
+               or (proposals[i].get("type") == "act" and proposals[i].get("tier") == "direct"))]
     reasons = {i: "검사를 통과하지 못했거나 바로 반영하는 종류가 아니라서" for i in want if i not in ok}
     if len(changes) != 1 or len(ok) != 1:
         return set(), {i: reasons.get(i) or "바꿀 대상이 여럿이라" for i in want}
@@ -313,12 +339,39 @@ def _clip(v):
     return v
 
 
+_MSG_NUM = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _numbers(obj, out: set | None = None) -> set:
+    """params 안의 숫자 값(int·float만 — id·이름 같은 글자는 빼고) → '50'·'92.5' 같은 글자 모양."""
+    out = set() if out is None else out
+    if isinstance(obj, bool):
+        return out
+    if isinstance(obj, (int, float)):
+        out.add(f"{float(obj):g}")
+    elif isinstance(obj, dict):   # 글자 값(과목·항목 id, 이름)은 세지 않는다 — 바꿀 '값'만
+        for v in obj.values():
+            _numbers(v, out)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            _numbers(v, out)
+    return out
+
+
+def _explicit_numbers(params, message: str) -> bool:
+    """바꿀 값에 숫자가 있고 그 숫자가 모두 학생의 말에 있으면 True(학생이 값을 직접 말함)."""
+    nums = _numbers(params if isinstance(params, (dict, list)) else {})
+    said = {f"{float(x):g}" for x in _MSG_NUM.findall(str(message or ""))}
+    return bool(nums) and nums <= said
+
+
 class Loop:
     """한 번 묻기의 루프 상태: 도구 결과·단계·제안·찾은 글·원문 조각."""
 
     def __init__(self, store, message: str, eff: str | None, course_id, history, names, session, now, progress,
-                 intent):
+                 intent, app=None):
         self.store, self.message = store, message
+        self.app = agent.PlanApp(app, store)   # act의 capabilities.plan이 읽는 앱(store는 이 작업의 사본)
         self.eff = eff or message
         self.course_id = str(course_id) if course_id is not None else None
         self.history = list(history or [])
@@ -396,6 +449,10 @@ class Loop:
                 props = call["props"]
                 bad = [p for p in props if p.get("rejected_reason")]
                 note = ("거절: " + _flat(bad[0]["rejected_reason"])[:60]) if bad else ("통과" if props else "없음")
+                if tool == "act" and props:   # '직접 하기 · 학점 비율 바꾸기' — 등급대로 짧게
+                    p = props[0]
+                    label = f"{label} · {_flat(p.get('title'))[:40]}" if p.get("title") and not bad else label
+                    note = note if bad else ACT_NOTE.get(p.get("tier"), "통과")
                 self.steps.append({"round": rnd, "tool": tool, "label": label, "ok": bool(props) and not bad,
                                    "note": note})
                 self.tool_results.append({"round": rnd, "tool": tool, "args": _short_args(args),
@@ -422,8 +479,16 @@ class Loop:
             p["auto"] = i in auto
             p["auto_applied"] = False
             if wanted and i not in auto:
+                button = "[실행]" if p.get("type") == "act" else "[반영]"
                 p["notes"] = list(p.get("notes") or []) + [f"바로 반영하지 않았어요({why.get(i) or '조건이 맞지 않아서'}) "
-                                                           "— 맞으면 [반영]을 눌러 주세요"]
+                                                           f"— 맞으면 {button}을 눌러 주세요"]
+            elif p.get("type") == "act" and p.get("tier") == "direct" and not wanted and not p.get("rejected_reason"):
+                p["notes"] = list(p.get("notes") or []) + ["말한 것을 이렇게 알아들었어요 — 전→후가 맞으면 [실행]을 눌러 주세요"]
+        # 하지 않는 일(AI 켜기·끄기·한도·개인정보)을 시켰는데 AI가 '못 해요'라고만 했으면 [설정 열기] 거절 카드를 붙인다(계약 28-3)
+        if all(p.get("type") == "note" for p in props):
+            ref = agent.refusal_for(self.store, self.message, by="ai")
+            if ref is not None:
+                props.append(ref)
         if rnd >= MAX_ROUNDS and not data["done"]:
             self.notes.append("도구는 한 번 묻기에 3차례까지만 써요 — 여기까지 찾은 것으로 답했어요")
         kind = self._kind(props)
@@ -441,11 +506,13 @@ class Loop:
         return {"ok": True, "out": out, "steps": self.steps, "attempts": self.attempts}
 
     def _kind(self, props: list[dict]) -> str:
-        """차례 kind(화면이 그리는 모양 — 계약 22-1): 지우기·고치기 fix, 다른 바꾸기 missing, 앱 동작 action, 메일 mail, 계획 plan,
+        """차례 kind(화면이 그리는 모양 — 계약 22-1): 지우기·고치기 fix, 말로 시킨 일만 act, 다른 바꾸기 missing, 앱 동작 action, 메일 mail, 계획 plan,
         만약에 whatif, 글을 찾았으면 그 말의 갈래(missing|question), 다른 읽기만 했으면 question, 도구 없이 답했으면 chat."""
         types = {p.get("type") for p in props}
         if types & set(FIX_TYPES):
             return "fix"
+        if "act" in types and not types - {"act", "action", "note"}:   # 말로 시킨 일만(계약 28-3)
+            return "act"
         if types - {"action", "note"}:
             return "missing"
         if "action" in types:
@@ -487,21 +554,27 @@ class Loop:
                 raise _Invalid("calls도 say도 없어요 — 도구를 부르거나 done: true와 say로 답하세요 "
                                "/ call tools or answer with done true")
             done = True
-        final = done or rnd >= MAX_ROUNDS
-        if final and not say:
-            raise _Invalid("마지막 답(say)이 비어 있어요 — done: true와 한국어 say로 답하세요 / say is required")
         if len(say) > SAY_MAX:
             raise _Invalid(f"say는 {SAY_MAX:,}자 이하로 / say must be at most {SAY_MAX} characters")
-        out_calls, now_props, errs = [], [], []
+        out_calls, now_props, errs, act_errs = [], [], [], 0
         for i, c in enumerate(calls):
             tool = str(c.get("tool") or "")
             args = c.get("args") if isinstance(c.get("args"), dict) else {}
             rec = {"tool": tool, "args": args, "props": []}
             if tool in PROPOSE:
                 rec["props"] = self._propose(tool, args, inputs)
-                errs += [f"calls[{i}] {tool}: {p['rejected_reason']}" for p in rec["props"] if p.get("rejected_reason")]
+                bad = [f"calls[{i}] {tool}: {p['rejected_reason']}" for p in rec["props"] if p.get("rejected_reason")]
+                errs += bad
+                act_errs += len(bad) if tool == "act" else 0
                 now_props += rec["props"]
             out_calls.append(rec)
+        # act가 막혔으면(모르는 이름·후보 여럿 등, 계약 28-3) done이었어도 차례가 남았으면 이어 간다 — 막힌 이유가 다음 차례의
+        # 도구 결과로 AI에게 간다(다시 묻기 한 번을 쓰지 않음)
+        if act_errs and done and rnd < MAX_ROUNDS:
+            done = False
+        final = done or rnd >= MAX_ROUNDS
+        if final and not say:
+            raise _Invalid("마지막 답(say)이 비어 있어요 — done: true와 한국어 say로 답하세요 / say is required")
         if errs and final and not final_attempt:
             raise _Invalid("; ".join(errs[:6]))
         kept = now_props if final else [p for p in now_props if not p.get("rejected_reason")]
@@ -527,6 +600,8 @@ class Loop:
     def _propose(self, tool: str, args: dict, inputs: dict) -> list[dict]:
         """propose_* 하나 → 검사한 제안들(실행하지 않음). 근거가 필요한 종류는 근거가 이번 도구 결과·상태 글에 그대로 있어야 한다."""
         typ, keys = PROPOSE[tool]
+        if typ == "act":
+            return [self._act(args)]
         if typ == "action" and not _s(args.get("action")):
             return self._action_from_message(args)
         raw: dict = {"type": typ}
@@ -551,6 +626,20 @@ class Loop:
                     q[k] = raw[k]
         q["_auto"] = want
         return [q]
+
+    def _act(self, args: dict) -> dict:
+        """act(capability, params, reason?, auto?) → 제안(계약 28-3). 학생의 말이 권한이라 근거 글을 보지 않는다(이유가 없으면 학생의 말).
+        AI가 auto: false를 냈으면(애매한 지시를 구체적인 값으로 바꾼 것) 바로 하지 않고 [실행] 카드. 등급 direct·검사 통과만 바로 할 후보."""
+        reason = _s(args.get("reason"), 300) or f"요청: “{_flat(self.message)[:80]}”"
+        p = agent.act_proposal(self.app, args.get("capability"), args.get("params"), reason=reason, by="ai")
+        # AI의 auto: false는 'AI가 지어낸 값이 있을 때'만 따른다(리드, 실제 AI 확인: 'A 50%로 바꿔줘'를 카드로 냄) —
+        # 바꿀 값의 숫자가 모두 학생의 말에 있으면 분명히 시킨 것이라 바로 할 후보
+        ai_auto = args.get("auto") is not False or _explicit_numbers(args.get("params"), self.message)
+        p["_auto"] = ai_auto and p.get("tier") == "direct" and not p.get("rejected_reason")
+        if not p.get("rejected_reason"):   # 답의 학점·날짜 검사가 미리 보기(전→후)의 값을 쓸 수 있게
+            self.grade_texts.append(" ".join([_flat(p.get("summary"))] + [
+                f"{c.get('label')} {c.get('before')} {c.get('after')}" for c in p.get("changes") or []]))
+        return p
 
     def _action_from_message(self, args: dict) -> list[dict]:
         """propose_action에 action이 없으면 앱의 규칙(actions.handle)이 학생 말에서 동작을 고른다."""
@@ -822,6 +911,18 @@ class Loop:
             lines.append("- 과목 종류 / course modes: " + ", ".join(modes))
         return "\n".join(lines), f"{len(lines)}개"
 
+    def t_list_capabilities(self, args: dict):
+        """앱이 할 수 있는 일(계약 28-1 catalog_text) — area를 주면 그 영역의 자세한 모양(params·등급)."""
+        from . import capabilities
+        area = _s(args.get("area"), 20) or None
+        if area is not None and area not in capabilities.AREAS:
+            raise _ToolError("모르는 영역이에요 — 영역/areas: " + ", ".join(capabilities.AREAS))
+        text = _flat_lines(capabilities.catalog_text(area))
+        if not text:
+            return "(이 영역에서 할 수 있는 일이 아직 없어요 / no capabilities)", "0개"
+        n = sum(1 for ln in text.splitlines() if ln.lstrip().startswith("- "))
+        return text, (f"{n}개" if n else (area or "전체"))
+
     def t_draft_mail(self, args: dict):
         from . import maildraft
         cid = self._course(args.get("course_id")) or self.course_id
@@ -873,24 +974,41 @@ def _short_args(args: dict) -> dict:
     return out
 
 
+def _flat_lines(text) -> str:
+    """여러 줄 글의 줄마다 공백만 정리(줄은 남김)."""
+    return "\n".join(ln.rstrip() for ln in str(text or "").splitlines() if ln.strip()).strip()
+
+
 def _prop_text(p: dict) -> str:
-    """제안 검사 결과(다음 차례 입력) — 통과/거절과 그 이유."""
+    """제안 검사 결과(다음 차례 입력) — 통과/거절과 그 이유. act는 등급·전→후까지(계약 28-3)."""
     if p.get("rejected_reason"):
-        return f"거절 / rejected: {_flat(p['rejected_reason'])[:300]}"
+        cands = "; ".join(f"{_flat(c.get('label'))} (id {c.get('id')})" for c in p.get("candidates") or [])[:300]
+        return (f"거절 / rejected: {_flat(p['rejected_reason'])[:300]}"
+                + (f" | 후보/candidates: {cands} — 하나를 골라 다시 act" if cands else ""))
+    if p.get("type") == "act":
+        if p.get("tier") == "refuse":
+            return (f"하지 않는 일 / refused: {_flat(p.get('refuse'))[:200]} — say로 이유를 말하세요(앱이 설정 칸을 여는 단추를 붙여요) "
+                    "/ tell the student why; the app adds a button to open the setting")
+        rows = "; ".join(f"{_flat(c.get('label'))}: {c.get('before')} → {c.get('after')}" for c in p.get("changes") or [])[:400]
+        tier = {"direct": "direct(분명히 시킨 말이면 앱이 바로 하고 [되돌리기])", "confirm": "confirm(학생이 [실행]을 눌러야 함)"}
+        return (f"검사 통과 / passed: {_flat(p.get('summary') or p.get('title'))[:200]} | 등급/tier: "
+                f"{tier.get(p.get('tier'), p.get('tier'))}" + (f" | 전→후/changes: {rows}" if rows else "")
+                + (" | 되돌릴 수 없음/not undoable" if not p.get("undoable") else ""))
     tail = " — auto 요청(앱이 마지막에 바로 반영할지 정함)" if p.get("_auto") else ""
     return f"검사 통과 / passed: {_flat(p.get('summary') or p.get('title') or p.get('type'))[:200]}{tail}"
 
 
 def run(store, message: str, *, eff: str | None = None, course_id=None, history=None, names=None, session=None,
-        now: datetime | None = None, progress=None, intent: str | None = None) -> dict:
+        now: datetime | None = None, progress=None, intent: str | None = None, app=None) -> dict:
     """한 번 묻기의 루프(잠금 밖에서, store는 작업용 사본). 결과:
     성공 {"ok": True, "out": 차례 칸(kind, answer, proposals, citations, results, searched, by "ai", error None, attempts, notes,
           steps, whatif?/draft?/plan?/intent?), "steps", "attempts"}
     실패 {"ok": False, "error": 이유(한국어), "failure": "invalid"(검사 2번 실패)|"cli"(실행기 없음·오류), "steps", "attempts"}.
-    session = agent_cli.AiSession(max_calls=agent.PER_ASK) — 하루 한도·묻기 한도는 그 세션이 지킨다. progress(문구|None, steps)."""
-    loop = Loop(store, message, eff, course_id, history, names, session, now, progress, intent)
+    session = agent_cli.AiSession(max_calls=agent.PER_ASK) — 하루 한도·묻기 한도는 그 세션이 지킨다. progress(문구|None, steps).
+    app: act의 capabilities.plan이 읽을 앱(agent.PlanApp으로 감싸 store만 이 사본 — 없으면 store만 가진 앱)."""
+    loop = Loop(store, message, eff, course_id, history, names, session, now, progress, intent, app=app)
     return loop.go()
 
 
-__all__ = ["MAX_ROUNDS", "AUTO_TYPES", "PROPOSE", "LABELS", "is_imperative", "claims_done", "auto_targets",
-           "state_summary", "item_line", "run", "Loop"]
+__all__ = ["MAX_ROUNDS", "AUTO_TYPES", "PROPOSE", "LABELS", "is_imperative", "is_command", "claims_done",
+           "auto_targets", "state_summary", "item_line", "run", "Loop"]

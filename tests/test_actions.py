@@ -584,3 +584,9 @@ def test_run_undo_gcal_read_and_refresh(gapp):
     with pytest.raises(ApiError) as e:
         actions.undo(gapp, off)
     assert e.value.status == 409
+
+
+def test_google_push_phrases_with_schedule_word():
+    """'구글 캘린더 일정 반영해줘'처럼 '일정'이 끼어도 AI 없이 구글 반영 동작으로(리드, v0.8.3)."""
+    for m in ("구글 캘린더 일정 반영해줘", "구글 캘린더에 반영해줘", "캘린더 일정 올려줘", "구글 일정 동기화해줘"):
+        assert actions._GPUSH.search(m), m

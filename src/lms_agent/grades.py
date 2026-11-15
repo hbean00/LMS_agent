@@ -133,7 +133,8 @@ def letter_for_score(total_pct: float, cutoffs: dict) -> str:
 
 
 def _cut_note(cutoffs: dict) -> str:
-    return "절대평가 기준(강의계획서): " + " · ".join(f"{g} {float(cutoffs[g]):g}" for g in GRADES if g in cutoffs) + "점 이상"
+    # 기준표가 강의 글에서 왔는지 사용자가 넣었는지는 학점 기준 표시(letter_basis)가 말한다 — 여기서는 출처를 단정하지 않는다
+    return "절대평가 기준: " + " · ".join(f"{g} {float(cutoffs[g]):g}" for g in GRADES if g in cutoffs) + "점 이상"
 
 
 def _check(dist: dict, rho: float) -> None:

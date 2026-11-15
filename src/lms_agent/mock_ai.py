@@ -399,6 +399,112 @@ def _chat_reply(msg: str, history: bool) -> str:
             "학기 이야기라면 '기말 범위 어디까지야?'처럼 물어봐 주세요.")
 
 
+# ---- 말로 시킨 일(계약 28-3): 진짜 모델처럼 '먼저 판단'하되 규칙으로 —
+# 하지 않는 일(AI 켜기·끄기·한도·개인정보) → 도구 없이 이유만(앱이 [설정 열기]를 붙인다), '구글 캘린더에 반영해줘' → act(구글 반영) 바로,
+# '학점 비율 A 40%로 바꿔줘' → list_capabilities(grades) → act(grades.set_dist). 능력 id·params 이름은 capabilities.REGISTRY에서 읽는다
+# (데모가 지금 능력 모양을 따라가게 — 과목은 학생 말에 나온 이름, 값은 말에 적힌 그대로).
+_DIST_ASK = re.compile(r"(?:학점|성적)\s*(?:의\s*)?(?:비율|분포|배분|컷)|비율", re.I)
+_LETTER_PCT = re.compile(r"(?<![A-Za-z])([A-D][+0]?)\s*(?:학점)?\s*(?:을|를|은|는|이|가)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:%|퍼센트|프로)")
+# 절대평가 기준표('ASIC 절대평가 A+ 95 A0 90 B+ 85로 바꿔줘') — 글자별 최저 점수
+_ABSOLUTE = re.compile(r"절대\s*평가|절대\s*기준|점수\s*기준")
+_LETTER_SCORE = re.compile(r"(?<![A-Za-z])([A-D][+0]?)\s*(?:학점)?\s*(?:은|는|이|가)?\s*(\d{2,3}(?:\.\d+)?)\s*(?:점)?(?![\d%.])")
+_WORD = re.compile(r"[A-Za-z]{2,}|[가-힣]{2,}")
+# '구글 캘린더 일정 반영해줘'처럼 사이에 낱말이 껴도(actions._GPUSH는 '구글 캘린더에 반영'만)
+_GOOGLE_PUSH = re.compile(r"(?:구글|google)[^.?!\n]{0,24}?(?:반영|올려|보내|푸시|push|맞춰)", re.I)
+
+
+def _caps():
+    try:
+        from . import capabilities
+        return capabilities.REGISTRY
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _cap_by_route(path: str, fallback: str) -> str:
+    for c in _caps().values():
+        if c.route and len(c.route) > 1 and c.route[1] == path and c.tier != "refuse":
+            return c.id
+    return fallback
+
+
+def _course_named(p: dict, text: str) -> dict | None:
+    """학생 말에 이름(두 글자 이상 낱말)이 나온 과목 하나(여럿·없음이면 None)."""
+    words = [w.lower() for w in _WORD.findall(text)]
+    hits = [c for c in p["courses"] if c["name"] and (_mnorm(c["name"]) in _mnorm(text)
+                                                     or any(len(w) >= 2 and w in c["name"].lower() for w in words
+                                                            if not _DIST_ASK.fullmatch(w)))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _fill(cap, values: dict) -> dict:
+    """능력의 params 모양에 맞춰 값을 넣는다: 이름이 같은 칸 → resolve 종류(과목) → 종류(글·목록·객체)·enum 순."""
+    out = {}
+    for name, spec in (getattr(cap, "params", None) or {}).items():
+        spec = spec if isinstance(spec, dict) else {}
+        typ, low = spec.get("type"), name.lower()
+        if name in values:
+            out[name] = values[name]
+        elif spec.get("resolve") == "course" or low in ("course", "course_id", "course_name"):
+            out[name] = values["course"]
+        elif typ == "enum" and "relative" in (spec.get("enum") or []):
+            out[name] = "relative"
+        elif typ == "dict":
+            out[name] = dict(values["letters"])
+        elif typ == "list":
+            out[name] = [{"grade": g, "pct": v} for g, v in values["letters"].items()]
+        elif typ == "str" and spec.get("required"):
+            out[name] = values["text"]
+    return out
+
+
+def _act_first(p: dict, done, ask) -> dict | None:
+    from . import actions
+    from .agent import refusal_for
+    typed = p["typed"]
+    ref = refusal_for(None, typed)
+    if ref is not None:
+        return done(f"{ref['refuse']} 아래 [설정 열기]를 누르면 그 칸이 바로 열려요.")
+    if not actions._is_command(typed):
+        return None
+    if actions._GPUSH.search(typed.lower()) or _GOOGLE_PUSH.search(typed):
+        cap = _cap_by_route("/api/google/push", "calendar.google_push")
+        return done("구글 캘린더에 반영해 달라는 말로 알아들었어요. 앱이 확인하면 바로 하고, 결과는 아래 카드에 보여요.",
+                    [{"tool": "act", "args": {"capability": cap, "params": {}, "reason": f"학생 요청: “{typed[:60]}”"}}])
+    if _course_named(p, typed) and ((_DIST_ASK.search(typed) and _LETTER_PCT.search(typed))
+                                    or (_ABSOLUTE.search(typed) and _LETTER_SCORE.search(typed))):
+        return ask({"tool": "list_capabilities", "args": {"area": "grades"}})
+    return None
+
+
+def _act_next(p: dict) -> dict | None:
+    """list_capabilities 다음 차례 → act(학점 비율), act가 막혔으면 그 이유로 답."""
+    used = [t["tool"] for t in p["tools"]]
+    blocked = next((t["text"] for t in p["tools"] if t["tool"] == "act" and t["text"].startswith("거절")), None)
+    if blocked:
+        why = blocked.split(":", 1)[-1].strip()[:200].rstrip(".")
+        tail = " 과목·값을 조금 더 분명히 말해 주세요." if re.search(r"여럿|없어요|골라", why) else ""
+        return {"say": f"말한 대로 하지 못했어요 — {why}.{tail}", "calls": [], "done": True}
+    if "list_capabilities" not in used:
+        return None
+    typed = p["typed"]
+    c = _course_named(p, typed)
+    absolute = bool(_ABSOLUTE.search(typed)) and not _LETTER_PCT.search(typed)
+    pairs = {m.group(1): float(m.group(2)) for m in (_LETTER_SCORE if absolute else _LETTER_PCT).finditer(typed)}
+    cap = _caps().get("grades.set_dist")
+    if c is None or not pairs:
+        return None
+    unit = "점 이상" if absolute else "%"
+    text = " · ".join(f"{g} {v:g}{unit}" for g, v in pairs.items())
+    what = "절대평가 기준을" if absolute else "학점 비율을"
+    params = _fill(cap, {"course": c["name"], "letters": pairs, "text": text,
+                         "kind": "absolute" if absolute else "relative"}) if cap else {"course_id": c["name"], "text": text}
+    return {"say": f"{c['name']} {what} {text}로 바꿔 달라는 말로 알아들었어요. 앱이 확인하면 바로 하고, [되돌리기]로 언제든 "
+                   "되돌릴 수 있어요.", "done": True,
+            "calls": [{"tool": "act", "args": {"capability": "grades.set_dist", "params": params,
+                                               "reason": f"학생 요청: “{typed[:60]}”"}}]}
+
+
 def _agent_first(p: dict) -> dict:
     from . import actions, maildraft, plan, whatif
     from .agent import chat_intent, strong_academic
@@ -408,6 +514,9 @@ def _agent_first(p: dict) -> dict:
     ask = lambda *calls: {"say": "", "calls": list(calls), "done": False}   # noqa: E731
     if _CRISIS.search(typed) or _HARM.search(typed):
         return done(_chat_reply(typed, p["history"]))
+    acted = _act_first(p, done, ask)
+    if acted is not None:
+        return acted
     if _FIX_ASK.search(typed):
         return ask({"tool": "list_items", "args": dict(course)})
     if whatif.parse(typed):
@@ -452,6 +561,9 @@ def _agent(text: str) -> dict:
     p = _parse_agent(text)
     if not p["tools"]:
         return _agent_first(p)
+    acted = _act_next(p)
+    if acted is not None:
+        return acted
     used = {t["tool"] for t in p["tools"]}
     if "list_items" in used:
         listed = []

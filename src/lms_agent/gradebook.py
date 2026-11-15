@@ -75,7 +75,24 @@ def save_course(store, course_id: str, body: dict) -> None:
     size = body.get("class_size")
     size = int(_num(size, "수강 인원", 1, 100000)) if size not in (None, "") else None
     prev = (store.data.get("grades") or {}).get(str(course_id)) or {}
+    # 절대평가 기준표(사용자, 계약 28-2): 본문에 "cutoffs"가 있으면 그것({학점: 최소 점수} 또는 null = 지움), 없으면 이전 값.
+    # 상대 비율(dist)과 기준표 중 마지막에 넣은 것만 남긴다 — 둘 다 주면 오류
+    if "cutoffs" in body:
+        cutoffs = body.get("cutoffs")
+        if cutoffs is not None:
+            if not isinstance(cutoffs, dict):
+                raise ValueError("점수 기준은 {학점: 최소 점수} 모양이어야 합니다")
+            cutoffs = {k: _num(v, f"{k} 기준", 0, 100) for k, v in cutoffs.items()}
+            problems = g.validate_cutoffs(cutoffs)
+            if problems:
+                raise ValueError("; ".join(problems))
+            if dist is not None:
+                raise ValueError("상대평가 비율과 절대평가 기준을 한 번에 넣을 수 없어요 — 하나만 골라 주세요")
+    else:
+        cutoffs = None if dist is not None else prev.get("cutoffs")
     cfg = {"components": comps, "dist": dist, "class_size": size}
+    if cutoffs:
+        cfg["cutoffs"] = cutoffs
     if prev.get("dist_auto"):   # 강의계획서에서 찾은 학점 비율은 남겨 둔다(사용자 비율이 있으면 그쪽이 이긴다)
         cfg["dist_auto"] = prev["dist_auto"]
     removed = _still_removed(prev, comps)   # 지운 평가 항목 기록(계약 26-3) — 사용자가 다시 넣은 이름만 뺀다
@@ -90,6 +107,7 @@ def candidate_key(cid, source_type, source_title, label, score) -> str:
     return f"txt:{source_type}:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
+USER_CUTOFFS = True   # 사용자가 절대평가 기준표를 넣을 수 있다(save_course "cutoffs", 계약 28-2)
 MAX_CANDIDATES = 300   # Canvas 성적부 점수까지 들어오면 학기 말에는 100개를 넘을 수 있다(잘리면 추정에서 빠짐)
 
 
