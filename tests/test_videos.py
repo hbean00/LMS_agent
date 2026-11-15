@@ -107,10 +107,12 @@ def test_missing_fields_are_tolerated():
     raw = [{"id": 77, "content_data": {"due_at": "2026-12-01 23:59:59", "item_content_data": {"content_type": "movie"}},
             "attendance_status": "attendance"},
            {"module_item_id": 78, "content_data": {"use_attendance": "1", "due_at": 12345, "duration": True}}]
-    a, b = video_records(raw, "9", "")
+    (a,) = video_records(raw, "9", "")   # 78은 출석만 쓰고 영상이라는 단서가 없어 뺀다(고려대 스마트출결이 영상 16개로 보였던 것, 리드)
     assert (a["id"], a["title"], a["completed"], a["unlock_at"], a["duration"], a["url"]) == ("77", "강의 영상", True,
                                                                                                None, None, None)
     assert parse_iso(a["due_at"]) == datetime(2026, 12, 1, 23, 59, 59, tzinfo=TZ)   # 시간대 없는 값은 PC 시간대
+    raw[1]["content_data"]["item_content_data"] = {"content_type": "mp4"}
+    b = video_records(raw, "9", "")[1]
     assert (b["id"], b["due_at"], b["completed"], b["duration"]) == ("78", None, False, None)  # 숫자 시각은 읽지 않음
 
 
@@ -359,3 +361,64 @@ def test_app_state_with_videos(env, tmp_path):
     flat = text.replace("\r\n ", "")
     assert validate_ics(text) == []
     assert flat.count("SUMMARY:[영상] [") == 2 and flat.count("SUMMARY:✔ [영상] [") == 1
+
+
+# ---------------------------------------------------------------- 고려대 LearningX 실제 모양(리드, 사용자 계정 읽기 전용 진단 2026-11-15)
+# 진단 결과: 영상(녹화 강의)은 content_data.item_content_type "commons"(Commons에 올린 미디어) + item_content_data.content_type "zoom"
+# (줌 녹화본을 올린 것, duration 초·progress_support·/em/ 뷰어). 대면 수업의 스마트출결은 item_content_type "smart_attendance"
+# (제목이 날짜, schedule_time·attendance_time_limit, duration 75 = 분). 값은 지어낸 것(모양만 같음).
+
+def ku_item(item_id, title, ict, icd, unlock=None, due=None, lock=None, completed=False, status="none"):
+    return {"module_item_id": item_id + 700000, "title": title, "content_type": "attendance_item", "content_id": item_id,
+            "content_data": {"item_id": item_id, "course_id": 9001, "use_attendance": True, "item_content_type": ict,
+                             "item_content_id": f"c{item_id}", "title": title, "published": True,
+                             "lecture_period_status": "open", "unlock_at": unlock or z(-10, 0, 0, 0),
+                             "late_at": None, "due_at": due or z(5), "lock_at": lock, "item_content_data": icd,
+                             "opened": True},
+            "position": 1, "published": None, "url": f"/learningx/lti/lecture_attendance/items/view/{item_id}",
+            "completion_determinable": True, "attendance_status": status, "completed": completed}
+
+
+KU_RECORDING = ku_item(810001, "Timing Closure Lecture 7", "commons",
+                       {"_id": "x1", "content_id": "x1c", "content_type": "zoom", "view_url": "/em/x1c",
+                        "progress_support": True, "duration": 3424.58, "title": "Timing Closure Lecture 7",
+                        "total_file_size": 300000000})
+KU_SMART_ATTENDANCE = ku_item(820001, "2026-09-08", "smart_attendance",
+                              {"_id": "s1", "closed": False, "qr_mode": False, "title": "2026-09-08",
+                               "schedule_time": "2026-09-08T01:30:00+00:00", "duration": 75,
+                               "url": "/smart-attendance/lti/attendances/s1", "attendance_time_limit": 4800,
+                               "started": True}, unlock="2026-09-08T01:30:00Z", due="2026-09-08T02:45:39Z",
+                              lock="2026-09-08T02:45:39Z", completed=True, status="attendance")
+KU_LIVE_ZOOM = ku_item(830001, "실시간 줌 수업", "zoom", {"content_type": "zoom", "start_time": z(1, 10, 30, 0), "duration": 75})
+KU_BARE = ku_item(840001, "출석 항목(내용 모름)", "", {})
+
+
+def test_ku_recorded_lecture_on_commons_is_a_video():
+    """ASIC처럼 줌 녹화본을 Commons에 올린 영상(content_type 'zoom')은 영상이다 — v0.8.0은 'zoom'을 실시간 수업으로 보고 뺐다."""
+    (v,) = video_records(modules(KU_RECORDING), "9001", BASE)
+    assert (v["id"], v["title"], v["completed"], v["duration"]) == ("810001", "Timing Closure Lecture 7", False, 3425)
+    assert parse_iso(v["due_at"]) == parse_iso(z(5))
+
+
+@pytest.mark.parametrize("item,why", [
+    (KU_SMART_ATTENDANCE, "대면 수업의 스마트출결(로봇공학개론처럼 제목이 날짜) — v0.8.0은 영상 16개로 보였다"),
+    (KU_LIVE_ZOOM, "실시간 줌 수업(녹화본이 아님)"),
+    (KU_BARE, "출석에 쓰지만 영상이라는 단서가 없음"),
+])
+def test_ku_attendance_checks_are_not_videos(item, why):
+    assert video_records(modules(item), "9001", BASE) == [], why
+
+
+def test_ku_tool_list_picks_module_builder_not_survey():
+    """고려대 과목의 LearningX 도구 목록(과목 메뉴 글자 없음): '설문(주차학습)'(설문 도구)이 아니라 '주차학습(모듈)'을 고른다.
+    관리자 도구는 고르지 않는다(학생은 실행이 거절됨 — 401)."""
+    tools = [{"id": 1320, "name": "(구)운영현황조회", "url": f"{BASE}/learningx/lti/admin/statistics"},
+             {"id": 5, "name": "게시판", "url": f"{BASE}/learningx/lti/learningx_board/boards"},
+             {"id": 763, "name": "설문(주차학습)", "url": f"{BASE}/learningx/lti/survey/surveys"},
+             {"id": 2, "name": "출결현황(강의/출결)", "url": f"{BASE}/learningx/lti/lecture_attendance/course_menu"},
+             {"id": 1, "name": "주차학습(모듈)", "url": f"{BASE}/learningx/lti/modulebuilder"},
+             {"id": 17, "name": "학습현황조회", "url": f"{BASE}/learningx/lti/admin/learning-statistics"}]
+    assert LearningX.video_tool(None, "1", tools)["id"] == 1
+    assert LearningX.video_tool(None, "1", [t for t in tools if t["id"] != 1])["id"] == 2
+    only_bad = [t for t in tools if t["id"] in (1320, 763, 17, 5)]
+    assert LearningX.video_tool(None, "1", only_bad) is None

@@ -34,6 +34,9 @@ _CHUNK = 64 * 1024
 _VIDEO_TOOL = re.compile(r"주차\s*학습|강의\s*콘텐츠|학습\s*콘텐츠|모듈|modules?|lecture\s*contents?|weekly\s*learning", re.I)
 _ATTEND_TOOL = re.compile(r"출결|출석|학습\s*현황|attendance|learn\s*status", re.I)
 _LEGACY_TOOL = re.compile(r"(?:^|\s)\((?:구|old)\)", re.I)
+_VIDEO_TOOL_PATHS = ("/modulebuilder", "/lecture_attendance")   # 주차학습(모듈) · 출결현황(강의/출결)
+_NOT_VIDEO_TOOL_PATH = re.compile(r"/admin/|/survey|/question_banks|/offline_exam|/notification_message|/mycms|/myspace|"
+                                  r"/redirect|/learningx_config|/learningx_setting|/totalgradebook")
 
 
 class LearningXError(Exception):
@@ -142,13 +145,23 @@ class LearningX:
         """강의 영상(주차학습)을 읽을 LearningX 도구(계약 26-6): 이름·과목 메뉴 글자가 '주차학습·강의콘텐츠·모듈'인 것,
         없으면 '출결·학습현황'. 옛 도구('(구) 강의콘텐츠')보다 지금 도구를, 과목 메뉴에 보이는 것을 먼저. 없으면 None."""
         tools = LearningX.tools(canvas, course_id) if tools is None else tools
+
+        def path(t) -> str:
+            return urllib.parse.urlsplit(str(t.get("url") or "")).path.lower()
+
+        # 관리자 도구(학생은 실행 거절 401)·설문 도구('설문(주차학습)')·게시판은 고르지 않는다(고려대 실제 목록, 리드 진단 2026-11-15)
         lx = [t for t in tools or [] if isinstance(t, dict) and t.get("id") is not None
-              and "/learningx/" in str(t.get("url") or "") and BOARD_TOOL_PATH not in str(t.get("url") or "")]
+              and "/learningx/" in str(t.get("url") or "") and BOARD_TOOL_PATH not in str(t.get("url") or "")
+              and not _NOT_VIDEO_TOOL_PATH.search(path(t))]
 
         def label(t) -> str:
             nav = t.get("course_navigation") if isinstance(t.get("course_navigation"), dict) else {}
             return f"{nav.get('text') or ''} {t.get('name') or ''}"
 
+        for want in _VIDEO_TOOL_PATHS:   # 표준 LearningX 경로가 이름보다 확실하다(이름은 학교·과목마다 다름)
+            found = [t for t in lx if want in path(t)]
+            if found:
+                return found[0]
         for rx in (_VIDEO_TOOL, _ATTEND_TOOL):
             found = [t for t in lx if rx.search(label(t))]
             found.sort(key=lambda t: (bool(_LEGACY_TOOL.search(label(t))), not t.get("course_navigation")))
@@ -415,6 +428,8 @@ _NOT_VIDEO_KINDS = {"assignment", "quiz", "offline_exam", "exam", "survey", "dis
 _DOC_MEDIA = {"pdf", "file", "doc", "docx", "ppt", "pptx", "hwp", "hwpx", "xls", "xlsx", "csv", "zip", "image", "img",
               "html", "text", "txt", "link", "url", "webpage", "document"}
 _LIVE_MEDIA = {"zoom", "video_conference", "videoconference", "webex", "live", "meet", "teams", "bigbluebutton"}
+_ATTEND_ONLY = {"smart_attendance", "offline_attendance", "attendance", "electronic_attendance", "qr_attendance",
+                "offline", "classroom"}
 _VIDEO_MEDIA = {"mp4", "everlec", "movie", "screenlecture", "youtube", "vod", "video", "commons", "kollus", "vimeo",
                 "m3u8", "mov", "webm", "wmv", "avi", "flv", "mp3", "audio"}
 _YES = {"true", "1", "yes", "y", "complete", "completed", "done"}
@@ -492,13 +507,23 @@ def video_records(raw, course_id, base_url: str, tool_id=None) -> list[dict]:
             return it.get(key) if v is None else v
 
         kind = str(it.get("type") or it.get("content_type") or cd.get("type") or "").strip().lower()
-        media = str(icd.get("content_type") or cd.get("item_content_type") or "").strip().lower()
-        if kind in _NOT_VIDEO_KINDS or media in _DOC_MEDIA or media in _LIVE_MEDIA:
+        # 담긴 것의 종류(고려대 실제 응답, 리드 진단 2026-11-15): content_data.item_content_type — "commons"(Commons에 올린 미디어·문서),
+        # "smart_attendance"(대면 수업 출석 체크), "zoom"(실시간 화상 수업) … allcomponents 모양은 type "commons" + commons_content.
+        holder = str(cd.get("item_content_type") or ("commons" if kind == "commons" else "")).strip().lower()
+        media = str(icd.get("content_type") or "").strip().lower()
+        if kind in _NOT_VIDEO_KINDS or holder in _NOT_VIDEO_KINDS or media in _DOC_MEDIA or holder in _DOC_MEDIA:
             continue
+        if holder in _ATTEND_ONLY or icd.get("schedule_time") or icd.get("attendance_time_limit"):
+            continue   # 수업 시간의 출석 체크(제목이 날짜, 창이 수업 시간) — 영상이 아니다
+        if holder in _LIVE_MEDIA or (media in _LIVE_MEDIA and holder != "commons"):
+            continue   # 실시간 화상 수업. Commons에 올린 줌 '녹화본'(content_type "zoom")은 영상이다
         if _flag(it.get("published")) is False or _flag(cd.get("published")) is False:
             continue
         attend = _flag(pick("use_attendance"))
-        if not (attend is True or (media in _VIDEO_MEDIA and attend is not False)):
+        # 영상이라는 단서가 있어야 한다: Commons 미디어·영상 종류·진도(progress_support)·미디어 뷰어(/em/) — 출석만 쓰는 항목은 아니다
+        is_media = (holder == "commons" or media in _VIDEO_MEDIA or holder in _VIDEO_MEDIA
+                    or icd.get("progress_support") is True or str(icd.get("view_url") or "").startswith("/em/"))
+        if not is_media or attend is False:
             continue
         vid = next((v for v in (cd.get("item_id"), it.get("component_id"), it.get("item_id"), it.get("module_item_id"),
                                 it.get("id")) if v not in (None, "") and not isinstance(v, (bool, dict, list))), None)

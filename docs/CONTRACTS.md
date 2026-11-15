@@ -1350,3 +1350,17 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
   - 튜토리얼 판 4(기존 사용자에게 '물어보면 답해요' 단계 다시 — 바로 고치고 되돌리기), 채팅 소개 글 바꿈.
   - 확인(데모, 가짜 AI): 'Homework 5 중복된 거 지워줘' → list_items → item_remove 바로 반영(Canvas 과제는 남고 공지에서 찾은 중복만 제외), 같은 대화에서 'LAB 6 일정 지워줘'
     → 다른 과목의 LAB 6을 찾아 바로 반영, 채팅 창에 '한 일 2단계'·'바로 반영했어요 · AI · [되돌리기]', 대시보드에 영상 3개('영상' 꼬리표·시청 완료).
+
+### 26-8. 강의 영상 고침 — v0.8.1 (사용자 제보 2026-11-15: "로봇공학개론은 영상이 없는데 영상 시청이 여러 개 뜨고, 영상이 필요한 ASIC은 안 된다")
+
+사용자 요청으로 사용자 계정에서 읽기 전용 진단(앱이 저장한 연결, 토큰·학번 출력 없음, 임시 사본은 끝나고 지움):
+- 고려대 LearningX `/modules?include_detail=true`의 attendance_item은 `content_data.item_content_type`으로 갈린다 — 녹화 강의는 `"commons"`
+  (Commons에 올린 미디어, `item_content_data.content_type`은 줌 녹화본이면 `"zoom"`, duration 초·progress_support·뷰어 `/em/…`, 창은 몇 주),
+  대면 수업의 출석 체크는 `"smart_attendance"`(제목이 날짜, `schedule_time`·`attendance_time_limit`, duration 75 = 분, 창은 수업 시간).
+- v0.8.0은 `content_type "zoom"`을 실시간 수업으로 보고 ASIC 영상 6개를 모두 뺐고, 출석만 쓰는 항목을 영상으로 봐서 로봇공학개론 스마트출결 16개를 영상으로 보였다.
+- 고침(`learningx.video_records`): 출석 체크(`smart_attendance` 등, `schedule_time`·`attendance_time_limit`)·실시간 화상 수업(item_content_type이 zoom 등)·문서는 뺀다.
+  Commons의 줌 녹화본은 영상. 영상이라는 단서(Commons 미디어·영상 종류·progress_support·`/em/` 뷰어)가 있어야 영상 — 출석만 쓰는 항목은 아니다.
+- 도구 고르기(`LearningX.video_tool`): 표준 경로 `/modulebuilder`(주차학습(모듈)) > `/lecture_attendance`(출결현황) > 이름. 관리자(`/admin/`)·설문(`/survey`)·문제은행 등은 고르지 않는다
+  (v0.8.0은 이름의 '주차학습'만 보고 '설문(주차학습)'을 골랐다 — 출입증은 같아 읽히긴 했음).
+- 확인(사용자 계정, 임시 폴더에 동기화 한 번): ASIC 영상 6개(‘Logic Synthesis STA’ 11/20 00:00 미시청 = 베타테스터가 말한 영상), 로봇공학개론 영상 0개이고
+  항목은 Project1·Project2·Report·기말고사뿐('Assignment' 없음 — 26-5 고침도 실제 데이터로 확인), 인권과 성평등 교육(온라인) 영상 5개, 오류 없음.
