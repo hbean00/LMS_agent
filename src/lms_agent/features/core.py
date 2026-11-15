@@ -4,7 +4,7 @@ from __future__ import annotations
 from importlib import resources
 
 from .. import __version__
-from .. import core
+from .. import agent_cli, core
 from ..api import ApiError, Response, router
 from ..canvas import CanvasError
 from ..config import is_configured
@@ -18,13 +18,24 @@ SETTINGS = {"include_canvas": True, "weekly_summary": True, "review_reminder": F
             "update_check": True, "auto_update": False}                                # 계약 19장
 # 정수 설정: 키 → (기본값, 최솟값, 최댓값). tutorial_version = 마지막으로 본(또는 넘긴) 튜토리얼 판(계약 8장)
 INT_SETTINGS = {"tutorial_version": (0, 0, 1000)}
+# 몇 개 중에서 고르는 정수 설정: 키 → (기본값, 고를 수 있는 값, 400 문구).
+# ai_daily_limit = 하루 AI 호출 한도(묻기·동기화·확인함 정리 모두 셈, 0 = 제한 없음 — 계약 26-0, agent_cli.daily_limit가 읽는다)
+CHOICE_SETTINGS = {"ai_daily_limit": (agent_cli.MAX_CALLS_PER_DAY, agent_cli.DAILY_CHOICES,
+                                      "하루 AI 사용 한도는 30·100·300·0(제한 없음) 중 하나만 고를 수 있어요")}
+
+
+def _is_int(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def _settings_view(saved: dict) -> dict:
     out = {k: bool(saved.get(k, default)) for k, default in SETTINGS.items()}
     for k, (default, lo, hi) in INT_SETTINGS.items():
         v = saved.get(k, default)
-        out[k] = v if isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi else default
+        out[k] = v if _is_int(v) and lo <= v <= hi else default
+    for k, (default, choices, _) in CHOICE_SETTINGS.items():
+        v = saved.get(k, default)
+        out[k] = v if _is_int(v) and v in choices else default
     return out
 
 
@@ -162,16 +173,21 @@ def settings(app, body):
     for key, (_, lo, hi) in INT_SETTINGS.items():
         if key in body:
             v = body[key]
-            if not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi:
+            if not _is_int(v) or not lo <= v <= hi:
                 raise ApiError(400, f"{key}는 {lo}~{hi} 사이의 정수여야 해요")
+    for key, (_, choices, msg) in CHOICE_SETTINGS.items():   # 하나라도 틀리면 아무것도 저장하지 않는다
+        if key in body and (not _is_int(body[key]) or body[key] not in choices):
+            raise ApiError(400, msg)
     for key in SETTINGS:
         if key in body:
             app.store.data["settings"][key] = bool(body[key])
-    for key in INT_SETTINGS:
+    for key in (*INT_SETTINGS, *CHOICE_SETTINGS):
         if key in body:
             app.store.data["settings"][key] = body[key]
     app.store.save()
-    app.emit("changed")
+    # 하루 AI 한도만 바꾸면 일정이 바뀌지 않으므로 구글 반영 등(changed)을 부르지 않는다
+    if not body or any(k not in CHOICE_SETTINGS for k in body):
+        app.emit("changed")
     return app.state()
 
 

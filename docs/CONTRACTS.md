@@ -1218,3 +1218,135 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
   AI 보호: `gradebook._ai_target`·`_dist_target`은 반 전체 점수표(글 모양으로 판단)를 고르지 않는다(AI에는 내 값·반 집계만).
 - **화면(리드)**: 자료 목록의 표 파일에 '표 내용 읽음' / '내용을 못 읽은 표'(이유 = sheet_notes 첫 줄) 꼬리표. 데모: 디지털신호처리 공지 'Quiz 2 결과 안내'(15일 전)의 `Quiz2_성적.xlsx` → 데모 학번으로 'Quiz 2' 9/10·7명 중 2등 후보.
 - **확인 안 된 것**: 베타테스터의 실제 '디지털통신' 파일(형식·모양을 모름 — 위 규칙으로 못 읽으면 자료 화면 꼬리표에 이유가 보인다), 두 줄로 합쳐진 머리글(합치지 않음), 표 안의 날짜로 마감 찾기(일련번호라 안 됨).
+
+## 26. 에이전트 v2(도구를 쓰는 AI 루프)·지우기와 고치기·첨부의 'Assignment' 중복·강의 영상 마감 — v0.8.0 (사용자 요청 2026-11-14)
+
+요청: "대화가 잘 안 된다. 뭔가를 요청하면 일단 문서를 무조건 탐색한다", "잘못 기입된 일정·성적 제거를 요청했는데 다른 소리부터 한다",
+"Assignment가 중복 등록된 것 같아 없애 줘 … 로봇공학개론은 Report·Project 2만 있어야 하는데 'Assignment' 칸이 더 생겼다",
+베타테스터 "그 영상 듣는 거 마감 기한은 안 뜨는지 — 에이직 영상도 6일인가 남았는데" → "0.8.0에 추가". 설계: `docs/AGENT_V2.md`(사용자 결정 7절).
+
+### 26-0. 파일 소유 (서브에이전트 병렬 — 남의 파일은 고치지 않는다. 필요하면 리드에게 알린다)
+
+| 담당 | 파일 | 테스트 |
+|---|---|---|
+| A 루프 | `agent_loop.py`(새 — 도구 루프·읽기 도구·propose 도구 → 제안), `agent.py`(`answer`가 AI가 켜져 있으면 루프를 먼저, `run_job`의 바로 반영·진행 표시. 리드가 넣은 26-3 연결 줄은 그대로), `agent_cli.py`(작업 `agent` 등록, 하루 한도 `daily_limit`), `mock_ai.py`(작업 `agent`의 가짜 답), `features/agent.py` | `tests/test_agent_loop.py`(새), 기존 `test_agent*.py` |
+| B 지우기·고치기 | `agent_fix.py`(리드가 만든 빈 모듈 — 이름·모양 고정), `gradebook.py`·`weights.py`는 '지운 평가 항목을 자동 채우기가 다시 만들지 않게'에 필요한 곳만 | `tests/test_agent_fix.py`(새) |
+| C 화면·설정 | `web/index.html`, `features/core.py`(설정 `ai_daily_limit`), `features/ai.py`(한도 표시) | `tests/test_settings*.py` 또는 새 `tests/test_ai_limit.py` |
+| D 수집 | `core.py`(`build_items`의 첨부 PDF 처리 26-5, 영상 항목 26-6, `calendar_payload`의 영상 표시), `learningx.py`(영상 목록), `canvas.py`(필요하면), `mock_canvas.py`(데모 영상·첨부), `ics.py`·`gsync.py`(제목 표시만) | `tests/test_attached_dupes.py`(새), `tests/test_videos.py`(새), 데모 기대값 바뀌는 기존 테스트 |
+| 리드 | `docs/*`, `README.md`, 버전, `features/__init__.py`, 26-3 연결 줄(`agent.py`의 TYPES·check_proposal 갈림·_RAW_KEYS·_handles·`_fix_apply`) | 전체 |
+
+### 26-1. 루프 (A, `agent_loop.run`)
+
+- AI가 켜져 있고(settings.ai_cli) 한도가 남아 있으면 `agent.answer`는 **먼저 루프**를 돈다. 루프가 실패(실행기 없음·한도·검사 실패 2번)하면 지금(v0.7.3)의
+  갈래(actions → fix → mail → plan → whatif → chat_intent → missing/question → chat)로 답하고 notes에 이유를 남긴다. AI가 꺼져 있으면 갈래만.
+- 한 번 묻기: AI 작업 `agent`를 **최대 3번**(도구 왕복) + 검사 실패 다시 묻기 1번 = `PER_ASK` 4. 한 번 90초.
+- AI 답(매 차례 JSON 하나): `{"say": str, "calls": [{"tool": str, "args": {}}](≤4), "done": bool, "citations": [{"source_key", "quote"}]?}`.
+  done이면 say가 최종 답(한국어). 읽기 도구 결과는 다음 차례 입력에 붙인다(가림, 전체 12,000자 안). propose 도구는 실행하지 않고 제안(26-2)을 만든다.
+- AI에게 주는 것: 메시지·같은 대화의 앞 차례(가림)·과목 목록(id·짧은 이름)·앱이 할 수 있는 일·도구 목록·지금 상태 요약(과목별 다가오는 마감과
+  **모든 항목 id**, 평가 항목 이름·비중 — 점수는 `get_grades`로만). 주지 않는 것: 토큰·비밀값, 다른 학생 정보, **구글 캘린더 개인 일정**, 이메일·학번(가림).
+- 답 검사: say는 1~1,500자, citations의 quote는 이번 묻기의 도구 결과에 그대로 있어야 하고(아니면 다시 묻기), 답의 '했어요·지웠어요'는 이번에 반영한
+  제안이 있을 때만(없으면 '제안했어요'로 — 검사 실패). 숫자 계산(성적)은 `whatif` 도구 결과만.
+
+### 26-2. 도구 (A)
+
+읽기(바로 실행): `search_texts(query, course_id?)`(= `agent._search`), `list_items(course_id?, status?, from?, to?, query?)`
+(id·제목·마감·상태·origin·duplicate_of·linked_to·출처 제목, 최대 40), `get_item(item_id)`(근거 사슬·결정 기록), `get_grades(course_id)`
+(평가 항목 id 없이 이름·비중·출처·auto, 점수·추정·학점 비율, 연결된 점수 후보 key), `whatif(course_id, question)`(= `whatif.handle`의 계산),
+`list_materials(course_id?, category?)`, `get_settings()`(켜진 설정·연결 상태만).
+바꾸기(제안만): `propose_item_remove{item_id, reason}`, `propose_item_merge{keep_id, drop_id, reason}`,
+`propose_component_remove{course_id, component, merge_into?, reason}`, `propose_score_clear{course_id, component, which?, key?, reason}`,
+`propose_add_deadline` / `propose_fix_due` / `propose_link_score` / `propose_count` / `propose_weights` / `propose_dist`(20-3 모양 그대로, evidence 필요),
+`propose_action{action, params}`(22-9), `draft_mail{…}`·`make_plan{…}`(maildraft·plan의 handle을 그 메시지로).
+모든 propose의 args에 `auto: bool`(아래 26-4). 제안은 `agent.check_proposal`로 검사한다(새 넷은 `agent_fix.check`로 감 — 리드가 연결함).
+
+### 26-3. 지우기·고치기 제안 (B, `agent_fix`)
+
+| type | 칸 | 반영 | 되돌리기 |
+|---|---|---|---|
+| `item_remove` | item_id, reason | 에이전트가 넣은 항목(origin "agent")은 `agent_items`에서 지움, 그 밖(found·canvas·영상)은 사용자 결정 `rejected`(by·이유) | 이전 기록·사용자 칸 |
+| `item_merge` | keep_id, drop_id, reason | 같은 과목의 서로 다른 두 항목 — drop을 `rejected`, 이유 "'keep 제목'과 같은 과제라 하나로 합쳤어요" | 이전 사용자 칸 |
+| `component_remove` | course_id, component, merge_into?, reason | 성적 설정에서 그 평가 항목을 뺌(merge_into면 비중을 더함). **자동 채우기·AI가 다시 만들지 않게** 지운 이름을 기록 | 이전 성적 설정 |
+| `score_clear` | course_id, component, which(`score`·`link`), key?, reason | score: 그 항목의 점수·만점·평균·표준편차를 비움 / link: 점수 후보 key의 연결을 '연결 안 함'으로 | 이전 값 |
+
+- 화면용 모양은 20-3과 같고(`summary`에 대상의 과목·제목·날짜 또는 항목 이름·비중을 그대로), 근거 글은 필요 없다(사용자의 요청이 근거). 대상이 없거나
+  숨긴 과목이면 rejected_reason. 반영은 `agent.apply`(다시 검사 → APPLY), 그 사이 사용자가 바꿨으면 되돌리기는 409.
+- 규칙 갈래 `agent_fix.handle`: AI가 꺼져 있을 때 '지워줘·없애줘·삭제·빼줘·합쳐줘·중복' + 항목 제목/평가 항목 이름이 메시지에 있으면 그 제안 카드(바로 반영 안 함).
+
+### 26-4. 바로 반영(사용자 결정 B)과 진행 표시 (A·C)
+
+- 제안에 `auto: true`가 붙을 수 있는 것: 위 넷 + fix_due·link_score·set_count·add_deadline. 하네스 조건: AI가 auto를 냈고, 사용자 메시지가 시키는 말
+  (지워·없애·삭제·빼·합쳐·고쳐·바꿔·추가·넣어·등록·연결·remove·delete·fix …)이고, 대상이 하나로 정해지며, 검사를 통과함. 그러면 `run_job`이 답을 저장한 뒤
+  같은 잠금 안에서 `agent.apply`로 반영하고 제안에 `auto_applied: true`(실패하면 카드로 남고 notes에 이유). 앱 동작(action)·업데이트는 바로 하지 않는다.
+- 차례 칸 추가: `steps: [{"round", "tool", "label"(한국어, 예: "마감 목록 보기"), "ok", "note"(짧은 결과 — "12개")}]`, 답하는 중에는
+  `progress: str | null`("마감 목록 보는 중…"). 제안 칸 추가: `auto`, `auto_applied`.
+- 반영한 것이 마감·항목을 바꾸면(add_deadline·fix_due·item_remove·item_merge) `changed`를 알린다(구글 캘린더).
+- 화면(C): 단계 목록(접힘), 바로 반영한 제안은 "바로 반영했어요 · [되돌리기]"(decided_by ai), 새 넷의 카드(summary·이유), 영상 항목 꼬리표(26-6).
+
+### 26-5. 첨부 파일의 'Assignment' 중복 (D)
+
+원인(리드 확인 — 사용자의 11/14 v0.7.1 데이터에는 로봇공학개론이 Project1·Project2·Report·기말고사만): v0.7.2부터 공지·과제 설명에 링크된 파일(24-3)도
+마감을 찾는데, PDF 출처는 `source_title`이 없고 과제 연결(`own`)도 없어서 파일 속 'Assignment … due 11/17' 같은 문장이 제목 'Assignment'인 **따로 된 항목**이 된다.
+고침(일반 규칙): 첨부 PDF의 후보는 그 파일이 붙은 글(attached_to)을 출처처럼 다룬다 — 과제에 붙은 파일이면 그 과제가 `own`(과제 설명과 같게: 같은 날이면 건너뜀,
+마감 없는 과제면 연결), 공지·게시판에 붙은 파일이면 그 글 제목을 `source_title`로. 제목 힌트가 번호 없는 일반 낱말(Assignment·과제·HW·Homework …)이면
+그 글/과제 제목을 쓴다. 그래서 같은 날의 Canvas 과제와는 중복(duplicate_of), 다른 날이면 같은 과제의 다른 마감(conflict)으로 보인다.
+
+### 26-6. 강의 영상 시청 마감 (D, `learningx.py`·`core.py`)
+
+- 수집: LearningX(게시판과 같은 Canvas 토큰 → LTI 실행 → `xn_api_token`, 저장·출력 안 함)의 주차학습 구성 요소 중 영상(출석 인정 기간이 있는 것).
+  `cache["videos"] = [{course_id, id, title, unlock_at, due_at, late_at, lock_at, completed, attendance, duration, url}]`. 못 받으면 오류 한 줄(다른 수집은 계속).
+- 항목: `origin "video"`, id `video-<과목>-<id>`, kind "과제", method "lms", `canvas_submitted` = 시청 완료, `default_decision "approved"`(LMS가 정한 마감),
+  `video: {unlock_at, due_at, late_at, lock_at, duration, attendance}`, notes에 출석 인정 기간. 마감(due_at)이 없는 영상은 항목을 만들지 않는다.
+- 일정·구글: 제목 앞에 "[영상] ". 화면(C): 항목에 '영상' 꼬리표, 완료면 '시청 완료'.
+- 데모: 디지털신호처리 등 두 과목에 영상 3개(하나 완료, 하나 6일 뒤, 하나 2주 뒤 — 날짜는 오늘 기준).
+
+### 26-7. 구현 결과 (v0.8.0, 서브에이전트 A 루프·B 지우기·C 화면·D 수집 병렬 → 리드 통합)
+
+- **B 지우기·고치기(`agent_fix.py`)**: 네 종류의 raw 칸 — `item_remove{item_id, reason, course_id?}`, `item_merge{keep_id, drop_id, reason, course_id?}`,
+  `component_remove{course_id, component(또는 name), merge_into?, reason}`, `score_clear{course_id, component, which?("score"|"link", key가 있으면 link), key?, reason}`,
+  모두 `auto?`. 평가 항목 이름은 대소문자·띄어쓰기·별칭(Assignment ↔ 과제)으로 맞추되 하나로 정해질 때만. 화면 칸 추가: item_* (`item_title`·`item_due`·
+  `item_kind`·`item_status`·`item_origin`), merge(`keep_title`·`drop_title`·`keep_due`·`drop_due`), component(`weight`·`merge_weight`·`new_weight`),
+  score(`cleared` 또는 `score_label`·`score`·`max_score`·`link_by`).
+  - 에이전트가 넣은 항목(`agent_items`에 있는 id — origin은 "found")은 기록을 지우고, 그 기록이 흡수했던 규칙 후보도 제외(지운 마감이 확인함에 되살아나지 않게).
+    그 밖은 사용자 결정 `rejected`(AI면 decided_by "ai"·이유, 규칙 카드면 "user")·`agent_ref`. Canvas 과제를 빼도 Canvas는 그대로, 앱 일정·캘린더에서만 빠진다.
+  - 지운 평가 항목: `grades[cid].removed = [{name, weight, merge_into, at, by, reason}]` → `gradebook.auto_fill`이 규칙·AI 결과에서 그 이름을 빼고
+    (`drop_removed`, merge_into면 비중을 그쪽에), `auto_notes`에 "지운 평가 항목은 다시 넣지 않았어요". 사용자가 직접 다시 넣으면(성적 저장·채팅 set_weights) 기록에서 빠진다.
+  - 연결 떼기: `grade_links[cid][key] = {"component": null, …}` — AI·규칙 연결보다 우선하는 '연결 안 함'.
+  - 되돌리기 충돌은 그 대상만 비교(항목의 사용자 칸 / components·removed / 점수 네 칸 / 그 연결 칸).
+  - 규칙 갈래(`handle`·`wants_fix`): 시키는 말(지워·없애·빼·떼·합쳐·삭제해·제거해·중복…정리해 + 줘/주세요/문장 끝, remove·delete·merge …)만, '과제 지워지면
+    어떻게 돼?'·'Report랑 합쳐서 몇 점이야?'는 None. 대상은 항목 제목·평가 항목 이름(한글은 낱말 처음, 조사 허용)·번호 토큰, 과목 이름·'말고'·
+    성적/일정 낱말로 좁힌다. 'A를 B에 합쳐' → merge_into / item_merge, '중복' 항목 → 짝(duplicate_of·같은 마감)을 찾아 Canvas > 영상 > 그 밖 순으로 남김.
+- **C 화면·설정**: `settings.ai_daily_limit`(30·100·300·0, 다른 값 400 — 그 요청의 다른 칸도 저장 안 함, 이것만 바꾸면 `changed` 안 냄),
+  `state.ai.daily_limit = {value(0 = 제한 없음), choices, default, left(null = 제한 없음), reached}`. 설정 → AI 고르기·오늘 사용 수, 채팅 머리 '오늘 n/한도번'.
+  채팅: progress·'한 일 N단계'(접힘, 실패한 단계 '못 함')·바로 반영 카드·새 넷의 단추 이름(일정에서 빼기·하나로 합치기·평가 항목 지우기·점수 지우기/연결 떼기)·
+  모르는 kind는 일반 모양으로. 영상: '영상'·'시청 완료' 꼬리표, 마감이 지났어도 지각 인정 기간이면 '지각 인정 …까지', 근거 사슬에 '시청 기간'.
+  `calendarItems()`는 `store.calendar_items`와 같은 규칙(found 또는 include_canvas). 에이전트는 하루 한도를 바꾸지 않는다(`actions.FORBIDDEN` "ai_limit").
+- **D 수집**:
+  - 26-5: PDF 후보는 attached_to의 글을 출처처럼(과제면 own, 공지·게시판이면 그 제목), 번호 없는 일반 낱말 힌트는 그 글/과제 제목으로 맞춘다
+    (`links.families`·`extract.title_tokens`로 판단). 같은 날 → duplicate_of, 다른 날 → 과제 이름 + 충돌 알림(notes). extract 규칙은 그대로.
+  - 26-6: `GET /learningx/api/v1/courses/{id}/modules?include_detail=true`(Bearer `xn_api_token` — '주차학습'·'강의콘텐츠' 도구, 없으면 '출결' 도구의 실행에서)
+    → `content_data`의 `use_attendance`·`unlock_at`·`due_at`·`late_at`·`lock_at`, `item_content_data.duration`, `completed`·`attendance_status`.
+    404면 옛 `allcomponents_db?user_id&user_login&role=1`(login_id는 `/api/v1/users/self/profile`에서 메모리에만), 둘 다 안 되고 지난 영상도 없으면
+    Canvas `modules?include[]=items&include[]=content_details`(LearningX 외부 도구 + due_at만). 실패하면 과목 이름을 담은 오류 한 줄, 지난 영상은 유지.
+    `cache["videos"]`·`cache["lx_video_tools"]`, `report["videos"]`, `store.view()`의 `video`. 일정·구글 제목 "[영상] [과목] 제목"(시청 완료면 앞에 "✔ "),
+    설명 "강의 영상 시청(출석)", ics CATEGORIES "강의 영상". 주간 요약 '영상 N'. 영상은 평가 항목 연결·개수 관찰에서 뺀다(리드), 회고의 안 본 영상은
+    '시청 완료 표시가 없어요'(리드). `include_canvas`를 끄면 영상도 캘린더에서 빠진다(LMS가 정한 마감).
+  - 근거(다른 학교 실제 계정으로 확인된 공개 코드): hjkim24/learningx-alert-web(성균관대·한양대, `allcomponents_db`에는 영상이 없었다는 기록), lostmostcost/LearningXXX(경희대),
+    daunload/soongsil-lms-noti(숭실대), again7536/icampus-manager·ductility/iCampusCheck(옛 경로). **고려대 계정으로는 확인 안 됨** — 릴리스 뒤 실제 동기화로 확인.
+- **A 루프(`agent_loop.py`·`agent.py`·`agent_cli.py` 작업 `agent`·`mock_ai.py`·`features/agent.py`)**: AI 답 `{"say", "calls"(≤4), "done", "citations"?}`(스키마 필수는 done,
+  calls 없으면 끝), 3차례 + 다시 묻기 1번(`PER_ASK` 4, 셋째 차례는 '마지막'이라 say 필수). 읽기 도구는 `search_texts`·`list_items`·`get_item`·`get_grades`·`whatif`·
+  `list_materials`·`get_settings`, 미리 보기로 `draft_mail`·`make_plan`(차례에 draft·plan·whatif로 붙음), 바꾸기는 propose_* 11개. 상태 요약은 3,000자 안에
+  모든 과목·항목 id가 들어가게 줄인다. 차례 `steps[{round, tool, label, ok, note}]`·`progress`(라운드·도구마다, 끝나면 null), 제안 `auto`(하네스의 최종 판단)·
+  `auto_applied`. AI가 auto를 냈는데 하네스가 막으면 note "바로 반영하지 않았어요(이유) — 맞으면 [반영]을 눌러 주세요".
+  - kind: 지우기 넷 → `fix`, 다른 바꾸기 → `missing`, 앱 동작만 → `action`, 그 밖 draft/plan/whatif → 그 이름, search_texts를 썼으면 classify, 다른 읽기만 → `question`, 도구 없음 → `chat`.
+  - 바로 반영 조건: AI의 auto + 시키는 말(`is_imperative`, 묻는 말이면 아님) + 이번 묻기에서 통과한 바꾸기 제안이 하나 + AUTO_TYPES + 대상이 하나(항목 제목이 말·앞 차례에
+    나오고 다른 이름의 항목은 같은 과제여야, 평가 항목은 이름이 말에 나오고 과목 없이 두 과목에 같은 이름이면 애매). `run_job`이 `app.lock`(30초) → 파일 잠금 →
+    합치기 → `agent.apply` → `auto_applied`, 실패하면 카드·note·답 끝에 한 문장(‘했어요’가 남지 않게). 잠금 뒤 `ITEM_TYPES`면 `changed`.
+  - 위기 문장은 루프를 건너뛰고 지금의 chat(도움 번호 보장). 검사 실패 2번이면 남은 호출(최대 2)로 v0.7.3 갈래, 실행기 문제면 다시 띄우지 않고 그 오류를 보여 준다.
+  - 루프 답의 숫자: 성적 글자·'N점'은 whatif·get_grades 결과·인용·학생 말에 있는 것만, 날짜는 도구 결과·상태·말·제안에 있는 것만.
+- **리드(통합)**:
+  - 성적 낱말(성적·평가·비중·점수·학점·grade·score·weight)이 있으면 규칙 갈래에서 `fix`가 `action`보다 먼저('Report 평가 항목 지워줘'가 같은 이름의 마감 제외로 가지 않게).
+  - `list_items`를 과목으로 좁혔을 때 학생 말에 나온 제목이 다른 과목에 있으면 '다른 과목 항목'으로 함께 돌려준다(데모 확인 중 발견: 앞 대화의 과목만 보다가 'LAB 6'을 못 찾음).
+    제안이 모두 다른 과목이면 '앞 대화의 과목에서 찾았어요' 알림을 빼고 보여 준다.
+  - 튜토리얼 판 4(기존 사용자에게 '물어보면 답해요' 단계 다시 — 바로 고치고 되돌리기), 채팅 소개 글 바꿈.
+  - 확인(데모, 가짜 AI): 'Homework 5 중복된 거 지워줘' → list_items → item_remove 바로 반영(Canvas 과제는 남고 공지에서 찾은 중복만 제외), 같은 대화에서 'LAB 6 일정 지워줘'
+    → 다른 과목의 LAB 6을 찾아 바로 반영, 채팅 창에 '한 일 2단계'·'바로 반영했어요 · AI · [되돌리기]', 대시보드에 영상 3개('영상' 꼬리표·시청 완료).

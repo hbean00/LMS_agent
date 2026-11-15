@@ -988,6 +988,12 @@ body.has-corner #toast { bottom: calc(var(--corner-h, 0px) + 36px); }
 .ai-cases { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 3px; font-size: 14px; }
 .ai-cases li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .ai-cases .ok { color: var(--graphite); }
+/* 하루 AI 사용 한도(계약 26-0): 고르기 + 오늘 쓴 수 */
+.ai-limit { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); display: grid; gap: 4px; }
+.ai-limit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 15.5px; }
+.ai-limit-row .input { width: auto; min-width: 140px; max-width: 100%; height: 38px; }
+.ai-limit-use { font-variant-numeric: tabular-nums; color: var(--graphite); }
+.ai-limit-use.warn { color: var(--burgundy); }
 .moods { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 14px; }
 .mood { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--rule-strong); border-radius: 10px; }
 .mood-top { display: flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 700; }
@@ -1184,6 +1190,23 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
 .ag-done > b { display: inline-flex; align-items: center; gap: 4px; color: var(--burgundy); font-weight: 700; }
 .ag-done .linkish { font-size: 14.5px; }
 .ag-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13.5px; color: var(--graphite); }
+/* 답하는 중의 단계 글(계약 26-4 progress)과 끝난 뒤 '한 일 N단계'(steps, 처음엔 접힘) */
+.ag-run .ag-prog { font-weight: 600; overflow-wrap: anywhere; word-break: normal; }
+.ag-steps { justify-self: start; max-width: 100%; font-size: 13.5px; color: var(--graphite); }
+.ag-steps > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; cursor: pointer; font-weight: 600; list-style: none; }
+.ag-steps > summary::-webkit-details-marker { display: none; }
+.ag-steps > summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.ag-steps[open] > summary::before { transform: rotate(45deg); }
+.ag-steps > summary:hover { color: var(--ink); }
+.ag-steps ol { margin: 4px 0 0; padding: 0 0 0 4px; list-style: none; display: grid; gap: 3px; }
+.ag-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding-left: 10px; border-left: 2px solid var(--rule-strong); }
+.ag-step.is-fail { border-left-style: dashed; }
+.ag-step-l { color: var(--ink); }
+.ag-step-n { color: var(--graphite); }
+.ag-step-x { color: var(--burgundy); font-weight: 600; }
+.ag-step-r { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ag-done .tag { height: 22px; font-size: 12.5px; }
+.ag-auto { font-size: 13.5px; color: var(--graphite); }
 .ag-empty { display: flex; align-items: flex-start; gap: 14px; padding: 4px 0; }
 .ag-empty-t { font-size: 16.5px; font-weight: 800; letter-spacing: -.01em; }
 .ag-empty .help { margin-top: 4px; }
@@ -1565,7 +1588,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     <span id="agent-mode" class="ag-mode"></span>
     <button id="agent-close" class="icon-btn" type="button" aria-label="닫기"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
   </div>
-  <p id="agent-desc" class="sr-only">과목 질문, 성적 ‘만약에’, 문의 메일, 공부 계획, 앱 설정, 가벼운 이야기까지 말로 해 주세요. 앞 대화를 이어받아 답하고, 바꾸는 건 직접 눌러야 해요.</p>
+  <p id="agent-desc" class="sr-only">과목 질문, 성적 ‘만약에’, 문의 메일, 공부 계획, 앱 설정, 가벼운 이야기까지 말로 해 주세요. 앞 대화를 이어받아 답하고, ‘지워줘’처럼 분명히 시킨 것은 바로 반영한 뒤 [되돌리기]를 보여 드려요.</p>
   <div id="agent-cbar" class="ag-cwrap"></div>
   <div id="agent-list" class="ag-list" role="region" aria-label="대화" tabindex="0"></div>
   <form id="agent-form" class="ag-compose" novalidate>
@@ -2407,16 +2430,18 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   // 제출 = 한 구간 통과. 문구의 숫자는 그 주의 실제 마감 수에서만
   function toggleSubmitted(it, on) {
     const wk = itemWeek(it);
+    const vid = isVideo(it);   // 강의 영상은 '제출' 대신 '시청'(계약 26-6)
     return itemPost(it, { submitted: on }, null).then((ok) => {
       if (!ok) return;
-      if (!on) { toast('제출 표시를 지웠어요 · ' + (it.title || '')); return; }
+      if (!on) { toast((vid ? '시청 표시를 지웠어요 · ' : '제출 표시를 지웠어요 · ') + (it.title || '')); return; }
       const st = weekStats(wk);
       const wn = sem() ? Number(sem().week_now) || 0 : 0;
       const label = wk && wk === wn ? '이번 주' : wk ? wk + '주차' : '';
+      const head = vid ? '시청 완료! 한 구간 통과 · ' : '제출 완료! 한 구간 통과 · ';
       if (label && st.tasks.length) {
         const all = st.done >= st.tasks.length;
-        toast('제출 완료! 한 구간 통과 · ' + label + ' ' + st.done + '/' + st.tasks.length + (all ? ', 다 냈어요' : ''), null, { win: true, done: st.done, total: st.tasks.length });
-      } else toast('제출 완료! 한 구간 통과 · ' + (it.title || ''), null, { win: true });
+        toast(head + label + ' ' + st.done + '/' + st.tasks.length + (all ? ', 다 냈어요' : ''), null, { win: true, done: st.done, total: st.tasks.length });
+      } else toast(head + (it.title || ''), null, { win: true });
     });
   }
 
@@ -2431,7 +2456,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     return c;
   }
   function statusText(it) {
-    if (it.submitted) return '제출함';
+    if (it.submitted) return isVideo(it) ? '시청 완료' : '제출함';
     if (it.status === 'review') return it.conflict ? '마감이 둘로 적혀 있음' : '확인 필요';
     if (it.status === 'scheduled') return '일정에 있음';
     if (it.status === 'replaced') return '다른 날짜로 대체됨';
@@ -2457,6 +2482,30 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     if (!withEmail || !it.email_to) return tag(METHOD[m], cls, it.email_to || null);
     return h('span', { class: 'tag' + (cls ? ' tag-' + cls : '') }, METHOD[m], h('span', { class: 'email' }, it.email_to));
   }
+  // ---- 강의 영상 시청 마감(계약 26-6): origin "video", item.video = {unlock_at, due_at, late_at, lock_at, duration, attendance}
+  const isVideo = (it) => !!it && (it.origin === 'video' || (!!it.video && typeof it.video === 'object' && !Array.isArray(it.video)));
+  const videoInfo = (it) => (it && it.video && typeof it.video === 'object' ? it.video : {});
+  // 시청 완료 = LMS가 확인한 것(canvas_submitted → 화면 칸 submitted + submitted_source "canvas"). 사용자가 직접 고친 표시가 이긴다
+  const videoWatched = (it) => isVideo(it) && (it.submitted_source === 'user' ? false
+    : (!!it.submitted && it.submitted_source === 'canvas') || it.canvas_submitted === true);
+  function videoDur(v) {
+    const d = v.duration;
+    if (typeof d === 'string' && d.trim()) return d.trim().slice(0, 20);
+    if (!isNum(d) || num(d) <= 0) return '';
+    const m = Math.round(num(d) / 60);   // 초 단위(LearningX)
+    return m >= 60 ? Math.floor(m / 60) + '시간' + (m % 60 ? ' ' + (m % 60) + '분' : '') : Math.max(1, m) + '분';
+  }
+  // 지각 인정 마감(late_at)이 있으면 그 시각(Date), 없으면 null
+  const videoLate = (it) => (isVideo(it) ? parseDate(videoInfo(it).late_at) : null);
+  // 시청 기간 한 줄(꼬리표 설명·근거 사슬): '11/10(월)부터 · 마감 11/20 23:59 · 지각 인정 11/22 23:59까지 · 42분'
+  function videoPeriod(it) {
+    const v = videoInfo(it);
+    const un = parseDate(v.unlock_at), due = parseDate(v.due_at || it.due), late = parseDate(v.late_at), lock = parseDate(v.lock_at);
+    return [un ? dayMD(un) + '부터' : '', due ? '마감 ' + fmtShortDT(due) : '', late ? '지각 인정 ' + fmtShortDT(late) + '까지' : '',
+      lock && (!late || lock.getTime() !== late.getTime()) ? fmtShortDT(lock) + ' 닫힘' : '', videoDur(v)].filter(Boolean).join(' · ');
+  }
+  const videoTag = (it) => (isVideo(it) ? tag('영상', 'quiet', '강의 영상 시청 마감(LMS가 정한 출석 인정 기간)' + (videoPeriod(it) ? ': ' + videoPeriod(it) : '')) : null);
+  const watchedTag = (it) => (videoWatched(it) ? tag('시청 완료', 'quiet', 'LMS에서 시청 완료로 확인됐어요') : null);
   // 확신이 높은 후보에는 표시하지 않는다(눈에 띄어야 할 것만 남김)
   const confTag = (c) => c === 'low' ? tag('신뢰도 ' + CONF.low, 'dash', '확실하지 않은 후보예요. 찾은 문장을 직접 읽고 날짜가 맞는지 확인하세요.')
     : c === 'medium' ? tag('신뢰도 ' + CONF.medium, 'quiet') : null;
@@ -2492,22 +2541,27 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   function agendaRow(it, wide) {
     const d = parseDate(it.due);
     const isReview = it.status === 'review';
-    const canvasDone = it.submitted && it.submitted_source === 'canvas';
+    // 강의 영상(계약 26-6): '제출' 대신 '시청', 마감이 지났어도 지각 인정 기간이 남았으면 그 날짜를 보인다
+    const vid = isVideo(it);
+    const canvasDone = (it.submitted && it.submitted_source === 'canvas') || videoWatched(it);
     const past = d && d.getTime() < nowMs();
-    const missed = it.status === 'scheduled' && past && !it.submitted && it.kind !== '시험';
+    const missed = it.status === 'scheduled' && past && !it.submitted && !canvasDone && it.kind !== '시험';
+    const late = vid ? videoLate(it) : null;
+    const lateOpen = !!late && late.getTime() > nowMs();
     let side = null;
     if (it.status === 'scheduled' && it.kind !== '시험') {
       side = [
-        canvasDone ? h('span', { class: 'tiny' }, 'Canvas에서 확인됨') : null,
+        canvasDone ? h('span', { class: 'tiny' }, vid ? '시청 완료' : 'Canvas에서 확인됨') : null,
         h('label', { class: 'check' },
-          h('input', { type: 'checkbox', 'data-key': 'sub-' + it.id + (wide ? '-w' : ''), checked: !!it.submitted, disabled: canvasDone, 'aria-label': (it.title || '') + ' 제출함',
+          h('input', { type: 'checkbox', 'data-key': 'sub-' + it.id + (wide ? '-w' : ''), checked: !!it.submitted || canvasDone, disabled: canvasDone, 'aria-label': (it.title || '') + (vid ? ' 시청함' : ' 제출함'),
             on: { change: (e) => toggleSubmitted(it, e.target.checked) } }),
-          h('span', null, '제출'))
+          h('span', null, vid ? '시청' : '제출'))
       ];
     } else if (isReview) {
       side = h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'go-' + it.id + (wide ? '-w' : ''), on: { click: () => (choiceGroup(it) ? openPick(it) : goInbox(it.id)) } }, it.conflict ? '고르기' : '확인하기');
     }
-    return h('li', { class: 'arow' + (wide ? ' wide' : '') + (it.submitted ? ' is-done' : '') + (busyItems.has(it.id) ? ' is-busy' : ''), 'data-item': it.id, 'data-row': it.id },
+    return h('li', { class: 'arow' + (wide ? ' wide' : '') + (it.submitted || canvasDone ? ' is-done' : '') + (busyItems.has(it.id) ? ' is-busy' : ''), 'data-item': it.id, 'data-row': it.id,
+      title: vid && videoPeriod(it) ? '강의 영상 · ' + videoPeriod(it) : null },
       h('span', { class: 'arow-time' }, d ? (wide ? fmtShort(d) + ' ' : '') + fmtTime(d) : '-'),
       mark(it),
       h('div', null,
@@ -2515,9 +2569,12 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         h('div', { class: 'arow-meta' },
           h('span', null, courseLabel(it)),
           it.kind === '시험' ? h('span', null, '시험' + (it.component ? ' · ' + compName(it.course_id, it.component) : '')) : null,
-          methodTag(it, false),
+          vid ? videoTag(it) : methodTag(it, false),   // 영상은 'LMS 제출' 대신 '영상'
           isReview ? h('span', { class: it.conflict ? 'warn' : null }, it.conflict ? '마감이 둘로 적혀 있어요' : '아직 확인 전') : null,
-          missed ? h('span', { class: 'warn' }, '제출 표시 없음') : null,
+          missed && lateOpen ? h('span', { class: 'warn' }, '지각 인정 ' + fmtShortDT(late) + '까지')
+            : missed ? h('span', { class: 'warn' }, vid ? '시청 표시 없음' : '제출 표시 없음') : null,
+          // 과목 화면(넓은 줄)은 지각 인정 날짜를 늘 보인다(항목 상세)
+          late && wide && !missed && !canvasDone ? h('span', null, '지각 인정 ' + fmtShortDT(late) + '까지') : null,
           ckChip(it, wide ? '-w' : ''),
           wide ? mailBtn(it, '-w') : null)),   // 대시보드 날짜 목록은 붐비지 않게 체크리스트만, [문의 메일]은 확인함 카드·과목 상세에서
       h('div', { class: 'arow-side' }, side),
@@ -3474,8 +3531,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       const flag = h('button', {
         type: 'button', class: 'flag' + (review ? ' is-review' : '') + (it.submitted ? ' is-done' : '') + (isU ? ' is-urgent' : ''),
         'data-key': 'flag-' + it.id,
-        'aria-label': courseLabel(it) + ' ' + (it.title || '') + ', ' + fmtDateTime(d) + ', ' + statusText(it) + (isU ? ', 가장 급함' : ''),
-        title: (it.title || '') + ' · ' + fmtDateTime(d),
+        'aria-label': courseLabel(it) + ' ' + (isVideo(it) ? '강의 영상 ' : '') + (it.title || '') + ', ' + fmtDateTime(d) + ', ' + statusText(it) + (isU ? ', 가장 급함' : ''),
+        title: (isVideo(it) ? '[영상] ' : '') + (it.title || '') + ' · ' + fmtDateTime(d),
         on: { click: () => (review ? goInbox(it.id) : showRow(it.id)) }
       }, h('span', { class: 'flag-title' }, it.title || ''), h('span', { class: 'flag-meta' }, p.meta));
       lanes.appendChild(pos(flag, p.toLeft ? { right: 'calc(' + P(W - p.mx) + ' - 1px)', bottom: b, width: p.w } : { left: 'calc(' + P(p.mx) + ' - 1px)', bottom: b, width: p.w }));
@@ -3614,10 +3671,12 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         h('h2', { class: 'sec-h', id: 'ds-over' }, '지난 마감, 제출 표시 없음', h('span', { class: 'sec-n' }, overdue.length + '개')),
         h('ul', { class: 'side-list' }, overdue.slice(0, 5).map((it) => {
           const d = parseDate(it.due);
+          const late = videoLate(it);   // 강의 영상: 지각 인정 기간이 남았으면 그 날짜(계약 26-6)
           return h('li', { 'data-item': it.id },
             h('label', { class: 'check', style: 'white-space:normal;align-items:flex-start' },
-              h('input', { type: 'checkbox', 'data-key': 'osub-' + it.id, 'aria-label': (it.title || '') + ' 제출함', on: { change: (e) => toggleSubmitted(it, e.target.checked) } }),
-              h('span', null, h('span', { class: 'side-title' }, it.title || ''), h('span', { class: 'side-meta' }, h('span', null, courseLabel(it)), h('span', null, fmtShortDT(d))))),
+              h('input', { type: 'checkbox', 'data-key': 'osub-' + it.id, 'aria-label': (it.title || '') + (isVideo(it) ? ' 시청함' : ' 제출함'), on: { change: (e) => toggleSubmitted(it, e.target.checked) } }),
+              h('span', null, h('span', { class: 'side-title' }, it.title || ''), h('span', { class: 'side-meta' }, h('span', null, courseLabel(it)), h('span', null, fmtShortDT(d)), videoTag(it),
+                late && late.getTime() > nowMs() ? h('span', { class: 'warn' }, '지각 인정 ' + fmtShortDT(late) + '까지') : null))),
             errLine(it));
         }))));
     }
@@ -3769,8 +3828,9 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     location.hash = '#settings';
   }
   function calendarItems() {
+    // 서버 store.calendar_items와 같게: 'Canvas 과제도 넣기'를 끄면 LMS가 정한 마감(Canvas 과제·강의 영상)은 빠지고 찾은 마감만
     const inc = !!state.settings.include_canvas;
-    return state.items.filter((i) => i.status === 'scheduled' && i.due && (i.origin !== 'canvas' || inc));
+    return state.items.filter((i) => i.status === 'scheduled' && i.due && (i.origin === 'found' || inc));
   }
 
   // ---------------------------------------------------------------- 학기
@@ -5049,7 +5109,11 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const read = [];
     if (rc && rc.due) read.push(h('li', null, '‘' + rc.phrase + '’ → ' + (rc.base ? rc.src + ' 올린 날 ' + dayMD(rc.base) + ' 기준 ' : '') + dayMD(rc.due) + '로 계산'));
     for (const n of notes) read.push(h('li', null, String(n)));
+    // 강의 영상(계약 26-6): LMS가 정한 시청 기간(열림 → 마감 → 지각 인정 → 닫힘)과 시청 완료 여부
+    const vp = isVideo(it) ? videoPeriod(it) : '';
     const steps = [
+      isVideo(it) ? { k: '시청 기간', done: videoWatched(it), wait: !videoWatched(it), v: [vp || 'LMS에 적힌 기간이 없어요',
+        videoWatched(it) ? h('div', { class: 'src-meta' }, 'LMS에서 시청 완료로 확인됨') : null] } : null,
       { k: '출처 글', done: ev.length > 0, v: ev.length ? [ev.map(srcLine), seen ? h('div', { class: 'src-meta' }, fmtShortDT(seen) + ' 확인 때 처음 찾음') : null] : '저장된 출처가 없어요' },
       { k: '찾은 문장', done: quotes.length > 0, v: quotes.length ? quotes.map((e) => h('blockquote', null, e.text)) : '문장이 저장되지 않았어요' },
       { k: '날짜 읽기', done: true, v: read.length ? h('ul', null, read) : '글에 적힌 날짜·시간 그대로예요' },
@@ -5186,9 +5250,9 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         h('span', { class: 'rc-course' }, courseLabel(it)),
         cg && it.newest ? tag('최근 글', 'accent', '같은 과제의 후보 중 가장 최근 글에서 찾은 날짜예요') : null,
         isNew(it) ? tag('New', 'new', '마지막 확인에서 처음 찾은 마감이에요') : null,
-        aiChip(it), agentTag(it), examTag(it), confTag(it.confidence)),
+        aiChip(it), agentTag(it), videoTag(it), watchedTag(it), examTag(it), confTag(it.confidence)),
       titleIn,
-      h('div', { class: 'rc-due' }, dueIn, dday, when, methodTag(it, true),
+      h('div', { class: 'rc-due' }, dueIn, dday, when, isVideo(it) ? null : methodTag(it, true),
         it.edited ? tag(od ? '직접 고침 (원문 ' + fmtMD(od) + ')' : '직접 고침', 'quiet', od ? '원래 글의 마감: ' + fmtShortDT(od) : null) : null,
         it.edited ? h('button', { type: 'button', class: 'linkish', style: 'font-size:14.5px', on: { click: () => itemPost(it, { title: null, due: null }, '원래 값으로 되돌렸어요') } }, '원래대로') : null),
       quote ? h('p', { class: 'rc-quote', title: quote.text }, quote.text) : h('p', { class: 'rc-quote is-empty' }, '저장된 문장이 없어요'),
@@ -5392,16 +5456,21 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         h('ul', { class: 'mini-list' }, rej.map((it) => {
           const d = parseDate(it.due);
           const dec = parseDate(it.decided_at);
-          // Canvas 과제의 기본값은 '넣기'라서 되살리면 일정으로, 찾은 후보는 확인함으로 돌아간다
-          const back = it.origin === 'canvas' && it.due ? 'approved' : 'pending';
+          // Canvas 과제·강의 영상의 기본값은 '넣기'라서 되살리면 일정으로, 찾은 후보는 확인함으로 돌아간다.
+          // 에이전트가 뺀 항목(agent_ref, 계약 26-3 item_remove·item_merge)은 그 제안을 되돌려 이전 상태로
+          const back = (it.origin === 'canvas' || isVideo(it)) && it.due ? 'approved' : 'pending';
+          const ref0 = agentRef(it);
+          const rt = ref0 ? agentRefType(ref0) : null;
+          const ref = rt === 'item_remove' || rt === 'item_merge' ? ref0 : null;   // 에이전트가 넣은 마감(add_deadline)을 사용자가 뺀 것이면 그냥 되살린다
           return h('li', { class: 'mini', id: 'item-' + it.id, 'data-item': it.id },
-            h('div', { class: 'mini-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null),
+            h('div', { class: 'mini-meta' }, h('span', null, courseLabel(it)), d ? h('span', null, fmtShortDT(d)) : null, videoTag(it)),
             h('div', { class: 'mini-title' }, it.title || '', it.decided_by === 'ai' ? [' ', aiChip(it)] : null),
             dec ? h('div', { class: 'mini-meta' }, fmtShortDT(dec) + (it.decided_by === 'ai' ? ' AI가 제외함' : ' 제외함')) : null,
             aiNote(it, false),
             errLine(it),
             h('div', { class: 'mini-actions' }, h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'restore-' + it.id, 'aria-label': (it.title || '') + ' 되살리기',
-              on: { click: () => itemPost(it, { decision: back }, (back === 'pending' ? '확인함으로 되살렸어요 · ' : '되살렸어요 · ') + (it.title || '')) } }, '되살리기')));
+              title: ref ? '에이전트가 빼기 전으로 되돌려요' : null,
+              on: { click: () => (ref ? undoAgentItem(it) : itemPost(it, { decision: back }, (back === 'pending' ? '확인함으로 되살렸어요 · ' : '되살렸어요 · ') + (it.title || ''))) } }, '되살리기')));
         }))
       ]));
     }
@@ -5916,6 +5985,51 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     }
     return h('div', { class: 'ai-test' }, out);
   }
+  // ---- 하루 AI 사용 한도(계약 26-0 settings.ai_daily_limit): 30·100·300·0(제한 없음). 묻기·동기화·확인함 정리의 AI 호출을 모두 센다
+  const AI_LIMITS = [30, 100, 300, 0];
+  let aiLimitBusy = false;
+  // limits.per_day: 숫자 = 하루 한도, null = 제한 없음(서버 agent_cli.daily_limit). 칸이 없으면(예전 서버) undefined
+  function perDayOf(lim) {
+    if (!lim || typeof lim !== 'object' || !Object.prototype.hasOwnProperty.call(lim, 'per_day')) return undefined;
+    return isNum(lim.per_day) && num(lim.per_day) > 0 ? num(lim.per_day) : null;
+  }
+  // 채팅 머리·설정에 쓰는 말: '오늘 12/100번' · 제한 없음이면 '오늘 12번 · 제한 없음'
+  const aiUseText = (calls, perDay) => (perDay ? '오늘 ' + num(calls) + '/' + perDay + '번' : '오늘 ' + num(calls) + '번 · 제한 없음');
+  function aiLimitNow(A, lim) {
+    const s = state.settings ? state.settings.ai_daily_limit : undefined;
+    if (isNum(s) && AI_LIMITS.indexOf(num(s)) >= 0) return num(s);
+    const d = A && A.daily_limit && typeof A.daily_limit === 'object' ? A.daily_limit.value : undefined;
+    if (isNum(d) && AI_LIMITS.indexOf(num(d)) >= 0) return num(d);
+    const p = perDayOf(lim);
+    return p === null ? 0 : AI_LIMITS.indexOf(p) >= 0 ? p : 100;
+  }
+  function aiLimitBlock(A, lim) {
+    const cur = aiLimitNow(A, lim);
+    const perDay = cur || null;
+    const calls = num(A.calls_today);
+    const reached = perDay !== null && calls >= perDay;
+    const perSync = lim && num(lim.per_sync) ? num(lim.per_sync) : 0;
+    const sel = h('select', { id: 'ai-limit', class: 'input', 'data-key': 'ai-limit', 'aria-describedby': 'ai-limit-help', disabled: aiLimitBusy,
+      on: { change: (e) => setAiLimit(Number(e.target.value), cur) } },
+      AI_LIMITS.map((n) => h('option', { value: String(n) }, n ? n + '번' : '제한 없음')));
+    sel.value = String(cur);
+    return h('div', { class: 'ai-limit' },
+      h('div', { class: 'ai-limit-row' }, h('label', { class: 'lbl', for: 'ai-limit' }, '하루 AI 사용 한도'), sel,
+        h('span', { class: 'ai-limit-use' + (reached ? ' warn' : ''), 'data-key': 'ai-limit-use' }, perDay ? '오늘 ' + calls + '/' + perDay + '번 사용' : '오늘 ' + calls + '번 사용 · 제한 없음')),
+      h('p', { class: 'help', id: 'ai-limit-help' }, '채팅(에이전트에게 묻기)과 동기화·확인함 정리에서 부르는 AI를 모두 세요' + (perSync ? '(동기화 한 번에는 최대 ' + perSync + '번)' : '') + '. 날짜가 바뀌면 0부터 다시 세요.'),
+      reached ? h('p', { class: 'inline-error' }, '오늘 한도를 다 썼어요. 그동안 묻기는 규칙으로만 답하고, 동기화는 AI 없이 해요.') : null);
+  }
+  function setAiLimit(n, prev) {
+    if (aiLimitBusy || AI_LIMITS.indexOf(n) < 0 || n === prev) return;
+    aiLimitBusy = true;
+    aiError = '';
+    focusKey = 'ai-limit';
+    post('/api/settings', { ai_daily_limit: n }).then((s) => {
+      aiLimitBusy = false;
+      applyState(s);
+      toast(n ? '하루 AI 사용 한도를 ' + n + '번으로 바꿨어요' : '하루 AI 사용 한도를 없앴어요');
+    }, (err) => { aiLimitBusy = false; aiError = err.message; render(); });
+  }
   function renderAiPane() {
     const pane = $('pane-ai');
     const box = $('ai-box');
@@ -5943,7 +6057,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       h('label', { class: 'toggle' },
         h('input', { type: 'checkbox', 'data-key': 'ai-auto', checked: aiAuto(), disabled: !avail || !on, on: { change: (e) => aiSet({ ai_auto_triage: e.target.checked }, '동기화 뒤 AI가 확인함을 정리해요', '자동 정리를 껐어요', e.target.checked) } }),
         h('span', null, h('b', null, '동기화 뒤 AI가 자동 정리'), h('small', null, '신규 후보가 오면 근거 문장이 맞는 것만 일정에 넣거나 빼요. 근거가 부족하면 그대로 둬요.'))),
-      on && lim ? h('p', { class: 'help', style: 'margin-top:2px' }, '오늘 ' + num(A.calls_today) + '번 사용, 하루 ' + num(lim.per_day) + '번·동기화 한 번에 ' + num(lim.per_sync) + '번까지') : null,
+      aiLimitBlock(A, lim),
       lt ? h('p', { class: lt.ok === false ? 'inline-error' : 'help', style: 'margin-top:6px' }, '마지막 확인함 정리 ' + (parseDate(lt.at) ? fmtShortDT(parseDate(lt.at)) + ': ' : ': ') +
         (lt.ok === false ? String(lt.error || '실패') : triageText(lt)) + (lt.note ? ' ' + lt.note : '')) : null,
       A.last_error ? h('p', { class: 'inline-error', style: 'margin-top:6px' }, String(A.last_error)) : null,
@@ -6032,7 +6146,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       busyItems.delete(it.id);
       applyState(s);
       toast(type === 'fix_due' ? '마감을 원래 날짜로 되돌렸어요 · ' + (it.title || '')
-        : type === 'add_deadline' ? '에이전트가 넣은 마감을 지웠어요 · ' + (it.title || '') : '되돌렸어요 · ' + (it.title || ''));
+        : type === 'add_deadline' ? '에이전트가 넣은 마감을 지웠어요 · ' + (it.title || '')
+          : type === 'item_remove' || type === 'item_merge' ? '에이전트가 뺀 항목을 되돌렸어요 · ' + (it.title || '') : '되돌렸어요 · ' + (it.title || ''));
     }, (err) => {
       busyItems.delete(it.id);
       if (err.status === 409) {
@@ -6084,19 +6199,24 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   // ---------------------------------------------------------------- 에이전트에게 묻기(채팅, 계약 20장)
   // 서버가 state.agent를 주지 않으면(예전 서버) 입구와 서랍을 숨기고 아무것도 하지 않는다
   const agState = () => (state && state.agent && typeof state.agent === 'object' ? state.agent : null);
-  const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', action: '앱 동작', note: '설명' };
+  const AG_TYPE = { add_deadline: '마감 추가', fix_due: '마감 고치기', link_score: '점수 연결', set_count: '개수', set_weights: '평가 비중', set_dist: '학점 비율', action: '앱 동작', note: '설명',
+    // 지우기·고치기(계약 26-3): 카드 꼬리표는 무엇을 하는지, [반영] 단추는 agApplyLabel이 종류마다
+    item_remove: '일정에서 빼기', item_merge: '중복 합치기', component_remove: '평가 항목 지우기', score_clear: '점수 지우기' };
+  const AG_FIX = { item_remove: 1, item_merge: 1, component_remove: 1, score_clear: 1 };
   // 예시: 공부 얘기만 받는 게 아니라는 걸 보이게 학업 밖 예시 하나(계약 24-2 chat)
   const AG_EXAMPLES = ['기말 범위 어디까지야?', '기말에서 몇 점 받아야 A?', 'LAB4 연장 문의 메일 써줘', '기말 전 2주 공부 계획 세워줘', '컴퓨터 켤 때 자동 실행해줘', '기말고사 날짜가 안 보여요', '요즘 너무 지쳐요'];
   const AG_MAX = 500;
   // 대화 갈래(계약 22-1 kind, 24-2 chat). 옛 대화는 kind가 없으면 'missing'(놓친 것 찾기, 20장 모양 그대로)
-  const AG_KINDS = { missing: '놓친 것 찾기', question: '질문', whatif: '만약에', mail: '메일 초안', plan: '공부 계획', action: '앱 동작', chat: '대화' };
+  const AG_KINDS = { missing: '놓친 것 찾기', question: '질문', whatif: '만약에', mail: '메일 초안', plan: '공부 계획', action: '앱 동작', chat: '대화', fix: '지우기·고치기' };
   const AG_EMPTY = { question: '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.', whatif: '계산할 재료가 부족해요. 성적 화면에서 평가 비중을 먼저 넣어 주세요.',
-    mail: '초안을 만들지 못했어요. 과목과 과제 이름을 함께 적어 다시 물어봐 주세요.', plan: '계획을 세울 시험·마감을 찾지 못했어요. 과목을 고르고 다시 물어봐 주세요.', action: '할 수 있는 동작을 찾지 못했어요.' };
+    mail: '초안을 만들지 못했어요. 과목과 과제 이름을 함께 적어 다시 물어봐 주세요.', plan: '계획을 세울 시험·마감을 찾지 못했어요. 과목을 고르고 다시 물어봐 주세요.', action: '할 수 있는 동작을 찾지 못했어요.',
+    fix: '지우거나 고칠 대상을 찾지 못했어요. 과목과 항목 이름을 함께 적어 다시 말해 주세요.' };
   // conv: 지금 보는 대화 id(undefined = 아직 안 고름 → 가장 최근, null = 신규 대화(빈 화면), 문자열 = 그 대화)
   // menu: 이전 대화 목록을 펼쳤는지, confirmOne: '이 대화 지우기' 확인 중, shape: 자동 스크롤용으로 마지막에 그린 대화 모양
   const ag = { opener: null, noRestore: false, sending: false, pending: null, job: null, busy: new Set(), errs: new Map(), applied: new Map(),
     seen: new Map(), unread: false, confirmClear: false, clearing: false, clearErr: '', sig: '', courseSig: '', timer: 0, downOut: false,
-    drafts: new Map(), clientDone: new Map(), planIds: new Map(), conv: undefined, menu: false, confirmOne: false, shape: null, scroll: null, hintFor: '' };
+    drafts: new Map(), clientDone: new Map(), planIds: new Map(), conv: undefined, menu: false, confirmOne: false, shape: null, scroll: null, hintFor: '',
+    stepsOpen: new Set() };   // '한 일 N단계'를 펼친 차례(다시 그려도 그대로)
   const agentOpen = () => $('agent-dlg').open;
   function agThreads() {
     const A = agState();
@@ -6380,8 +6500,10 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const m = $('agent-mode');
     m.replaceChildren();
     const lim = A.limits && typeof A.limits === 'object' ? A.limits : null;
+    // 하루 한도: 숫자면 '오늘 n/한도번', null이면 '제한 없음'(계약 26-0), 칸이 없으면(예전 서버) 숨김
+    const perDay = perDayOf(lim);
     if (A.enabled) add(m, [tag('AI 켜짐', 'ai', 'AI가 모아 둔 글을 읽고 제안해요. 하네스가 원문 인용을 확인한 것만 반영할 수 있어요'),
-      lim && num(lim.per_day) ? h('span', { class: 'tnum' }, '오늘 ' + num(A.calls_today) + '/' + num(lim.per_day) + '번') : null]);
+      perDay !== undefined ? h('span', { class: 'tnum', 'data-ak': 'ag-use', title: '하루 AI 사용 한도는 설정 → AI 도움에서 바꿀 수 있어요' }, aiUseText(A.calls_today, perDay)) : null]);
     else m.appendChild(tag('규칙으로 찾기', 'quiet', 'AI 도움이 꺼져 있어 이 PC 안에서 규칙으로만 찾아요'));
   }
   // 보낼 곳 안내(계약 21): 고른 실행기 이름, ollama처럼 이 PC 안에서 도는 모델이면 밖으로 나가지 않는다고
@@ -6406,8 +6528,10 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   // 답이 오면 알린다: 서랍이 열려 있으면 화면 낭독기로(다른 대화의 답이면 그렇다고), 닫혀 있으면 입구에 점 + 알림
   function agAnnounce(t) {
     const props = Array.isArray(t.proposals) ? t.proposals : [];
-    const ok = props.filter((p) => p && p.type !== 'note' && !p.rejected_reason && p.ok !== false).length;
-    const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (ok ? ' 누를 수 있는 제안 ' + ok + '개.' : '');
+    // 바로 반영한 것(계약 26-4 auto_applied)은 누를 제안이 아니라 '반영한 것'으로 따로 센다
+    const autoN = props.filter((p) => p && p.auto_applied === true && p.applied !== false).length;
+    const ok = props.filter((p) => p && p.type !== 'note' && !p.rejected_reason && p.ok !== false && !(p.auto_applied === true && p.applied !== false)).length;
+    const head = t.status === 'error' ? '답을 찾지 못했어요.' : '답이 왔어요.' + (autoN ? ' 바로 반영한 것 ' + autoN + '개(되돌릴 수 있어요).' : '') + (ok ? ' 누를 수 있는 제안 ' + ok + '개.' : '');
     if (agentOpen()) {
       if (agConvKey(t) !== agCurNow()) { agSay('다른 대화에 ' + head + ' 위 ‘이전 대화’에서 볼 수 있어요.'); return; }
       agSay(head + (t.status !== 'error' && t.answer ? ' ' + String(t.answer).slice(0, 160) : ''));
@@ -6415,7 +6539,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     }
     ag.unread = true;
     if (cele.open || tour.open || $('pick-dlg').open || $('logout-dlg').open || $('mail-dlg').open) return;   // 모서리 카드는 알림이 비켜 감(has-corner)
-    toast('에이전트가 ' + (t.status === 'error' ? '답을 못 찾았어요' : '답했어요') + (ok ? ' · 제안 ' + ok + '개' : ''));
+    toast('에이전트가 ' + (t.status === 'error' ? '답을 못 찾았어요' : '답했어요') + (autoN ? ' · 바로 반영 ' + autoN + '개' : '') + (ok ? ' · 제안 ' + ok + '개' : ''));
     $('toast').appendChild(h('button', { type: 'button', class: 'btn btn-quiet btn-sm', on: { click: () => { hideToast(); openAgent(); } } }, '보기'));
     toastMs = 8000;
     armToast();
@@ -6574,17 +6698,54 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
           h('div', { class: 'ag-chips', role: 'group', 'aria-label': '예시(누르면 입력칸에 채워져요)' }, AG_EXAMPLES.map(agChip))),
         convs.length ? h('p', { class: 'help', style: 'margin-top:8px' }, '앞 대화는 위 ‘이전 대화’에서 이어 갈 수 있어요.') : null));
   }
+  // 에이전트가 한 일(계약 26-4 steps: [{round, tool, label, ok, note}]). 옛 차례·규칙 답은 칸이 없다 → 아무것도 그리지 않는다
+  const agStepList = (t) => arr(t && t.steps).filter((s) => s && typeof s === 'object' && (s.label || s.tool));
+  // 서버가 label을 주지 않았을 때만 쓰는 도구 이름(계약 26-2)
+  const AG_TOOL = { search_texts: '글 찾아보기', list_items: '마감 목록 보기', get_item: '항목 살펴보기', get_grades: '성적 보기', whatif: '성적 계산하기',
+    list_materials: '자료 목록 보기', get_settings: '설정 보기' };
+  // '한 일 N단계': 처음엔 접혀 있고, 펼친 것은 ag.stepsOpen에 기억(답이 다시 그려져도 그대로)
+  function agSteps(t) {
+    const list = agStepList(t);
+    if (!list.length) return null;
+    const id = String(t.id);
+    const rs = list.map((s) => (isNum(s.round) ? Math.round(num(s.round)) : null)).filter((r) => r !== null);
+    const r0 = rs.length ? Math.min(...rs) : 0;
+    const multi = new Set(rs).size > 1;   // 여러 번 오갔을 때만 'n차'를 붙인다
+    const fails = list.filter((s) => s.ok === false).length;
+    const d = h('details', { class: 'ag-steps', 'data-ak': 'ag-steps-' + id },
+      h('summary', { 'data-ak': 'ag-steps-s-' + id, 'aria-label': '에이전트가 한 일 ' + list.length + '단계' + (fails ? ', 그중 ' + fails + '개는 못 함' : '') + ' 보기' },
+        '한 일 ' + list.length + '단계' + (fails ? ' · 못 한 것 ' + fails : '')),
+      h('ol', null, list.map((s) => {
+        const fail = s.ok === false;
+        const name = agStr(s.label || AG_TOOL[s.tool] || s.tool).slice(0, 80);
+        const note = agStr(s.note).trim().slice(0, 160);
+        return h('li', { class: 'ag-step' + (fail ? ' is-fail' : '') },
+          multi && isNum(s.round) ? h('span', { class: 'ag-step-r' }, (Math.round(num(s.round)) - r0 + 1) + '차') : null,
+          h('span', { class: 'ag-step-l' }, name),
+          note ? h('span', { class: 'ag-step-n' }, note) : null,
+          fail ? h('span', { class: 'ag-step-x' }, '못 함') : null);
+      })));
+    d.open = ag.stepsOpen.has(id);
+    d.addEventListener('toggle', () => { if (d.open) ag.stepsOpen.add(id); else ag.stepsOpen.delete(id); });
+    return d;
+  }
   function agThread(A, t) {
     const c = t.course_id ? courseById(t.course_id) : null;
     const running = t.status === 'running' || t === ag.pending;
     let body;
     if (running) {
-      // 답하는 자리에 '쓰는 중' 표시(그 차례 자리 그대로 — 답이 오면 이 자리에 답이 들어간다)
-      body = h('div', { class: 'ag-run' }, h('span', { class: 'ag-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), h('span', null, '답을 준비하는 중이에요'),
+      // 답하는 자리에 '쓰는 중' 표시(그 차례 자리 그대로 — 답이 오면 이 자리에 답이 들어간다).
+      // 서버가 지금 하는 단계(progress, 계약 26-4 — "마감 목록 보는 중…")를 주면 그 말을, 없으면 일반 문구
+      const prog = typeof t.progress === 'string' && t.progress.trim() ? t.progress.trim().slice(0, 120) : '';
+      const done = agStepList(t).length;
+      body = h('div', { class: 'ag-run' }, h('span', { class: 'ag-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+        h('span', { class: prog ? 'ag-prog' : null, 'data-ak': 'ag-prog-' + t.id }, prog || '답을 준비하는 중이에요'),
         h('span', { class: 'ag-since', 'data-ag-since': t.at || '', 'aria-hidden': 'true' }),
-        h('p', { class: 'help' }, A.enabled ? '보통 몇십 초 걸려요. 창을 닫아도 계속하고, 답이 오면 메뉴에 점을 찍어 둘게요.' : '이 PC 안에서 찾는 중이라 금방 끝나요.'));
+        h('p', { class: 'help' }, (done ? '지금까지 ' + done + '단계를 했어요. ' : '') +
+          (A.enabled ? '보통 몇십 초 걸려요. 창을 닫아도 계속하고, 답이 오면 메뉴에 점을 찍어 둘게요.' : '이 PC 안에서 찾는 중이라 금방 끝나요.')));
     } else if (t.status === 'error') {
       body = h('div', { class: 'ag-a' }, h('p', { class: 'inline-error' }, '답을 찾다가 막혔어요.' + (t.error ? ' ' + String(t.error) : '')),
+        agSteps(t),
         h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-ak': 'ag-retry-' + t.id, on: { click: () => agRetry(t) } }, '다시 묻기')));
     } else body = agAnswer(A, t);
     return h('article', { class: 'ag-thread', 'data-thread': String(t.id), 'aria-label': '내 말: ' + String(t.message || '') },
@@ -6605,9 +6766,11 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   }
   const agSnips = (t) => { const x = t.results || t.snippets || t.sources || t.hits; return Array.isArray(x) ? x.filter((s) => s && typeof s === 'object') : []; };
   function agAnswer(A, t) {
-    // 갈래(계약 22-1): 질문·만약에·메일·계획·명령은 따로 그린다. kind가 없거나 'missing'이면 20장 모양 그대로
-    const kind = typeof t.kind === 'string' && AG_KINDS[t.kind] ? t.kind : 'missing';
-    if (kind === 'chat') return agChat(A, t);
+    // 갈래(계약 22-1): 질문·만약에·메일·계획·명령은 따로 그린다. kind가 없거나 'missing'이면 20장 모양 그대로.
+    // 이 화면이 모르는 kind(신규 서버의 갈래)는 답·인용·제안을 고르게 그리는 'other'로
+    const kind = typeof t.kind === 'string' && t.kind ? (AG_KINDS[t.kind] ? t.kind : 'other') : 'missing';
+    // 대화(chat)는 말풍선 하나. 다만 도구를 쓴 에이전트 답(계약 26)이 제안·인용을 붙였으면 그것도 보이게
+    if (kind === 'chat' && !arr(t.proposals).length && !arr(t.citations).length) return agChat(A, t);
     if (kind !== 'missing') return agAnswerKind(A, t, kind);
     const rules = t.by === 'rules';
     const props = Array.isArray(t.proposals) ? t.proposals.filter((p) => p && typeof p === 'object') : [];
@@ -6619,6 +6782,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       rules && (A.enabled || agHintHere(t)) ? h('p', { class: 'ag-rules' }, A.enabled ? '이번에는 규칙으로 찾았어요.' : toAi) : null,
       t.answer ? h('p', { class: 'ag-answer' }, String(t.answer))
         : !props.length && !snips.length ? h('p', { class: 'ag-answer' }, '관련 글을 찾지 못했어요. 과목을 고르거나 낱말을 바꿔 다시 물어봐 주세요.') : null,
+      agSteps(t),
       props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null,
       snips.length ? h('ul', { class: 'ag-snips', 'aria-label': '찾은 글' }, snips.map((s, i) => agSnip(t, s, i, props.some((p) => p.type === 'add_deadline' && p.source_key && p.source_key === s.source_key)))) : null);
   }
@@ -6628,6 +6792,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const offer = t.by === 'rules' && !A.enabled && agHintHere(t) && /AI/.test(text) && /(켜|설정)/.test(text);
     return h('div', { class: 'ag-a is-chat' },
       h('p', { class: 'ag-answer' }, text || '뭐라고 답할지 찾지 못했어요. 한 번 더 말해 주세요.'),
+      agSteps(t),
       offer ? h('p', { class: 'ag-rules' }, h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id,
         on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기')) : null);
   }
@@ -6652,24 +6817,29 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const src = agSource(t, p);
     const ak = 'ag-act-' + key;
     const rulesAdd = type === 'add_deadline' && (p.by === 'rules' || (!p.by && t.by === 'rules'));
+    // 바로 반영(계약 26-4, 사용자 결정 B): '지워줘'처럼 분명히 시킨 것은 하네스가 검사한 뒤 서버가 반영하고 auto_applied를 남긴다
+    const auto = applied && p.auto_applied === true;
+    const label = agTypeLabel(p, type);
     let acts = null;
     // 규칙이 찾은 날짜(AI 꺼짐)는 서버가 확인함의 '확인 필요' 후보로 넣는다(20-2: 사용자가 날짜·제목을 확인하고 넣는 길)
     if (applied) {
-      acts = h('p', { class: 'ag-done' }, h('b', null, icon('check'), rulesAdd ? '확인함에 후보로 넣었어요' : '반영했어요'),
+      acts = h('p', { class: 'ag-done' }, h('b', null, icon('check'), auto ? '바로 반영했어요' : rulesAdd ? '확인함에 후보로 넣었어요' : agDoneText(p, type)),
+        auto ? tag('AI', 'ai', '요청대로 AI가 바로 반영했어요. 되돌리면 반영 전으로 돌아가요') : null,
         h('button', { type: 'button', class: 'linkish', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agApply(t, i, true) } }, busy ? '되돌리는 중…' : '되돌리기'),
         agGoto(p) ? h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-go-' + key, on: { click: agGoto(p) } }, rulesAdd ? '확인함에서 보기' : '보러 가기') : null);
     } else if (can) {
       acts = h('div', { class: 'ag-acts' }, h('button', { type: 'button', class: 'btn ' + (rulesAdd ? 'btn-line' : 'btn-primary') + ' btn-sm', 'data-ak': ak, 'aria-disabled': busy ? 'true' : null, on: { click: () => agApply(t, i, false) } },
-        busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), rulesAdd ? '넣는 중…' : '반영하는 중…'] : rulesAdd ? '마감 후보로 넣기' : '반영'),
+        busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), rulesAdd ? '넣는 중…' : '반영하는 중…'] : rulesAdd ? '마감 후보로 넣기' : agApplyLabel(p, type)),
         rulesAdd ? h('span', { class: 'help' }, '확인함에서 날짜·제목을 확인하고 일정에 넣어요') : null,
-        agUndone(t, p, i) ? h('span', { class: 'help' }, '되돌렸어요') : null);
+        AG_FIX[type] && !agUndone(t, p, i) ? h('span', { class: 'help' }, '누르면 바로 바뀌고, 되돌릴 수 있어요') : null,
+        agUndone(t, p, i) ? h('span', { class: 'help' }, p.auto_applied ? '바로 반영했던 것을 되돌렸어요' : '되돌렸어요') : null);
     }
     // 규칙 검색의 제목은 추정이라 날짜를 앞세우고 제목은 '추정'으로 밝힌다(확인함에서 고칠 수 있음)
     const vals = rulesAdd ? h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vrow' }, agDue(p.due), p.kind === '시험' ? tag('시험', 'accent') : null),
       p.title ? h('span', { class: 'ag-cur' }, '제목 추정: ' + String(p.title) + ' (확인함에서 고칠 수 있어요)') : null, agBasis(p)) : agVals(p, type);
     const notes = (Array.isArray(p.notes) ? p.notes : []).filter(Boolean).map(String);
-    return h('section', { class: 'ag-prop' + (rej ? ' is-rej' : applied ? ' is-done' : can ? ' is-ok' : ''), 'aria-label': AG_TYPE[type] + ' 제안' },
-      h('div', { class: 'ag-ptop' }, tag(AG_TYPE[type], can || applied ? 'accent' : 'quiet'), c ? h('span', { class: 'ag-pcourse' }, courseShort(c)) : null),
+    return h('section', { class: 'ag-prop' + (rej ? ' is-rej' : applied ? ' is-done' : can ? ' is-ok' : ''), 'aria-label': label + ' 제안', 'data-ptype': type },
+      h('div', { class: 'ag-ptop' }, tag(label, can || applied ? 'accent' : 'quiet'), c ? h('span', { class: 'ag-pcourse' }, courseShort(c)) : null),
       vals || (p.summary ? h('div', { class: 'ag-vals' }, h('span', { class: 'ag-vt' }, String(p.summary))) : null),
       p.evidence ? h('blockquote', { class: 'ag-quote' }, String(p.evidence)) : null,
       src ? srcLine(src) : null,
@@ -6678,6 +6848,47 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       rej ? h('p', { class: 'ag-rej' }, '반영할 수 없어요 · ' + rej) : null,
       acts,
       err ? h('p', { class: 'inline-error', role: 'alert' }, err) : null);
+  }
+  // 지우기·고치기(계약 26-3) 카드의 말: 꼬리표·단추·반영한 뒤 문장을 종류마다(합치기·연결 떼기는 따로)
+  const agStr = (x) => (x === null || x === undefined ? '' : String(x));
+  function agTypeLabel(p, type) {
+    if (type === 'component_remove' && agStr(p.merge_into)) return '평가 항목 합치기';
+    if (type === 'score_clear' && p.which === 'link') return '점수 연결 떼기';
+    return AG_TYPE[type] || AG_TYPE.note;
+  }
+  function agApplyLabel(p, type) {
+    if (type === 'item_remove') return '일정에서 빼기';
+    if (type === 'item_merge') return '하나로 합치기';
+    if (type === 'component_remove') return agStr(p.merge_into) ? '‘' + agStr(p.merge_into) + '’에 합치기' : '평가 항목 지우기';
+    if (type === 'score_clear') return p.which === 'link' ? '연결 떼기' : '점수 지우기';
+    return '반영';
+  }
+  function agDoneText(p, type) {
+    if (type === 'item_remove') return '일정에서 뺐어요';
+    if (type === 'item_merge') return '하나로 합쳤어요';
+    if (type === 'component_remove') return agStr(p.merge_into) ? '‘' + agStr(p.merge_into) + '’에 합쳤어요' : '평가 항목을 지웠어요';
+    if (type === 'score_clear') return p.which === 'link' ? '연결을 뗐어요' : '점수를 지웠어요';
+    return '반영했어요';
+  }
+  // 항목 한 줄(제목·과목·마감): 서버 summary가 없을 때만 이 화면의 항목에서 채운다
+  function agItemLine(id, lead) {
+    const it = id ? findItem(id) : null;
+    if (!it) return null;
+    return h('span', { class: 'ag-vrow' }, lead ? h('span', { class: 'ag-cur' }, lead) : null, h('b', null, String(it.title || '제목 없음')),
+      h('span', { class: 'ag-cur' }, courseLabel(it)), it.due ? agDue(it.due) : h('span', { class: 'dday none' }, '날짜 없음'));
+  }
+  function agFixVals(p, type) {
+    const sum = agStr(p.summary).trim();
+    const rows = [];
+    if (sum) rows.push(h('span', { class: 'ag-vt' }, sum));
+    else if (type === 'item_remove') rows.push(agItemLine(p.item_id));
+    else if (type === 'item_merge') rows.push(agItemLine(p.keep_id, '남김'), agItemLine(p.drop_id, '뺌'));
+    else if (type === 'component_remove' || type === 'score_clear') {
+      const comp = agStr(p.component);
+      if (comp) rows.push(h('span', { class: 'ag-vt' }, compName(p.course_id, comp) + (type === 'component_remove' && agStr(p.merge_into) ? ' → ' + agStr(p.merge_into) : '')));
+    }
+    const kept = rows.filter(Boolean);
+    return kept.length ? h('div', { class: 'ag-vals' }, kept) : null;
   }
   function agDue(iso) {
     const d = parseDate(iso);
@@ -6718,6 +6929,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     return out.filter(Boolean);
   }
   function agVals(p, type) {
+    if (AG_FIX[type]) return agFixVals(p, type);
     const cid = p.course_id;
     const row = (...kids) => h('span', { class: 'ag-vrow' }, kids);
     if (type === 'add_deadline') {
@@ -6793,7 +7005,12 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       const id = (p.result && p.result.item_id) || p.item_id || null;
       return () => { agLeave(); if (id && findItem(id)) goInbox(id); else go('#inbox')(); };
     }
-    if (['link_score', 'set_count', 'set_weights', 'set_dist'].indexOf(p.type) >= 0 && p.course_id) {
+    // 일정에서 뺀·합친 항목은 확인함의 '제외한 항목'에 있다(jumpTo가 묶음을 펼친다)
+    if (p.type === 'item_remove' || p.type === 'item_merge') {
+      const id = p.type === 'item_merge' ? p.drop_id : p.item_id;
+      return id && findItem(id) ? () => { agLeave(); goInbox(id); } : null;
+    }
+    if (['link_score', 'set_count', 'set_weights', 'set_dist', 'component_remove', 'score_clear'].indexOf(p.type) >= 0 && p.course_id) {
       return () => { selGrade = String(p.course_id); agLeave(); go('#grades')(); };
     }
     return null;
@@ -6819,7 +7036,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         if (!undo && p.action === 'app_quit' && !(res && res.ok === false)) setTimeout(appQuitDone, 400);   // 서버가 곧 꺼진다
         return;
       }
-      agSay(undo ? '되돌렸어요. 반영 전 값으로 돌아갔어요.' : rules ? '확인함에 후보로 넣었어요. 날짜·제목을 확인하고 일정에 넣어 주세요.' : '반영했어요. 표시가 남고 되돌릴 수 있어요.');
+      agSay(undo ? '되돌렸어요. 반영 전 값으로 돌아갔어요.' : rules ? '확인함에 후보로 넣었어요. 날짜·제목을 확인하고 일정에 넣어 주세요.'
+        : p && AG_FIX[p.type] ? agDoneText(p, p.type) + '. 표시가 남고 되돌릴 수 있어요.' : '반영했어요. 표시가 남고 되돌릴 수 있어요.');
     }, (err) => {
       ag.busy.delete(key);
       const p = Array.isArray(t.proposals) ? t.proposals[i] : null;
@@ -6939,14 +7157,18 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   function agAnswerKind(A, t, kind) {
     const props = arr(t.proposals).filter((p) => p && typeof p === 'object');
     const rules = t.by === 'rules';
-    const extra = kind === 'question' ? agQuestion(t) : kind === 'whatif' ? agWhatif(t) : kind === 'mail' ? agMailThread(t) : kind === 'plan' ? agPlan(t) : null;
+    // 인용은 질문 갈래에서, 그리고 도구를 쓴 에이전트 답(대화·모르는 갈래)이 citations를 붙였을 때
+    const cites = kind === 'question' || kind === 'chat' || kind === 'other' || kind === 'fix';
+    const extra = cites ? agQuestion(t) : kind === 'whatif' ? agWhatif(t) : kind === 'mail' ? agMailThread(t) : kind === 'plan' ? agPlan(t) : null;
+    const byTag = kind === 'question' || kind === 'other' || kind === 'chat' || kind === 'fix';
     const toAi = h('button', { type: 'button', class: 'linkish', 'data-ak': 'ag-aion-' + t.id, on: { click: () => { agLeave(); goSettings('pane-ai', '[data-key="ai-cli"]'); } } }, '설정에서 AI 도움 켜기');
     return h('div', { class: 'ag-a' },
-      h('div', { class: 'ag-ahead' }, tag(AG_KINDS[kind], 'quiet'),
-        kind === 'question' ? (rules ? tag('규칙 검색', 'quiet') : tag('AI', 'ai')) : null,
-        kind === 'question' && num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
+      h('div', { class: 'ag-ahead' }, AG_KINDS[kind] && kind !== 'chat' ? tag(AG_KINDS[kind], 'quiet') : null,
+        byTag ? (rules ? tag(kind === 'question' ? '규칙 검색' : '규칙', 'quiet') : tag('AI', 'ai')) : null,
+        (kind === 'question' || kind === 'other') && num(t.searched) ? h('span', { class: 'tnum' }, '글 ' + num(t.searched) + '개를 살펴봤어요') : null),
       kind === 'question' && rules && !A.enabled && agHintHere(t) ? h('p', { class: 'ag-rules' }, 'AI 도움이 꺼져 있어 찾은 문장을 그대로 보여 드려요. ', toAi) : null,
       t.answer ? h('p', { class: 'ag-answer' }, String(t.answer)) : !extra && !props.length ? h('p', { class: 'ag-answer' }, AG_EMPTY[kind] || '답을 찾지 못했어요.') : null,
+      agSteps(t),
       extra,
       props.length ? h('div', { class: 'ag-props' }, props.map((p) => agProp(t, p, t.proposals.indexOf(p)))) : null);
   }
@@ -8360,7 +8582,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   const TOUR_KEY = 'lms-agent.tour';
   const TIP_KEY = 'lms-agent.tip.';
   const TIP_VIEWS = ['semester', 'courses', 'grades', 'settings'];
-  const TOUR_VERSION = 3;   // 1: 핵심 4단계(~v0.5) · 2: 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외(v0.6.3) · 3: 물어보면 답해요(질문·만약에·메일·계획·명령)·주간 브리핑(v0.7.0)
+  const TOUR_VERSION = 4;   // 1: 핵심 4단계(~v0.5) · 2: 에이전트에게 묻기·시험 일정·점수 연결·P/NP·제외(v0.6.3) · 3: 물어보면 답해요(질문·만약에·메일·계획·명령)·주간 브리핑(v0.7.0) · 4: 바로 고치고 되돌리기(v0.8.0)
   const KO_COUNT = ['', '한', '두', '세', '네', '다섯', '여섯'];
   const tour = { open: false, mode: 'core', i: 0, steps: [], startView: 'dash', opener: null, raf: 0, offered: false, offerMode: 'core', pendingNav: false, openedChain: null, returnTo: null };
   const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -8529,8 +8751,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     if (!agState()) return null;
     return { label: inNew ? '물어보면 답해요' : '에이전트에게 묻기', view: null, sel: ['#ask-btn'], where: '메뉴', title: '물어보면 답해요', prefer: 'right',
       body: () => (railNav() ? '왼쪽 말풍선 아이콘이에요. ' : '') +
-        '‘기말 범위 어디까지야?’(질문), ‘기말에서 몇 점 받아야 A?’(만약에), ‘LAB4 연장 문의 메일 써줘’, ‘기말 전 2주 공부 계획 세워줘’, ‘컴퓨터 켤 때 자동 실행해줘’(명령)처럼 말로 하세요. ' +
-        '답에는 근거가 붙고, 바꾸는 건 직접 눌러야 해요.' +
+        '‘기말 범위 어디까지야?’(질문), ‘기말에서 몇 점 받아야 A?’(만약에), ‘LAB4 연장 문의 메일 써줘’, ‘기말 전 2주 공부 계획 세워줘’, ‘컴퓨터 켤 때 자동 실행해줘’(명령), ‘중복된 Assignment 지워줘’(고치기)처럼 말로 하세요. ' +
+        '답에는 근거가 붙고, 분명히 시킨 것은 바로 반영한 뒤 [되돌리기]를 보여 줘요. 애매하면 카드로 물어봐요.' +
         (agState() && agState().enabled ? '' : ' 설정 → AI에서 Claude Code·Codex 같은 에이전트를 연결하면 더 잘 답해요.') };
   }
   // 튜토리얼을 마친 뒤 늘어난 것: 지금 이 사용자에게 보일 곳만 고른다.

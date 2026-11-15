@@ -232,7 +232,7 @@ def test_server_flow_to_calendar(running):
     assert validate_ics(text) == []
     assert f"UID:{target['id']}@lms-agent" in text
     assert "canvas-101-1013@lms-agent" in text  # Canvas 과제 포함(기본값)
-    assert _deadline_events(text) == 1 + 3  # 승인 1 + 마감 있는 Canvas 과제 3(LAB3, LAB5, HW5)
+    assert _deadline_events(text) == 1 + 3 + 3  # 승인 1 + 마감 있는 Canvas 과제 3(LAB3, LAB5, HW5) + 강의 영상 3(계약 26-6)
     assert "UID:week-" in text and "주차: 마감" in text.replace("\r\n ", "")  # 주간 요약(기본 켜짐)
 
     code, body, _ = _req(url + "/api/settings", "POST", app.token, {"include_canvas": False})

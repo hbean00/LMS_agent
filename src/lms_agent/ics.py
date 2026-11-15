@@ -33,21 +33,28 @@ def _short(name: str, n: int = 16) -> str:
     return name if len(name) <= n else name[: n - 1] + "…"
 
 
+VIDEO_PREFIX = "[영상] "   # 강의 영상 시청 마감(계약 26-6, origin "video")
+
+
 def event_summary(item: dict) -> str:
+    """일정 제목. .ics와 구글 반영(gsync)이 함께 쓴다. 강의 영상은 맨 앞에 '[영상] '(제출함 표시 ✔는 그 앞)."""
     s = f"[{_short(item.get('course_name') or '과목 미상')}] {item.get('title') or '마감'}"
     if item.get("method") == "email":
         s += " (메일 제출)"
+    if item.get("origin") == "video":
+        s = VIDEO_PREFIX + s
     if item.get("submitted"):
         s = "✔ " + s
     return s
 
 
 def event_description(item: dict) -> str:
-    parts = [METHOD_LABEL.get(item.get("method") or "unknown", "")]
+    video = item.get("origin") == "video"
+    parts = ["강의 영상 시청(출석)" if video else METHOD_LABEL.get(item.get("method") or "unknown", "")]
     if item.get("email_to"):
         parts.append(f"제출처: {item['email_to']}")
     if item.get("submitted"):
-        parts.append("제출함")
+        parts.append("시청 완료" if video else "제출함")
     for ev in item.get("evidence") or []:
         label = SOURCE_LABEL.get(ev.get("source_type"), "근거")
         title = f" '{ev['source_title']}'" if ev.get("source_title") else ""
@@ -75,7 +82,8 @@ def build_ics(items: list[dict], now: datetime | None = None, summaries: list[di
         lines += ["BEGIN:VEVENT", f"UID:{it['id']}@lms-agent", f"DTSTAMP:{stamp}",
                   f"DTSTART:{t}", f"DTEND:{t}",
                   f"SUMMARY:{_esc(summary)}", f"DESCRIPTION:{_esc(event_description(it))}",
-                  f"CATEGORIES:{_esc(it.get('kind') or '과제')}", "TRANSP:TRANSPARENT"]
+                  f"CATEGORIES:{_esc('강의 영상' if it.get('origin') == 'video' else it.get('kind') or '과제')}",
+                  "TRANSP:TRANSPARENT"]
         url = it.get("url") or next((e.get("url") for e in it.get("evidence") or [] if e.get("url")), None)
         if url:
             lines.append(f"URL:{url}")

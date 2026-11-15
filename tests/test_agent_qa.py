@@ -229,7 +229,8 @@ def fake_runner(bodies, seen):
 
 def ask_ai(s, message, bodies, seen=None):
     seen = [] if seen is None else seen
-    return agent.answer(s, message, ai_enabled=True, runner=fake_runner(bodies, seen), command="claude"), seen
+    return agent.answer(s, message, ai_enabled=True, runner=fake_runner(bodies, seen), command="claude",
+                        loop=False), seen
 
 
 def test_answer_task_retries_bad_quote_then_accepts(tmp_path):
@@ -528,7 +529,7 @@ def test_assist_can_propose_action_checked_by_actions(tmp_path, fake_actions):
             {"type": "action", "action": "sync_now", "params": {}, "reason": "새 공지를 읽으려면 동기화가 필요해요"},
             {"type": "action", "action": "delete_everything", "params": {}, "reason": "x"}]}
     r = agent.answer(s, "회로이론 기말고사 날짜가 안 보여요", ai_enabled=True, runner=fake_runner([body], seen),
-                     command="claude")
+                     command="claude", loop=False)
     assert r["kind"] == "missing" and r["by"] == "ai" and r["attempts"] == 2   # 모르는 동작 → 다시 묻고, 마지막엔 단추 없이
     assert agent_cli.ACTIONS_MARK in seen[0] and "sync_now {}: 지금 동기화" in seen[0]
     sync, bad = r["proposals"]

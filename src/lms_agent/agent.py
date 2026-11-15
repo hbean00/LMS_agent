@@ -1,4 +1,8 @@
-"""에이전트에게 묻기(채팅) — 계약 20장·22-1·22-2.
+"""에이전트에게 묻기(채팅) — 계약 20장·22-1·22-2·26장.
+
+에이전트 v2(계약 26장, v0.8.0): AI가 켜져 있으면 answer가 먼저 agent_loop(도구를 쓰는 AI 루프 — AI가 먼저 판단하고 필요할 때만
+읽기·제안 도구)를 돈다. 루프가 막히거나 실패하면 아래 갈래(v0.7.3)로 답하고 notes에 이유를 남긴다. run_job은 루프의 진행
+(progress·steps)을 앱 Store에 쓰고, 바로 반영할 제안(auto)은 답을 합친 뒤 같은 잠금 안에서 apply로 반영한다(auto_applied).
 
 메시지를 갈래(kind)로 나눈다(22-1, answer): 명령(actions) → 메일 초안(maildraft) → 공부 계획(plan) → 성적 '만약에'(whatif)
 → 놓친 것(missing, 20장) → 그 밖의 질문(question, 22-2). 앞의 넷은 각 모듈의 handle이 맡고, 첫 번째로 None이 아닌 결과를 대화에 합친다.
@@ -43,7 +47,9 @@ from .timeutil import iso, local_tz, now_local, parse_iso
 MAX_THREADS = 80          # 남기는 차례 수(계약 24-1, 오래된 것부터 지움)
 MAX_CONVERSATIONS = 20    # state.agent.conversations에 보이는 대화 수
 HISTORY_TURNS = 6         # 답할 때 넘기는 같은 대화의 앞 차례 수
-PER_ASK = 2               # 한 번 묻기에 쓰는 AI 호출(질문 답 + 일반 지식 덧붙이기를 합쳐)
+PER_ASK = 4               # 한 번 묻기에 쓰는 AI 호출 최대(계약 26-1: 에이전트 루프 3차례 + 검사 실패 다시 묻기 1번)
+ROUTE_PER_ASK = 2         # 규칙 갈래(v0.7.3)가 쓰는 AI 호출(질문 답 + 일반 지식 덧붙이기) — 루프가 실패해 넘어와도 이만큼까지
+ITEM_TYPES = ("add_deadline", "fix_due", "item_remove", "item_merge")   # 반영하면 마감·일정이 바뀜 → "changed"(구글 캘린더, 26-4)
 MAX_MESSAGE = 500
 SEARCH_LIMIT = 8
 SNIPPET_MAX = 500
@@ -352,7 +358,8 @@ def _search(store, message, course_id=None, limit=SEARCH_LIMIT, items=None) -> t
 
 KINDS = ("과제", "시험")
 METHODS = ("lms", "email", "paper", "unknown")
-TYPES = ("add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note", "action")
+TYPES = ("add_deadline", "fix_due", "link_score", "set_count", "set_weights", "set_dist", "note", "action",
+         "item_remove", "item_merge", "component_remove", "score_clear")   # 뒤의 넷: 지우기·고치기(계약 26-3, agent_fix)
 _KO_WD = "월화수목금토일"
 
 
@@ -484,6 +491,9 @@ def check_proposal(ctx: Ctx, p: dict, by: str = "ai", why: str | None = None, or
     typ = str(p.get("type") or "")
     if typ == "action":   # 앱 동작(계약 22-9) — 근거 글 대신 actions.check가 id·params를 검사한다
         return check_action(ctx.store, p, by=by, why=why, shorts=ctx.shorts)
+    from . import agent_fix
+    if typ in agent_fix.TYPES:   # 지우기·고치기(계약 26-3) — 근거 글 대신 대상 id·이름이 지금 있는지 검사한다
+        return agent_fix.check(ctx, p, by=by, why=why)
     errs: list[str] = [why] if why else []
     if typ not in TYPES:
         errs.append(f"모르는 제안 종류 '{typ[:20]}' / unknown proposal type")
@@ -1088,7 +1098,7 @@ def _answer_question(ctx: Ctx, out: dict, message: str, results: list[dict], sea
     message는 갈래·검색에 쓴 말(생략 질문이면 합친 뜻), message_typed는 친 그대로(AI에 함께 보냄)."""
     if ai_enabled and any((r.get("score") or 0) > MIN_AI_SCORE for r in results):
         from .agent_cli import AiSession
-        session = session or AiSession(ctx.store, runner=runner, command=command, enabled=True, max_calls=PER_ASK)
+        session = session or AiSession(ctx.store, runner=runner, command=command, enabled=True, max_calls=ROUTE_PER_ASK)
         inputs, _ = _ai_inputs(ctx, message, results, cids, names, message_typed, history)
         res = session.run("answer", inputs)
         out["attempts"] = res.attempts
@@ -1548,11 +1558,19 @@ _KEEP = ("id", "at", "message", "course_id", "status", "kind", "finished_at", "s
          "conversation", "carried", "course_context")
 
 
+GRADE_HINT = re.compile(r"성적|평가|비중|점수|학점|(?<![a-z])(?:grades?|scores?|weights?|components?)(?![a-z])", re.I)
+
+
 def _handles(store, message: str, course_id, names, now, action_course=None):
     """갈래 handle들(모양 고정: handle(store, message, course_id, …)). 이어받은 과목은 메일·계획·만약에에 넘기고, 명령(actions)에는
     직접 고른 과목이나 생략 질문('그 과목 P/NP로 바꿔줘')일 때만 넘긴다(action_course)."""
     from . import actions, maildraft, plan, whatif
-    return (("action", lambda: actions.handle(store, message, action_course)),
+    from . import agent_fix
+    act = ("action", lambda: actions.handle(store, message, action_course))
+    fix = ("fix", lambda: agent_fix.handle(store, message, course_id))
+    # 성적 낱말이 있으면 지우기·고치기가 먼저(계약 26-3): 'Report 평가 항목 지워줘'가 같은 이름의 마감 제외(액션)로 가지 않게
+    first = (fix, act) if GRADE_HINT.search(message or "") else (act, fix)
+    return (*first,
             ("mail", lambda: maildraft.handle(store, message, course_id, names)),
             ("plan", lambda: plan.handle(store, message, course_id, now)),
             ("whatif", lambda: whatif.handle(store, message, course_id, now)))
@@ -1596,32 +1614,100 @@ def _finish(out: dict, fu: dict, message: str, courses: list) -> dict:
     out["carried"] = fu.get("carried")
     out["course_context"] = None if out.get("kind") == "chat" else course_context(out, fu.get("course_id"),
                                                                                   fu.get("message") or message, courses)
-    if fu.get("carried") and fu["carried"].get("course_short"):
-        out["notes"] = list(out.get("notes") or []) + [f"앞 대화의 과목 '{fu['carried']['course_short']}'에서 찾았어요"]
+    carried = fu.get("carried") or {}
+    # 제안·인용이 모두 다른 과목이면(예: 루프가 다른 과목의 'LAB 6'을 찾음) '앞 대화의 과목에서 찾았어요'는 틀린 말이라 뺀다
+    found_in = {str(x.get("course_id")) for x in list(out.get("proposals") or []) + list(out.get("citations") or [])
+                if isinstance(x, dict) and x.get("course_id") is not None}
+    if carried.get("course_short") and (not found_in or str(carried.get("course_id")) in found_in):
+        out["notes"] = list(out.get("notes") or []) + [f"앞 대화의 과목 '{carried['course_short']}'에서 찾았어요"]
     out["finished_at"] = iso(now_local())
     return out
 
 
+class _Spent:
+    """루프가 AI 실행기 문제(없음·오류·시간 초과)로 멈췄을 때 규칙 갈래에 넘기는 '다 쓴' 창구 — 같은 실행기를 다시 띄우지 않고
+    그 이유를 규칙 답의 오류로 그대로 보여 준다(AiSession과 같은 모양: calls·max_calls·blocked·run)."""
+    calls, max_calls = 0, 1
+
+    def __init__(self, error: str):
+        self.error = error
+
+    def blocked(self) -> str:
+        return self.error
+
+    def run(self, name: str, inputs: dict, max_attempts: int | None = None):
+        from .agent_cli import AiResult
+        return AiResult(False, name, error=self.error)
+
+
+_BASE = {"status": "done", "searched": 0, "results": [], "error": None, "by": "rules", "answer": "", "proposals": [],
+         "citations": [], "attempts": 0, "steps": []}
+
+
+def _try_loop(store, message: str, fu: dict, hist: list, names, session, now, progress, intent, notes: list):
+    """AI 에이전트 루프(계약 26-1)를 먼저 돈다 → (루프 결과, 규칙 갈래가 쓸 세션). 하루 한도 등으로 막혔으면 돌지 않는다
+    (규칙 갈래가 그 이유를 오류로 보여 준다). 실패하면 notes에 이유를 남기고, 검사 실패면 남은 호출(최대 ROUTE_PER_ASK)을,
+    실행기 문제면 '다 쓴' 창구를 규칙 갈래에 넘긴다."""
+    from . import agent_loop
+    if session.blocked():
+        return None, session
+    try:
+        res = agent_loop.run(store, message, eff=fu["message"], course_id=fu["course_id"], history=hist, names=names,
+                             session=session, now=now, progress=progress, intent=intent)
+    except Exception as e:  # noqa: BLE001 — 루프가 고장 나도 규칙 갈래로 답한다(예외 내용은 남기지 않음)
+        res = {"ok": False, "error": f"에이전트 루프 오류({type(e).__name__})", "failure": "cli", "steps": [],
+               "attempts": 0}
+    if res.get("ok"):
+        return res, session
+    notes.append(f"AI 에이전트가 끝까지 답하지 못해 규칙으로 답했어요({_flat(res.get('error'))[:160]})")
+    if res.get("failure") == "invalid":
+        session.max_calls = min(PER_ASK, session.calls + ROUTE_PER_ASK)
+        return res, session
+    return res, _Spent(_flat(res.get("error"))[:200] or "AI가 답하지 못했어요")
+
+
 def answer(store, message: str, course_id=None, ai_enabled: bool = False, runner=None, command: str | None = None,
-           names: list | None = None, session=None, history: list | None = None) -> dict:
+           names: list | None = None, session=None, history: list | None = None, loop: bool | None = None,
+           progress=None) -> dict:
     """질문 하나에 답한다(잠금 밖에서, 몇십 초 걸릴 수 있음). store는 이 작업만 쓰는 사본(Store(path))이 좋다 —
     AI 실행 기록(ai_runs)만 이 store에 더해진다. 결과: 차례 칸(status, kind, answer, proposals, citations, searched, results,
-    error, by, carried, course_context …).
+    error, by, carried, course_context, steps …).
     history: 같은 대화의 앞 차례들(오래된 것부터, 최대 6) [{"message", "answer", "kind", "course_id", "effective"?, "cited"?, "id"?}]
     — 과목·주제를 이어받는다(계약 24-1, followup).
-    갈래(계약 22-1·24-2): actions → maildraft → plan → whatif의 handle 중 첫 번째로 None이 아닌 것 → 처음부터 일반 대화인 말
-    (chat_intent) → missing(놓친 것 — 20장) / question(22-2) → 학업 말이 없고 관련 글도 없으면 chat. AI 호출은 한 번 묻기에
-    PER_ASK(2)회까지(질문 답과 일반 지식 덧붙이기가 함께 쓴다)."""
+    AI가 켜져 있으면(ai_enabled, loop가 False가 아니면) 먼저 에이전트 루프(agent_loop, 계약 26-1)가 답한다 — AI가 먼저 판단하고 필요할
+    때만 도구를 쓴다. 한 번 묻기에 AI 호출 PER_ASK(4)회까지. 위기 말은 루프 없이 일반 대화 갈래(도움 받을 곳을 하네스가 보장).
+    루프가 막히거나 실패하면(또는 AI가 꺼져 있으면) v0.7.3 갈래(계약 22-1·24-2): actions → fix → maildraft → plan → whatif의
+    handle 중 첫 번째로 None이 아닌 것 → 처음부터 일반 대화인 말(chat_intent) → missing(놓친 것 — 20장) / question(22-2) →
+    학업 말이 없고 관련 글도 없으면 chat. 갈래의 AI 호출은 ROUTE_PER_ASK(2)회까지. progress(문구|None, steps): 루프의 진행 표시."""
     notes: list[str] = []
     now = now_local()
     hist = _history_list(history)
     courses = _visible_courses(store)
     intent = chat_intent(message, courses)
     fu = followup(message, course_id, hist, courses, intent)
-    eff = fu["message"]
+    use_loop = bool(ai_enabled) and loop is not False and intent != "crisis"
     if ai_enabled and session is None:
         from .agent_cli import AiSession
-        session = AiSession(store, runner=runner, command=command, enabled=True, max_calls=PER_ASK)
+        session = AiSession(store, runner=runner, command=command, enabled=True,
+                            max_calls=PER_ASK if use_loop else ROUTE_PER_ASK)
+    tried = None
+    if use_loop:
+        tried, session = _try_loop(store, message, fu, hist, names, session, now, progress, intent, notes)
+        if tried is not None and tried.get("ok"):
+            return _finish({**_BASE, **tried["out"]}, fu, message, courses)
+    out = _route(store, message, course_id, ai_enabled, runner, command, names, session, hist, courses, intent, fu,
+                 notes, now)
+    out["steps"] = []
+    if tried is not None:   # 실패한 루프가 해 본 것도 보여 준다
+        out["steps"] = list(tried.get("steps") or [])
+        out["attempts"] = int(out.get("attempts") or 0) + int(tried.get("attempts") or 0)
+    return out
+
+
+def _route(store, message: str, course_id, ai_enabled: bool, runner, command, names, session, hist: list,
+           courses: list, intent, fu: dict, notes: list, now) -> dict:
+    """v0.7.3 갈래(계약 22-1·24-2) — AI가 꺼져 있거나 루프가 실패했을 때."""
+    eff = fu["message"]
     act_course = fu["course_id"] if (course_id is not None or fu["followup"]) else None
     for kind, fn in _handles(store, eff, fu["course_id"], names, now, act_course):
         try:
@@ -1740,7 +1826,8 @@ def new_thread(store, message: str, course_id: str | None, conversation: str | N
     th = {"id": "t-" + uuid.uuid4().hex[:10], "at": iso(now_local()), "message": message, "course_id": course_id,
           "conversation": conv or "c-" + uuid.uuid4().hex[:10],
           "status": "running", "kind": None, "answer": None, "proposals": [], "citations": [], "searched": 0,
-          "results": [], "error": None, "by": None, "finished_at": None, "carried": None, "course_context": None}
+          "results": [], "error": None, "by": None, "finished_at": None, "carried": None, "course_context": None,
+          "steps": [], "progress": None}
     box = _box(store)
     box["threads"].append(th)
     del box["threads"][:-MAX_THREADS]
@@ -1806,34 +1893,99 @@ def clear_conversation(store, conversation: str) -> bool:
     return True
 
 
+AUTO_LOCK_SECONDS = 30   # 바로 반영할 때 동기화(app.lock)를 기다리는 최대 시간 — features/agent._change와 같음
+
+
+def _write_progress(target, thread_id: str, text: str | None, steps: list) -> None:
+    """답하는 중인 차례에 진행 문구·단계를 앱 Store에 쓴다(파일 잠금 안, 계약 26-4)."""
+    with target.locked():
+        target.reload_if_changed()
+        th = find_thread(target, thread_id)
+        if th is None or th.get("status") != "running":
+            return
+        th["progress"] = text
+        th["steps"] = copy.deepcopy(steps or [])
+        target.write()
+
+
+def _auto_apply(target, thread_id: str, th: dict, names) -> bool:
+    """바로 반영(계약 26-4): auto 제안을 agent.apply(다시 검사 → 반영)로. 반영하면 auto_applied·notes, 실패하면 카드로 남기고
+    notes에 이유 + 답에 한 줄(했다고 한 말이 틀리지 않게). 마감·항목이 바뀌었으면 True(→ changed). 부르는 쪽이 잠금을 잡는다."""
+    changed = False
+    for i, p in enumerate(th.get("proposals") or []):
+        if not isinstance(p, dict) or not p.get("auto") or p.get("applied"):
+            continue
+        try:
+            q = apply(target, thread_id, i, names=names)
+        except (LookupError, ValueError, AgentConflict) as e:
+            why = _flat(e)[:200]
+            p["auto_applied"] = False
+            p["notes"] = list(p.get("notes") or []) + [f"바로 반영하지 못했어요({why}) — [반영]을 눌러 주세요"]
+            th["notes"] = list(th.get("notes") or []) + [f"바로 반영하지 못했어요: {why}"]
+            th["answer"] = (f"{th.get('answer') or ''}\n\n(바로 반영하지 못했어요 — {why}. 카드에서 [반영]을 눌러 주세요.)").strip()
+            continue
+        q["auto_applied"] = True
+        q["notes"] = list(q.get("notes") or []) + ["분명히 시킨 것이라 앱이 검사한 뒤 바로 반영했어요 — [되돌리기]로 되돌릴 수 있어요"]
+        changed = changed or q.get("type") in ITEM_TYPES
+    return changed
+
+
 def run_job(target, thread_id: str, message: str, course_id=None, ai_enabled: bool = False, runner=None,
-            command: str | None = None, names: list | None = None, history: list | None = None) -> dict:
+            command: str | None = None, names: list | None = None, history: list | None = None, lock=None,
+            emit=None) -> dict:
     """백그라운드 작업 하나: 파일에서 새로 읽은 사본으로 답을 만들고(잠금 밖), target(앱의 Store)에 잠금을 잡고 다시 읽은 뒤
     그 차례와 AI 실행 기록만 합쳐 저장한다(그 사이 다른 프로세스가 저장한 것을 지우지 않게). 그 사이 차례가 지워졌으면 버린다.
-    history를 주지 않으면 사본에서 같은 대화의 앞 차례를 읽는다(history_for)."""
+    history를 주지 않으면 사본에서 같은 대화의 앞 차례를 읽는다(history_for).
+    루프의 진행(progress·steps)은 차례 사이마다 target에 쓴다. 바로 반영할 제안(auto)이 있으면 lock(앱의 동기화 잠금 app.lock —
+    features/agent._change와 같은 순서: app.lock → 파일 잠금)을 잡고, 합친 뒤 같은 잠금 안에서 agent.apply로 반영한다
+    (auto_applied). 마감·항목이 바뀌었으면 잠금을 놓은 뒤 emit()(앱의 "changed" — 구글 캘린더)."""
     from .agent_cli import RUN_LOG_KEEP
     from .store import Store
     work = Store(target.path)
     before = list(work.data.get("ai_runs") or [])
+
+    def progress(text, steps):
+        _write_progress(target, thread_id, text, steps)
     try:
         if history is None:
             history = history_for(work, thread_id)
         result = answer(work, message, course_id, ai_enabled=ai_enabled, runner=runner, command=command, names=names,
-                        history=history)
+                        history=history, progress=progress)
     except Exception as e:  # noqa: BLE001 — 화면이 '답하는 중'에 멈춰 있지 않게
         result = {"status": "error", "error": f"답을 만들지 못했어요({type(e).__name__})", "answer": None,
                   "proposals": [], "by": "rules", "finished_at": iso(now_local())}
+    result["progress"] = None
     new_runs = [r for r in work.data.get("ai_runs") or [] if r not in before]
-    with target.locked():
-        target.reload_if_changed()
-        th = find_thread(target, thread_id)
-        if th is not None:
-            th.update(result)
-        if new_runs:
-            runs = target.data.setdefault("ai_runs", [])
-            runs.extend(r for r in new_runs if r not in runs)
-            del runs[:-RUN_LOG_KEEP]
-        target.write()
+    auto = any(isinstance(p, dict) and p.get("auto") for p in result.get("proposals") or [])
+    held = bool(lock is not None and auto and lock.acquire(timeout=AUTO_LOCK_SECONDS))
+    changed = False
+    try:
+        with target.locked():
+            target.reload_if_changed()
+            th = find_thread(target, thread_id)
+            if th is not None:
+                th.update(result)
+                if auto and lock is not None and not held:
+                    for p in th.get("proposals") or []:
+                        if isinstance(p, dict) and p.get("auto"):
+                            p["notes"] = list(p.get("notes") or []) + ["동기화하는 중이라 바로 반영하지 못했어요 — [반영]을 눌러 주세요"]
+                    th["notes"] = list(th.get("notes") or []) + ["동기화하는 중이라 바로 반영하지 못했어요"]
+                elif auto:
+                    changed = _auto_apply(target, thread_id, th, names)
+                result = copy.deepcopy(th)
+            if new_runs:
+                runs = target.data.setdefault("ai_runs", [])
+                runs.extend(r for r in new_runs if r not in runs)
+                del runs[:-RUN_LOG_KEEP]
+            target.write()
+    finally:
+        if held:
+            lock.release()
+    if changed and callable(emit):
+        try:
+            emit()
+        except Exception:  # noqa: BLE001 — 구글 반영이 실패해도 답은 저장됐다
+            pass
     return result
 
 
@@ -1862,15 +2014,19 @@ def public_threads(store, active: set | None = None) -> list[dict]:
         t2["conversation"] = conversation_of(t)
         t2.setdefault("carried", None)
         t2.setdefault("course_context", None)
+        t2["steps"] = [dict(x) for x in t.get("steps") or [] if isinstance(x, dict)]   # 계약 26-4: 루프가 쓴 도구
+        t2["progress"] = t.get("progress") if t.get("status") == "running" else None
         t2["proposals"] = [{**{k: v for k, v in p.items() if not str(k).startswith("_")},
-                            "client": bool(p.get("client")), "can_apply": can_apply(p)}
+                            "client": bool(p.get("client")), "can_apply": can_apply(p),
+                            "auto": bool(p.get("auto")), "auto_applied": bool(p.get("auto_applied"))}
                            for p in t.get("proposals") or [] if isinstance(p, dict)]
         if not isinstance(t2.get("citations"), list):
             t2["citations"] = []
         at = parse_iso(t.get("at"))
         if (t2.get("status") == "running" and (active is None or t2.get("id") not in active)
                 and at and (now - at).total_seconds() > STALE_SECONDS):
-            t2.update(status="error", error="답을 받지 못했어요(앱이 다시 켜졌을 수 있어요). 다시 물어봐 주세요")
+            t2.update(status="error", error="답을 받지 못했어요(앱이 다시 켜졌을 수 있어요). 다시 물어봐 주세요",
+                      progress=None)
         if not t2.get("kind"):   # 옛 대화(kind 없음)·답하기 전에 멈춘 대화는 'missing', 답하는 중이면 아직 모름(None)
             t2["kind"] = None if t2.get("status") == "running" else "missing"
         out.append(t2)
@@ -1887,7 +2043,8 @@ class AgentConflict(Exception):
 
 
 _RAW_KEYS = ("type", "course_id", "evidence", "source_key", "reason", "title", "due", "kind", "method", "item_id", "key",
-             "component", "n", "components", "groups", "dist_kind", "cutoffs")
+             "component", "n", "components", "groups", "dist_kind", "cutoffs", "keep_id", "drop_id", "merge_into", "which",
+             "auto")
 
 
 def reason_text(p: dict) -> str:
@@ -2053,6 +2210,12 @@ _APPLY = {"add_deadline": (_apply_add, _undo_add), "fix_due": (_apply_fix, _undo
           "set_weights": (_apply_weights, _undo_cfg), "set_dist": (_apply_dist, _undo_cfg)}
 
 
+def _fix_apply():
+    """지우기·고치기 제안의 반영·되돌리기(계약 26-3, agent_fix.APPLY) — 모듈을 다 읽은 뒤 합친다(서로 가져오기)."""
+    from . import agent_fix
+    _APPLY.update(agent_fix.APPLY)
+
+
 def proposal(store, thread_id, idx) -> tuple[dict, dict]:
     """(대화, 제안) — 없는 대화 LookupError, 없는 번호 ValueError."""
     return _proposal(store, thread_id, idx)
@@ -2141,3 +2304,6 @@ def missed_cases_export(store) -> list[dict]:
     """[파일로 저장]용(계약 20-5): {at, type, source_type, evidence(가린 문장), rule_version, by}."""
     return [{k: v for k, v in c.items() if not str(k).startswith("_")}
             for c in store.data.get("missed_cases") or [] if isinstance(c, dict)]
+
+
+_fix_apply()

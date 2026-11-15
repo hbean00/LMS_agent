@@ -77,6 +77,9 @@ def save_course(store, course_id: str, body: dict) -> None:
     cfg = {"components": comps, "dist": dist, "class_size": size}
     if prev.get("dist_auto"):   # 강의계획서에서 찾은 학점 비율은 남겨 둔다(사용자 비율이 있으면 그쪽이 이긴다)
         cfg["dist_auto"] = prev["dist_auto"]
+    removed = _still_removed(prev, comps)   # 지운 평가 항목 기록(계약 26-3) — 사용자가 다시 넣은 이름만 뺀다
+    if removed:
+        cfg["removed"] = removed
     store.data.setdefault("grades", {})[str(course_id)] = cfg
 
 
@@ -390,7 +393,10 @@ def auto_fill(store, sources: list[dict], ai_enabled: bool, runner=None,
             elif not (cfg and cfg.get("components")):
                 missing.append(short)
             continue
-        line = _apply(store, cid, cfg, chosen[0], chosen[1], by, now, short)
+        wf = drop_removed(cfg, chosen[0])   # 사용자가 지운 평가 항목은 다시 만들지 않는다(계약 26-3)
+        if wf is None:
+            continue
+        line = _apply(store, cid, cfg, wf, chosen[1], by, now, short)
         if line:
             log.append(line)
     if ai_blocked:
@@ -445,10 +451,52 @@ def _apply(store, cid: str, cfg: dict | None, wf: WeightsFound, src: dict, by: s
     }
     if (cfg or {}).get("dist_auto"):
         store.data["grades"][cid]["dist_auto"] = cfg["dist_auto"]
+    removed = _still_removed(cfg, comps)
+    if removed:
+        store.data["grades"][cid]["removed"] = removed
     how = " (AI CLI)" if by == "ai" else ""
     if old:
         return f"{short}: '{title}'에 따라 평가 비중을 바꿨습니다{how} — {_diff_text(_diff(old, comps))}"
     return f"{short}: 평가 비중 {len(comps)}개를 '{title}'에서 찾아 넣었습니다{how}(합 {wf.total:g}%)"
+
+
+def removed_components(cfg: dict | None) -> list[dict]:
+    """에이전트로 지운 평가 항목 기록(계약 26-3, agent_fix가 남김): cfg["removed"] = [{"name", "weight", "merge_into", "at", "by",
+    "reason"}]. 평가 비중 자동 채우기(규칙·AI)가 같은 이름을 다시 만들지 않게 한다. 되돌리기는 이전 성적 설정으로."""
+    return [r for r in (cfg or {}).get("removed") or [] if isinstance(r, dict) and str(r.get("name") or "").strip()]
+
+
+def _still_removed(cfg: dict | None, comps: list[dict]) -> list[dict]:
+    """새 항목 목록에 다시 들어간 이름(사용자가 직접 넣음·에이전트 비중 제안을 반영)은 기록에서 뺀다."""
+    names = {_canon(c.get("name")) for c in comps or [] if isinstance(c, dict)}
+    return [r for r in removed_components(cfg) if _canon(r["name"]) not in names]
+
+
+def drop_removed(cfg: dict | None, wf: WeightsFound) -> WeightsFound | None:
+    """찾은 비중에서 지운 평가 항목을 뺀다(merge_into가 있으면 그 비중을 그 항목에 더함). 뺄 것이 없으면 wf 그대로,
+    남는 항목이 없으면 None(넣지 않음). 이름은 _canon으로 비교('Assignment' = '과제')."""
+    rem = {_canon(r["name"]): r for r in removed_components(cfg)}
+    if not rem or not any(_canon(c["name"]) in rem for c in wf.components):
+        return wf
+    keep, moved, dropped = [], {}, []
+    for c in wf.components:
+        r = rem.get(_canon(c["name"]))
+        if r is None:
+            keep.append(dict(c))
+            continue
+        dropped.append(str(c["name"]))
+        if r.get("merge_into"):
+            k = _canon(r["merge_into"])
+            moved[k] = moved.get(k, 0.0) + float(c.get("weight") or 0)
+    if not keep:
+        return None
+    for c in keep:
+        add = moved.get(_canon(c["name"]))
+        if add:
+            c["weight"] = round(float(c["weight"] or 0) + add, 2)
+    total = round(sum(float(c["weight"] or 0) for c in keep), 2)
+    note = "지운 평가 항목은 다시 넣지 않았어요: " + ", ".join(dropped[:5])
+    return WeightsFound(keep, total, wf.sentence, wf.confidence, list(wf.notes) + [note])
 
 
 # ---------------------------------------------------------------- 학점 비율 자동 찾기(계약 16장)
@@ -747,7 +795,7 @@ def _observations(store, cid: str, cands, items) -> dict:
     """과목 글에서 본 번호(계약 14-4 관찰): 점수 라벨, 마감 제목, 게시판 글 제목, 받은 자료 파일 이름 → {계열: [번호…]}."""
     cache = store.data.get("cache") or {}
     names = [c.get("label") for c in cands or [] if str(c.get("course_id")) == cid]
-    names += [it.get("title") for it in items or [] if str(it.get("course_id")) == cid]
+    names += [it.get("title") for it in items or [] if str(it.get("course_id")) == cid and it.get("origin") != "video"]
     for b in cache.get("boards") or []:
         if str(b.get("course_id")) != cid:
             continue
@@ -938,6 +986,8 @@ def link_items(store, items: list, sem: dict | None = None) -> list:
     memo: dict = {}
     for it in items or []:
         it["component"], it["component_by"], it["component_reason"] = None, None, None
+        if it.get("origin") == "video":   # 강의 영상 시청(계약 26-6)은 평가 항목이 아니다('Lab 3 강의' 같은 제목이어도)
+            continue
         cid = str(it.get("course_id")) if it.get("course_id") is not None else None
         cfg = saved.get(cid) if cid else None
         if not cfg or not cfg.get("components"):

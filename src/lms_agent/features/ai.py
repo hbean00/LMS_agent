@@ -99,12 +99,19 @@ def ai_state(app, ctx):
             reason = "찾은 AI CLI를 아직 확인하지 않았어요 — [다시 찾기]로 도움말을 읽어 확인해요"
         else:
             reason = agent_cli.why_not(by.get(want), want)
+    today = agent_cli.calls_today(app.store)
+    per_day = agent_cli.daily_limit(app.store)   # None = 제한 없음(설정 ai_daily_limit 0)
     return {"available": bool(cur), "command": (plan.cli if plan else None) or agent_cli.DEFAULT_COMMAND,
             "enabled": bool(st.get("ai_cli")), "auto_triage": bool(st.get("ai_auto_triage")),
             "last_error": (last or {}).get("error") if last and not last.get("ok") else None,
-            "calls_today": agent_cli.calls_today(app.store),
-            "limits": {"per_sync": agent_cli.MAX_CALLS_PER_SYNC, "per_day": agent_cli.MAX_CALLS_PER_DAY,
+            "calls_today": today,
+            "limits": {"per_sync": agent_cli.MAX_CALLS_PER_SYNC, "per_day": per_day,
                        "max_chars": agent_cli.MAX_TEXT},
+            # 설정 → AI의 '하루 AI 사용 한도'(계약 26-0): 고른 값(0 = 제한 없음)·고를 수 있는 값·오늘 남은 수(None = 제한 없음)
+            "daily_limit": {"value": 0 if per_day is None else per_day, "choices": list(agent_cli.DAILY_CHOICES),
+                            "default": agent_cli.MAX_CALLS_PER_DAY,
+                            "left": None if per_day is None else max(0, per_day - today),
+                            "reached": per_day is not None and today >= per_day},
             "recent_runs": agent_cli.recent_runs(app.store, 5),
             "last_triage": app.store.data.get("ai_triage"),
             # 계약 21-3: 실행기 목록(이름만, 경로 없음)과 지금 쓰는 것

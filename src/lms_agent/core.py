@@ -20,7 +20,8 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from .canvas import Canvas, CanvasError
-from .extract import RULES_VERSION, Found, detect_method, find_deadlines, html_to_text, same_task, title_hint
+from .extract import (RULES_VERSION, Found, detect_method, find_deadlines, html_to_text, same_task, title_hint,
+                      title_tokens)
 from .timeutil import iso, now_local, parse_iso
 
 LMS_TYPES = {"online_upload", "online_text_entry", "online_url", "online_quiz",
@@ -87,9 +88,15 @@ def collect(canvas: Canvas, now: datetime | None = None, lookback_days: int = 12
         if not cache["conversations"]:
             cache["conversations"] = list((prev or {}).get("conversations", []))
         errors.append(f"메시지함을 읽지 못했습니다: {e}")
+    tool_lists: dict = {}   # 이번 실행에서 받은 과목별 외부 도구 목록(게시판·영상 도구 찾기가 함께 쓴다 — 한 번만 묻기)
+    launched: dict = {}     # 게시판 도구로 실행한 LearningX(출입증은 이 실행의 메모리에만)
     cache["boards"], cache["lx_tools"], lx_requests, posts_fetched = _collect_boards(canvas, cache["courses"], prev,
-                                                                                  full, errors)
+                                                                                  full, errors, tool_lists, launched)
     cache["boards"] += _linked_files(canvas, cache, prev, errors)
+    cache["videos"], cache["lx_video_tools"], video_requests = _collect_videos(canvas, cache["courses"], prev, full,
+                                                                              errors, tool_lists, launched)
+    lx_requests += video_requests
+    launched.clear()
     cache["pdf_texts"] = dict((prev or {}).get("pdf_texts") or {})  # sync가 다운로드 뒤 새 글자를 더한다
     cache["probe"] = {"requests": canvas.request_count - start_requests + lx_requests,
                       "conversations_fetched": fetched, "conversations_reused": reused,
@@ -189,9 +196,11 @@ def _linked_files(canvas: Canvas, cache: dict, prev: dict | None, errors: list[s
              "posts": posts} for bid, title in LINKED_BOARDS for cid, posts in boards[bid].items()]
 
 
-def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full: bool, errors: list[str]):
+def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full: bool, errors: list[str],
+                    tool_lists: dict | None = None, launched: dict | None = None):
     """LearningX 게시판(계약 10장). 글 목록에는 본문이 같이 오므로 매번 받고, 첨부 상세는
-    새 글·바뀐 글에만 요청한다. 게시판 도구가 없는 과목은 기억해 두고 '전체 다시 확인' 때만 다시 본다."""
+    새 글·바뀐 글에만 요청한다. 게시판 도구가 없는 과목은 기억해 두고 '전체 다시 확인' 때만 다시 본다.
+    tool_lists: 받은 외부 도구 목록을 과목별로 남길 곳, launched: 실행에 성공한 LearningX를 남길 곳(영상 수집이 이어 씀)."""
     from .learningx import LearningX, LearningXError
 
     prev = prev or {}
@@ -203,7 +212,10 @@ def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full
         if cid in known_tools:
             tool_id = known_tools[cid]
         else:
-            tool = LearningX.board_tool(canvas, cid)
+            listed = LearningX.tools(canvas, cid)
+            if tool_lists is not None:
+                tool_lists[cid] = listed
+            tool = LearningX.board_tool(canvas, cid, listed if listed is not None else [])
             tool_id = tool["id"] if tool else None
         tools[cid] = tool_id
         if tool_id is None:
@@ -211,6 +223,8 @@ def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full
         lx = LearningX(canvas, cid)
         try:
             lx.launch(tool_id)
+            if launched is not None:
+                launched[cid] = (tool_id, lx)
             for b in lx.boards():
                 old_posts = {p["id"]: p for p in (prev_boards.get((cid, b["id"])) or {}).get("posts", [])}
                 posts = []
@@ -242,6 +256,100 @@ def _collect_boards(canvas: Canvas, courses: list[dict], prev: dict | None, full
             out += [b for b in prev.get("boards", []) if b["course_id"] == cid and b.get("source") != "canvas"]
         requests += lx.requests
     return out, tools, requests, fetched
+
+
+def _collect_videos(canvas: Canvas, courses: list[dict], prev: dict | None, full: bool, errors: list[str],
+                    tool_lists: dict | None = None, launched: dict | None = None):
+    """LearningX 주차학습의 강의 영상(출석 인정 기간이 있는 것, 계약 26-6) → (videos, 영상 도구 id 기억, LearningX 요청 수).
+    과목마다: 영상 도구('주차학습'·'강의콘텐츠', 없으면 '출결')를 실행해 `/modules?include_detail=true`를 읽는다. 그 길이 없는
+    옛 LearningX(404)면 `allcomponents_db`(Canvas 사용자 id·로그인 id가 필요 — `/api/v1/users/self/profile`에서 한 번만 받아
+    이 함수 안에서만 쓰고 저장하지 않는다). 영상 도구가 없고 게시판 도구만 있으면 게시판 출입증으로 한 번 해 보고, 안 되면
+    조용히 넘어간다(그 과목엔 주차학습이 없음). LearningX를 쓰지 않는 과목에는 요청을 보내지 않는다.
+    실패한 과목은 지난번 영상을 그대로 쓰고(없으면 Canvas 공식 모듈 API로 한 번 더), 모든 과목을 한 줄의 오류로 알린다."""
+    from .learningx import LearningX, LearningXError, canvas_module_videos, video_records
+
+    prev = prev or {}
+    tool_lists = tool_lists if tool_lists is not None else {}
+    launched = launched if launched is not None else {}
+    known = {} if full else dict(prev.get("lx_video_tools") or {})
+    prev_videos = [v for v in prev.get("videos") or [] if isinstance(v, dict)]
+    who: dict = {}
+
+    def login():
+        """allcomponents_db에 넣을 (Canvas 사용자 id, 로그인 id) — 이 실행의 메모리에만."""
+        if "v" not in who:
+            try:
+                p = canvas._get_one("/api/v1/users/self/profile")
+                who["v"] = (p.get("id"), p.get("login_id") or p.get("sis_login_id"))
+            except CanvasError:
+                who["v"] = (None, None)
+        return who["v"]
+
+    def read(lx: LearningX, tool_id) -> list[dict]:
+        try:
+            raw = lx.modules()
+        except LearningXError as e:
+            if e.status != 404:
+                raise
+            uid, user_login = login()
+            if uid in (None, "") or not user_login:
+                return []
+            try:
+                raw = lx.allcomponents(uid, user_login)
+            except LearningXError as e2:
+                if e2.status != 404:
+                    raise
+                return []
+        return video_records(raw, lx.course_id, canvas.base_url, tool_id)
+
+    out, tools, requests, failed, reason = [], {}, 0, [], None
+    for c in courses:
+        cid = c["id"]
+        if cid in known:
+            tool_id = known[cid]
+        else:
+            listed = tool_lists[cid] if cid in tool_lists else LearningX.tools(canvas, cid)
+            tool = LearningX.video_tool(canvas, cid, listed if listed is not None else [])
+            tool_id = tool["id"] if tool else None
+        tools[cid] = tool_id
+        if tool_id is None and cid not in launched:
+            continue                      # LearningX를 안 쓰는 과목
+        if tool_id is None:               # 게시판 출입증으로 한 번(안 되면 주차학습이 없는 것으로)
+            board_tool, lx = launched[cid]
+            if not lx.ready:              # 게시판을 읽다 출입증이 거절됨(오류는 게시판 쪽에서 이미 알렸다)
+                out += [v for v in prev_videos if str(v.get("course_id")) == cid]
+                continue
+            before = lx.requests
+            try:
+                out += read(lx, board_tool)
+            except LearningXError as e:
+                if e.status not in (401, 403):
+                    failed.append(c["name"])
+                    reason = reason or str(e)
+                    out += [v for v in prev_videos if str(v.get("course_id")) == cid]
+            requests += lx.requests - before
+            continue
+        lx = LearningX(canvas, cid)
+        try:
+            lx.launch(tool_id)
+            out += read(lx, tool_id)
+        except LearningXError as e:
+            failed.append(c["name"])
+            reason = reason or str(e)
+            old = [v for v in prev_videos if str(v.get("course_id")) == cid]
+            if not old:
+                try:
+                    old = canvas_module_videos(canvas._get_all(
+                        f"/api/v1/courses/{urllib.parse.quote(str(cid), safe='')}/modules",
+                        [("include[]", "items"), ("include[]", "content_details"), ("per_page", 100)]),
+                        cid, canvas.base_url)
+                except CanvasError:
+                    old = []
+            out += old
+        requests += lx.requests
+    if failed:
+        errors.append(f"강의 영상 목록을 읽지 못해 지난번 내용을 씁니다({', '.join(short_course_name(n) for n in failed)}): {reason}")
+    return out, tools, requests
 
 
 # ================================================================ 정리
@@ -418,6 +526,93 @@ def _canvas_item(a: dict, course_name: str) -> dict:
             "default_decision": "approved" if due else "pending", "_name": a.get("name") or ""}
 
 
+def _md_wd_hm(dt: datetime) -> str:
+    return f"{dt.month}/{dt.day}({KO_WD[dt.weekday()]}) {dt:%H:%M}"
+
+
+def video_items(cache: dict | None, names: dict | None = None, oldest: datetime | None = None) -> list[dict]:
+    """수집한 강의 영상(cache["videos"], 계약 26-6) → 항목. 마감(due_at)이 없는 영상·oldest보다 오래된 영상은 만들지 않는다.
+    id `video-<과목>-<영상 id>`(실행 사이에 같음 — 구글 일정 id가 이어진다), LMS가 정한 마감이라 기본 승인, 시청 완료 = canvas_submitted."""
+    names = names if names is not None else {c["id"]: c["name"] for c in (cache or {}).get("courses", [])}
+    out, seen = [], set()
+    for v in (cache or {}).get("videos") or []:
+        if not isinstance(v, dict) or v.get("id") in (None, "") or v.get("course_id") in (None, ""):
+            continue
+        due = parse_iso(v.get("due_at")) if isinstance(v.get("due_at"), str) else None
+        if not due or (oldest is not None and due < oldest):
+            continue
+        cid = str(v["course_id"])
+        vid = f"video-{cid}-{v['id']}"
+        if vid in seen:
+            continue
+        seen.add(vid)
+        when = {k: (parse_iso(v.get(k)) if isinstance(v.get(k), str) else None) for k in ("unlock_at", "late_at", "lock_at")}
+        start = when["unlock_at"]
+        notes = [f"출석 인정 기간: {_md_wd_hm(start)} ~ {_md_wd_hm(due)}" if start and start < due
+                 else f"출석 인정 마감: {_md_wd_hm(due)}"]
+        if when["late_at"] and when["late_at"] > due:
+            notes.append(f"지각 인정: {_md_wd_hm(when['late_at'])}까지")
+        if when["lock_at"] and when["lock_at"] > max(due, when["late_at"] or due):
+            notes.append(f"시청 가능: {_md_wd_hm(when['lock_at'])}까지")
+        dur = v.get("duration") if isinstance(v.get("duration"), int) and not isinstance(v.get("duration"), bool) else None
+        if dur:
+            notes.append(f"영상 길이 {max(1, round(dur / 60))}분")
+        out.append({"id": vid, "origin": "video", "course_id": cid, "course_name": names.get(cid) or "과목 미상",
+                    "title": " ".join(str(v.get("title") or "").split()) or "강의 영상", "due": iso(due),
+                    "kind": "과제", "method": "lms", "email_to": None, "confidence": None, "notes": notes,
+                    "evidence": [], "url": v.get("url") if isinstance(v.get("url"), str) else None,
+                    "canvas_submitted": bool(v.get("completed")), "duplicate_of": None, "linked_to": None,
+                    "conflict": None, "default_decision": "approved",
+                    "video": {"unlock_at": iso(start), "due_at": iso(due), "late_at": iso(when["late_at"]),
+                              "lock_at": iso(when["lock_at"]), "duration": dur,
+                              "attendance": v.get("attendance") if isinstance(v.get("attendance"), str) else None}})
+    return out
+
+
+# 번호 없는 일반 과제 낱말 하나('Assignment'·'과제'·'HW'·'Homework'·'Report'·'보고서' …)인지 가를 때의 계열(links.families).
+# 시험·학기 시점(중간·기말)·번호가 붙은 이름은 일반 낱말이 아니다(그 자체로 과제 하나를 가리킨다).
+_TASK_FAMILIES = frozenset({"hw", "report", "lab", "project"})
+
+
+def _generic_hint(hint: str | None, kind: str | None) -> bool:
+    """제목 힌트가 어느 과제인지 말해 주지 않는 일반 낱말인지(계약 26-5). 'Midterm Project'처럼 띄어 쓴 이름은
+    과제 하나를 가리키는 이름으로 본다(build_items 3단계의 제목 규칙과 같은 기준)."""
+    from .links import families
+
+    h = " ".join(str(hint or "").split())
+    if not h or kind == "시험" or " " in h or any(ch.isdigit() for ch in h):
+        return False
+    fams = families(h)
+    if not fams or not fams <= _TASK_FAMILIES:
+        return False
+    return not any(n is not None or k in ("midterm", "final") for k, n in title_tokens(h))
+
+
+def _pdf_context(s: dict, f, course_id, by_canvas_id: dict) -> tuple[dict | None, str | None]:
+    """첨부 PDF 글 s의 후보 f를 그 파일이 붙은 글(attached_to, 계약 24-3)에 잇는다 → (own Canvas 항목 | None, 글 제목 | None).
+    과제(가상 게시판 "assignments", 글 id = 과제 id)에 붙었으면 그 과제가 own(과제 설명과 같게). 여러 과제에 붙었으면
+    마감이 같은 날인 과제 → 이름이 같은 과제 → 정하지 못하면 own 없음. own이 없으면 공지·게시판 글 제목(과제를 가리키는 제목 먼저)."""
+    refs = [r for r in s.get("attached_to") or [] if isinstance(r, dict)]
+    owners = []
+    for r in refs:
+        if str(r.get("board_id")) == "assignments" and r.get("post") is not None:
+            it = by_canvas_id.get(f"canvas-{course_id}-{r['post']}")
+            if it is not None and it not in owners:
+                owners.append(it)
+    own = owners[0] if len(owners) == 1 else None
+    if len(owners) > 1:
+        same = [o for o in owners if o["due"] and parse_iso(o["due"]).date() == f.due.date()]
+        named = [o for o in owners if f.title_hint and same_task(f.title_hint, o["_name"])]
+        own = same[0] if same else (named[0] if len(named) == 1 else None)
+    if own is not None:
+        return own, own["_name"] or None
+    skip = {"syllabus", "assignments"} if len(owners) > 1 else {"syllabus"}   # 어느 과제인지 모르면 과제 이름을 빌리지 않는다
+    titles = [" ".join(str(r.get("title") or "").split()) for r in refs if str(r.get("board_id")) not in skip]
+    titles = [t for t in titles if t]
+    specific = [t for t in titles if any(n is not None or k in ("midterm", "final") for k, n in title_tokens(t))]
+    return None, (specific or titles or [None])[0]
+
+
 def build_items(cache: dict | None, manual: list[dict], now: datetime | None = None,
                 lookback_days: int = 120, extracted: dict | None = None,
                 reason_all: str | None = None, agent_items: list | None = None) -> tuple[list[dict], dict, dict]:
@@ -459,13 +654,16 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
             if f.due < oldest:
                 continue
             own = by_canvas_id.get(f"canvas-{s['course_id']}-{s['id']}") if s["type"] == "assignment" else None
+            src_title = s["title"] if s["type"] in ("announcement", "inbox", "board") else None
+            if s["type"] == "pdf":   # 첨부 PDF: 그 파일이 붙은 글을 출처처럼(과제 → own, 공지·게시판 → 글 제목, 계약 26-5)
+                own, src_title = _pdf_context(s, f, s["course_id"], by_canvas_id)
             if own and own["due"] and parse_iso(own["due"]).date() == f.due.date():
-                continue  # 과제 설명에 Canvas 마감을 다시 적은 것
+                continue  # 과제 설명(또는 그 과제에 붙은 파일)에 Canvas 마감을 다시 적은 것
             cands.append({"course_id": s["course_id"], "course_name": s["course_name"], "due": f.due,
                           "hint": f.title_hint, "kind": f.kind, "method": f.method, "email_to": f.email_to,
                           "confidence": f.confidence, "notes": list(f.notes),
                           "own": own["id"] if own else None,
-                          "source_title": s["title"] if s["type"] in ("announcement", "inbox", "board") else None,
+                          "source_title": src_title,
                           "evidence": [{"text": f.sentence, "source_type": s["type"], "source_title": s["title"],
                                         "url": s["url"], "posted_at": iso(s["posted_at"])}]})
 
@@ -489,17 +687,32 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
     # 3) Canvas 과제와 연결·중복 판단, 제목 정하기
     items: list[dict] = []
     for c in merged.values():
+        own_item = by_canvas_id.get(c["own"]) if c["own"] else None
+        # 번호 없는 일반 낱말('Assignment', '과제')은 어느 과제인지 말해 주지 않는다 → 붙은 과제(own)·글 제목으로 본다(계약 26-5)
+        generic = _generic_hint(c["hint"], c["kind"])
         label = c["hint"] or c["source_title"]
+        if generic and (own_item or c["source_title"]):
+            label = own_item["_name"] if own_item else c["source_title"]
         same_course = [it for it in canvas if it["course_id"] == c["course_id"]]
-        linked = by_canvas_id.get(c["own"]) if c["own"] else None
+        linked = own_item
         if linked and linked["due"]:
             linked = None
         if not linked:
             linked = next((it for it in same_course if not it["due"] and label and same_task(label, it["_name"])), None)
         dup = next((it for it in same_course if it["due"] and label and same_task(label, it["_name"])
                     and parse_iso(it["due"]).date() == c["due"].date()), None)
+        # 같은 과제의 Canvas 마감과 다른 날(변경·연장 공지일 수 있음): own(일반 낱말이거나 같은 이름일 때) → 같은 과제 이름
+        other = None
+        if not linked and not dup:
+            if own_item and own_item["due"] and (generic or (label and same_task(label, own_item["_name"]))):
+                other = own_item
+            else:
+                other = next((it for it in same_course if it["due"] and label and same_task(label, it["_name"])), None)
+        match = linked or dup or other
         if linked:
             title = linked["_name"]
+        elif generic and match:
+            title = match["_name"]         # 'Assignment' 대신 그 Canvas 과제 이름
         elif c["hint"] and (any(ch.isdigit() for ch in c["hint"]) or c["kind"] == "시험"
                             or " " in c["hint"]):   # 'Midterm Project'처럼 과제 하나를 가리키는 이름
             title = c["hint"]
@@ -510,14 +723,20 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
             notes = notes + [f"Canvas 과제 '{linked['_name']}'(마감 없음)의 마감으로 보입니다"]
         if dup:
             notes = notes + [f"Canvas 과제 '{dup['_name']}'와 같은 마감입니다"]
+        canvas_conflict = None
+        if other:
+            canvas_conflict = f"Canvas 과제 '{other['_name']}'에는 {_fmt(parse_iso(other['due']))}로 적혀 있습니다"
+            notes = notes + [canvas_conflict + " — 변경·연장 공지일 수 있어요"]
         items.append({"id": "f-" + _hid(c["course_id"] or c["course_name"], iso(c["due"]), title),
                       "origin": "found", "course_id": c["course_id"], "course_name": c["course_name"],
                       "title": title, "due": iso(c["due"]), "kind": c["kind"], "method": c["method"],
                       "email_to": c["email_to"], "confidence": c["confidence"], "notes": notes,
                       "evidence": sorted(c["evidence"], key=lambda e: e["posted_at"] or ""), "url": None,
                       "canvas_submitted": None, "duplicate_of": dup["id"] if dup else None,
-                      "linked_to": linked["id"] if linked else None, "conflict": None,
-                      "default_decision": "pending", "_label": linked["_name"] if linked else label})
+                      "linked_to": linked["id"] if linked else None,
+                      "conflict": ("같은 과제에 다른 마감이 있습니다: " + canvas_conflict) if canvas_conflict else None,
+                      "default_decision": "pending", "_canvas_conflict": canvas_conflict,
+                      "_label": match["_name"] if (linked or (generic and match)) else label})
 
     # 4) 같은 과제에 서로 다른 마감이 적혀 있으면 양쪽에 알린다(변경·연장 공지일 수 있다)
     for a in items:
@@ -527,7 +746,7 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
         if not others or a["duplicate_of"]:
             continue
         mine = max(e["posted_at"] or "" for e in a["evidence"])
-        parts = []
+        parts = [a["_canvas_conflict"]] if a.get("_canvas_conflict") else []
         for b in others:
             theirs = max(e["posted_at"] or "" for e in b["evidence"])
             when = "더 최근 글" if theirs > mine else "이전 글"
@@ -537,10 +756,12 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
 
     # 5) 마감도 없고 근거도 못 찾은 Canvas 과제만 '마감 없음'으로 남긴다
     linked_ids = {it["linked_to"] for it in items if it["linked_to"]}
-    out = [it for it in canvas if it["due"] or it["id"] not in linked_ids] + items
+    videos = video_items(cache, names, oldest)
+    out = [it for it in canvas if it["due"] or it["id"] not in linked_ids] + items + videos
     for it in out:
         it.pop("_name", None)
         it.pop("_label", None)
+        it.pop("_canvas_conflict", None)
     if agent_items:
         out = merge_agent_items(out, agent_items, names)
 
@@ -556,6 +777,7 @@ def build_items(cache: dict | None, manual: list[dict], now: datetime | None = N
         "candidates": len(found),
         "needs_review": sum(1 for it in found if not it["duplicate_of"]),
         "no_deadline": sum(1 for it in out if it["origin"] == "canvas" and not it["due"]),
+        "videos": len(videos),
         "errors": list((cache or {}).get("errors", [])),
         # 이번 실행에서 실제로 읽은 곳(탐색 목표)과 건너뛴 곳
         "checked": len(targets), "skipped": len(sources) - len(targets), "targets": targets[:50],
@@ -1009,13 +1231,18 @@ def weekly_summaries(items: list[dict], sem: dict) -> list[dict]:
         if not mine:
             continue
         exams = sum(1 for it in mine if it.get("kind") == "시험")
-        title = f"{w['n']}주차: 마감 {len(mine) - exams}" + (f" · 시험 {exams}" if exams else "")
+        videos = sum(1 for it in mine if it.get("origin") == "video")   # 강의 영상(계약 26-6)은 따로 센다
+        tasks = len(mine) - exams - videos
+        title = f"{w['n']}주차: " + " · ".join(
+            ([f"마감 {tasks}"] if tasks or not videos else []) + ([f"시험 {exams}"] if exams else [])
+            + ([f"영상 {videos}"] if videos else []))
         lines = []
         for it in mine:
             d = parse_iso(it["due"])
-            mark = " (제출함)" if it.get("submitted") else ""
+            video = it.get("origin") == "video"
+            mark = (" (시청 완료)" if video else " (제출함)") if it.get("submitted") else ""
             lines.append(f"{d.month}/{d.day}({KO_WD[d.weekday()]}) {d:%H:%M} [{it.get('course_short') or it.get('course_name')}] "
-                         f"{it.get('title')}{mark}")
+                         f"{'[영상] ' if video else ''}{it.get('title')}{mark}")
         start = datetime.combine(date.fromisoformat(w["start"]), time(8, 0), tzinfo=tz)
         out.append({"uid": f"week-{w['start']}@lms-agent", "start": start, "end": start + timedelta(minutes=30),
                     "summary": title, "description": "\n".join(lines) + "\n\nLMS Agent 주간 요약"})

@@ -7,6 +7,8 @@
   뒤 그 차례만 합쳐 저장한다.
 - POST /api/agent/clear → 대화 기록 전부, {"conversation": id} → 그 대화만(모르는 id 404).
 - AI(settings.ai_cli)가 꺼져 있어도 같은 창이 규칙 검색으로 답한다(by "rules"). 테스트·데모는 App(..., ai_runner=가짜).
+- 에이전트 v2(계약 26장): 작업이 루프의 진행(threads[].progress·steps)을 차례 사이마다 쓰고, 바로 반영할 제안(auto)은
+  답을 합친 뒤 app.lock 안에서 반영한다(auto_applied). 항목이 바뀌면 "changed". limits.per_day = 설정의 하루 한도(None = 제한 없음).
 - 액션 제안(type "action", 계약 22-9)은 /api/agent/apply·undo에서 actions.run/undo로 실행한다. 액션은 화면 단추와 같은 API 경로를
   앱 안에서 부르므로(그 경로가 잠금을 잡는다) **잠금 밖에서** 실행하고, 결과만 파일 잠금 안에서 제안에 남긴다.
 """
@@ -16,7 +18,7 @@ import copy
 import json
 import threading
 
-from .. import actions, agent, agent_cli
+from .. import actions, agent, agent_cli, agent_loop
 from ..api import ApiError, Response, router
 
 
@@ -45,7 +47,8 @@ def agent_state(app, ctx):
             "threads": agent.public_threads(app.store, active),
             "conversations": agent.conversations(app.store, active),
             "calls_today": agent_cli.calls_today(app.store),
-            "limits": {"per_day": agent_cli.MAX_CALLS_PER_DAY, "per_ask": agent.PER_ASK, "timeout": 90,
+            "limits": {"per_day": agent_cli.daily_limit(app.store), "per_ask": agent.PER_ASK,
+                       "max_rounds": agent_loop.MAX_ROUNDS, "timeout": 90,
                        "max_chars": agent_cli.MAX_TEXT, "max_message": agent.MAX_MESSAGE,
                        "history_turns": agent.HISTORY_TURNS, "max_threads": agent.MAX_THREADS,
                        "max_conversations": agent.MAX_CONVERSATIONS},
@@ -65,9 +68,11 @@ def ask(app, body):
             app.store.write()
         ai_on = bool((app.store.data.get("settings") or {}).get("ai_cli"))
         # 실행기는 작업이 읽은 설정대로(settings.ai_provider, 계약 21-3). ai_command는 테스트·데모가 넣은 claude
+        # 바로 반영(계약 26-4)은 반영·되돌리기 단추와 같은 잠금(app.lock → 파일 잠금)으로, 항목이 바뀌면 "changed"(구글 캘린더)
         t = threading.Thread(target=agent.run_job, daemon=True, args=(app.store, th["id"], msg, cid),
                              kwargs={"ai_enabled": ai_on, "runner": getattr(app, "ai_runner", None),
-                                     "command": getattr(app, "ai_command", None), "names": _names(app)})
+                                     "command": getattr(app, "ai_command", None), "names": _names(app),
+                                     "lock": app.lock, "emit": lambda: app.emit("changed")})
         app.agent_jobs = {k: v for k, v in app.agent_jobs.items() if v.is_alive()}
         app.agent_jobs[th["id"]] = t
         t.start()
@@ -174,8 +179,8 @@ def apply_proposal(app, body):
         _run_action(app, tid, idx, undo=False)
         return app.state()
     p = _change(app, lambda: agent.apply(app.store, tid, idx, names=_names(app)))
-    if p.get("type") in ("add_deadline", "fix_due"):
-        app.emit("changed")   # 구글 캘린더 반영 등
+    if p.get("type") in agent.ITEM_TYPES:   # 마감 추가·고치기·항목 빼기·합치기 → 구글 캘린더 반영 등(계약 26-4)
+        app.emit("changed")
     return app.state()
 
 
@@ -187,7 +192,7 @@ def undo_proposal(app, body):
         _run_action(app, tid, idx, undo=True)
         return app.state()
     p = _change(app, lambda: agent.undo(app.store, tid, idx))
-    if p.get("type") in ("add_deadline", "fix_due"):
+    if p.get("type") in agent.ITEM_TYPES:
         app.emit("changed")
     return app.state()
 

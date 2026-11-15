@@ -228,7 +228,7 @@ def test_assist_harness_redacts_retries_and_keeps_rejections(tmp_path):
         return subprocess.CompletedProcess(args, 0, out, "")
 
     r = agent.answer(s, "Signals 기말 날짜가 안 보여요 (제 메일 me@example.ac.kr)", ai_enabled=True, runner=fake,
-                     command="claude")
+                     command="claude", loop=False)
     assert r["by"] == "ai" and r["attempts"] == 2 and len(seen) == 2
     assert "me@example.ac.kr" not in seen[0] and "ta.signals@example.ac.kr" not in seen[0]   # 가린 뒤 보냄
     assert "이전 답이 검사를 통과하지 못했습니다" in seen[1] and "Mars" not in seen[1].split("INPUT START")[1]
@@ -250,7 +250,7 @@ def test_assist_final_attempt_shows_rejected_without_button(tmp_path):
         out = json.dumps({"type": "result", "result": json.dumps(body, ensure_ascii=False)}, ensure_ascii=False)
         return subprocess.CompletedProcess(args, 0, out, "")
 
-    r = agent.answer(s, "final 날짜", ai_enabled=True, runner=fake, command="claude")
+    r = agent.answer(s, "final 날짜", ai_enabled=True, runner=fake, command="claude", loop=False)
     assert r["by"] == "ai" and r["attempts"] == 2
     assert "±1일" in r["proposals"][0]["rejected_reason"]
 
@@ -449,7 +449,10 @@ def test_ask_runs_in_background_and_merges_under_lock(tmp_path):
     assert th["proposals"][0]["type"] == "add_deadline" and th["proposals"][0]["can_apply"]
     assert app.store.data["user"][lab2["id"]]["decision"] == "rejected"   # 다른 프로세스의 저장이 지워지지 않았다
     assert Store(app.store.path).data["agent"]["threads"][-1]["status"] == "done"
-    assert st["calls_today"] == 1 and st["enabled"] and st["limits"]["per_day"] == 30
+    # 에이전트 v2(계약 26-1): 1차례 search_texts → 2차례 제안과 답 = AI 2번(v0.7.3의 assist 1번 대신)
+    assert st["calls_today"] == 2 and st["enabled"] and st["limits"]["per_day"] == 100
+    tools = [x["tool"] for x in th["steps"]]
+    assert tools[0] == "search_texts" and set(tools[1:]) == {"propose_add_deadline"} and th["progress"] is None
     dump = json.dumps(app.state(), ensure_ascii=False)
     assert SECRET not in dump and "_undo" not in dump
 
@@ -530,11 +533,14 @@ def test_daily_cap_is_shared_with_other_ai_tasks(tmp_path):
     from lms_agent import agent_cli, mock_ai
     s = make_store(tmp_path / "s.json", rich_cache())
     s.data["ai_runs"] = [{"at": iso(now_local()), "task": "triage_review", "ok": True, "attempts": 29}]
-    r = agent.answer(s, "신호와시스템 기말 날짜", ai_enabled=True, runner=mock_ai.runner, command="claude")
+    s.data.setdefault("settings", {})["ai_daily_limit"] = 30   # 설정의 하루 한도(계약 26-0)
+    r = agent.answer(s, "신호와시스템 기말 날짜", ai_enabled=True, runner=mock_ai.runner, command="claude",
+                     loop=False)
     assert r["by"] == "ai" and r["attempts"] == 1                 # 남은 한 번만 썼다
     assert agent_cli.calls_today(s) == 30
     assert "오늘 AI 호출 한도" in agent_cli.AiSession(s, enabled=True).blocked()   # 확인함 정리 등도 막힌다
-    r = agent.answer(s, "신호와시스템 기말 날짜", ai_enabled=True, runner=mock_ai.runner, command="claude")
+    r = agent.answer(s, "신호와시스템 기말 날짜", ai_enabled=True, runner=mock_ai.runner, command="claude",
+                     loop=False)
     assert r["by"] == "rules" and "한도" in r["error"] and "규칙 검색으로 답했어요" in r["answer"]
     assert r["proposals"]                                       # AI 없이도 [마감 후보로 넣기]
 
@@ -667,7 +673,8 @@ def test_mock_ai_proposes_link_score_for_unlinked_quiz(tmp_path):
     s = make_store(tmp_path / "s.json", c)
     gradebook.save_course(s, "201", {"components": [{"name": "Homework", "weight": 80}, {"name": "Midterm quiz", "weight": 10},
                                                     {"name": "Final quiz", "weight": 10}]})
-    r = agent.answer(s, "신호와시스템 성적이 안 들어와요", ai_enabled=True, runner=mock_ai.runner, command="claude")
+    r = agent.answer(s, "신호와시스템 성적이 안 들어와요", ai_enabled=True, runner=mock_ai.runner, command="claude",
+                     loop=False)
     link = next(p for p in r["proposals"] if p["type"] == "link_score" and p["score_label"] == "Quiz"
                 and "midterm" in p["evidence"])
     assert link["rejected_reason"] is None and link["component"] == "Midterm quiz"

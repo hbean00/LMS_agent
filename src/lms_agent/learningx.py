@@ -29,6 +29,11 @@ USER_AGENT = "lms-agent/0.3"
 BOARD_TOOL_PATH = "/learningx_board/"
 TOKEN_COOKIE = "xn_api_token"
 _CHUNK = 64 * 1024
+# 강의 영상(계약 26-6)을 읽을 도구의 이름·과목 메뉴 글자. 학교·도구 세대마다 다르다
+# ('주차학습', '강의콘텐츠', '(구) 강의콘텐츠', '(Old) Lecture Contents', '출결현황', '출결/학습 현황', 'Learn Status').
+_VIDEO_TOOL = re.compile(r"주차\s*학습|강의\s*콘텐츠|학습\s*콘텐츠|모듈|modules?|lecture\s*contents?|weekly\s*learning", re.I)
+_ATTEND_TOOL = re.compile(r"출결|출석|학습\s*현황|attendance|learn\s*status", re.I)
+_LEGACY_TOOL = re.compile(r"(?:^|\s)\((?:구|old)\)", re.I)
 
 
 class LearningXError(Exception):
@@ -108,19 +113,48 @@ class LearningX:
     def __repr__(self) -> str:
         return f"LearningX(course {self.course_id})"
 
+    @property
+    def ready(self) -> bool:
+        """출입증이 있는지(값은 내보내지 않는다). 401로 버렸으면 False — 다시 launch해야 한다."""
+        return bool(self._token)
+
     # ------------------------------------------------------------ 찾기·실행
 
     @staticmethod
-    def board_tool(canvas: Canvas, course_id) -> dict | None:
-        """과목에 붙은 LearningX 게시판 도구(없으면 None = LearningX를 안 쓰는 학교·과목)."""
+    def tools(canvas: Canvas, course_id) -> list[dict] | None:
+        """과목에 붙은 외부 도구 목록(Canvas 공식 API). 못 읽으면 None."""
         try:
-            tools = canvas._get_all(f"/api/v1/courses/{_seg(course_id)}/external_tools",
-                                    [("include_parents", "true"), ("per_page", 100)])
+            return canvas._get_all(f"/api/v1/courses/{_seg(course_id)}/external_tools",
+                                   [("include_parents", "true"), ("per_page", 100)])
         except CanvasError:
             return None
-        boards = [t for t in tools if BOARD_TOOL_PATH in str(t.get("url") or "")]
+
+    @staticmethod
+    def board_tool(canvas: Canvas, course_id, tools: list[dict] | None = None) -> dict | None:
+        """과목에 붙은 LearningX 게시판 도구(없으면 None = LearningX를 안 쓰는 학교·과목). tools: 이미 받은 도구 목록."""
+        tools = LearningX.tools(canvas, course_id) if tools is None else tools
+        boards = [t for t in tools or [] if BOARD_TOOL_PATH in str(t.get("url") or "")]
         boards.sort(key=lambda t: (not t.get("course_navigation"), "total" in str(t.get("url"))))
         return boards[0] if boards else None
+
+    @staticmethod
+    def video_tool(canvas: Canvas, course_id, tools: list[dict] | None = None) -> dict | None:
+        """강의 영상(주차학습)을 읽을 LearningX 도구(계약 26-6): 이름·과목 메뉴 글자가 '주차학습·강의콘텐츠·모듈'인 것,
+        없으면 '출결·학습현황'. 옛 도구('(구) 강의콘텐츠')보다 지금 도구를, 과목 메뉴에 보이는 것을 먼저. 없으면 None."""
+        tools = LearningX.tools(canvas, course_id) if tools is None else tools
+        lx = [t for t in tools or [] if isinstance(t, dict) and t.get("id") is not None
+              and "/learningx/" in str(t.get("url") or "") and BOARD_TOOL_PATH not in str(t.get("url") or "")]
+
+        def label(t) -> str:
+            nav = t.get("course_navigation") if isinstance(t.get("course_navigation"), dict) else {}
+            return f"{nav.get('text') or ''} {t.get('name') or ''}"
+
+        for rx in (_VIDEO_TOOL, _ATTEND_TOOL):
+            found = [t for t in lx if rx.search(label(t))]
+            found.sort(key=lambda t: (bool(_LEGACY_TOOL.search(label(t))), not t.get("course_navigation")))
+            if found:
+                return found[0]
+        return None
 
     def launch(self, tool_id) -> None:
         """게시판 도구를 실행해 출입증(xn_api_token)을 받는다. 실패하면 LearningXError."""
@@ -265,6 +299,22 @@ class LearningX:
         item = d.get("item")
         return item if isinstance(item, dict) else d
 
+    # ------------------------------------------------------------ 주차학습(강의 영상, 계약 26-6)
+
+    def modules(self) -> list[dict]:
+        """주차학습 모듈 목록(모듈마다 module_items). 실제 계정으로 확인된 길(다른 학교의 LearningX):
+        `GET /learningx/api/v1/courses/<과목>/modules?include_detail=true` (Bearer xn_api_token). 없는 학교면 LearningXError(404)."""
+        d = self._api(f"/courses/{_seg(self.course_id)}/modules?include_detail=true")
+        if isinstance(d, dict):
+            d = d.get("items") or d.get("modules") or d.get("data") or []
+        return [m for m in d if isinstance(m, dict)] if isinstance(d, list) else []
+
+    def allcomponents(self, user_id, user_login) -> list[dict]:
+        """옛 LearningX의 학습 현황 목록 `GET /learningx/api/v1/courses/<과목>/allcomponents_db?user_id=&user_login=&role=1`.
+        user_login(학생 로그인 id)은 이 요청 주소에만 쓰고 저장·출력하지 않는다(오류 메시지에는 주소가 들어가지 않음)."""
+        q = urllib.parse.urlencode([("user_id", str(user_id)), ("user_login", str(user_login)), ("role", "1")])
+        return _items(self._api(f"/courses/{_seg(self.course_id)}/allcomponents_db?{q}"))
+
     def download(self, attachment: dict, dest, max_bytes: int = 50_000_000) -> int:
         """첨부 하나를 dest에 저장. 저장한 바이트 수.
         첨부 주소는 Canvas 파일 주소(/files/<id>/download?verifier=…)라 인증 헤더 없이 받는다(확인값이 주소 안에 있음).
@@ -349,3 +399,158 @@ def safe_name(name: str, limit: int = 80) -> str:
             s = s[:limit]
         s = s.rstrip(". ")
     return s or "_"
+
+
+# ---------------------------------------------------------------- 강의 영상(주차학습) 읽기 — 계약 26-6
+# 응답 모양은 공개 자료(다른 학교 LearningX를 실제 계정으로 읽은 오픈소스 기록)에서 확인한 필드만 읽고, 없는 칸은 비워 둔다.
+#  - /modules?include_detail=true: 모듈 [{module_id, title, module_items: [{module_item_id, title, content_type
+#    ("attendance_item"…), completed, attendance_status("attendance"·"absent"·"late"·"none"), published,
+#    content_data: {item_id, title, use_attendance, unlock_at, due_at, late_at, lock_at, duration?,
+#    item_content_data: {content_type("everlec"·"movie"·"mp4"·"screenlecture"·"pdf"…), duration(초)}}}]}]
+#  - allcomponents_db: 평평한 목록 [{component_id, title, type, unlock_at, due_at, late_at, lock_at, completed, use_attendance,
+#    attendance_status, commons_content: {content_type, duration, view_url}, view_info: {view_url}}]
+_NOT_VIDEO_KINDS = {"assignment", "quiz", "offline_exam", "exam", "survey", "discussion", "discussion_topic", "page",
+                    "wiki_page", "file", "attachment", "external_url", "subheader", "sub_header",
+                    "context_module_sub_header", "text", "link"}
+_DOC_MEDIA = {"pdf", "file", "doc", "docx", "ppt", "pptx", "hwp", "hwpx", "xls", "xlsx", "csv", "zip", "image", "img",
+              "html", "text", "txt", "link", "url", "webpage", "document"}
+_LIVE_MEDIA = {"zoom", "video_conference", "videoconference", "webex", "live", "meet", "teams", "bigbluebutton"}
+_VIDEO_MEDIA = {"mp4", "everlec", "movie", "screenlecture", "youtube", "vod", "video", "commons", "kollus", "vimeo",
+                "m3u8", "mov", "webm", "wmv", "avi", "flv", "mp3", "audio"}
+_YES = {"true", "1", "yes", "y", "complete", "completed", "done"}
+_NO = {"false", "0", "no", "n", "incomplete", "not_completed", "none", ""}
+
+
+def _flag(value) -> bool | None:
+    """참·거짓으로 읽을 수 있으면 bool, 아니면 None(모름)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str) and value.strip().lower() in _YES | _NO:
+        return value.strip().lower() in _YES
+    return None
+
+
+def _when(value) -> str | None:
+    """시각 문자열 → 로컬 시간대 ISO(앱 안의 모양). 읽지 못하면 None."""
+    from .timeutil import iso, parse_iso
+    return iso(parse_iso(value)) if isinstance(value, str) and value.strip() else None
+
+
+def _seconds(*values) -> int | None:
+    for v in values:
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, str) and re.fullmatch(r"\s*\d+(?:\.\d+)?\s*", v):
+            v = float(v)
+        if isinstance(v, (int, float)) and 0 < v < 100_000:
+            return int(round(v))
+    return None
+
+
+def _flatten(raw) -> list[dict]:
+    """모듈 목록(module_items·items를 펼침) 또는 평평한 목록 → 항목 목록."""
+    out: list[dict] = []
+    for x in raw if isinstance(raw, list) else []:
+        if not isinstance(x, dict):
+            continue
+        kids = x.get("module_items") if isinstance(x.get("module_items"), list) else x.get("items")
+        if isinstance(kids, list) and "due_at" not in x and "content_data" not in x:
+            out += [k for k in kids if isinstance(k, dict)]
+        else:
+            out.append(x)
+    return out
+
+
+def _same_site(url, base: str) -> str | None:
+    """Canvas와 같은 서버의 http(s) 주소만(다른 서버 뷰어 주소는 버린다)."""
+    if not isinstance(url, str) or not url.strip() or not base:
+        return None
+    full = urllib.parse.urljoin(base.rstrip("/") + "/", url.strip())
+    if urllib.parse.urlsplit(full).scheme not in ("http", "https") or origin(full) != origin(base):
+        return None
+    return full
+
+
+def video_records(raw, course_id, base_url: str, tool_id=None) -> list[dict]:
+    """LearningX 응답(/modules 또는 allcomponents_db) → 영상 기록 목록(계약 26-6 `cache["videos"]` 한 칸 모양):
+    {course_id, id, title, unlock_at, due_at, late_at, lock_at, completed, attendance, duration, url}.
+    영상 = 출석에 쓰는 항목(use_attendance)이면서 문서·실시간 수업이 아닌 것, 또는 영상 종류(content_type)이면서 '출석 안 씀'이 아닌 것.
+    과제·퀴즈(Canvas 과제로 이미 모음)·숨긴 항목·id 없는 항목은 뺀다. id는 LearningX 항목 id(content_data.item_id =
+    allcomponents의 component_id)를 먼저 써서 실행 사이·두 길 사이에 같게 한다. 마감이 없어도 기록은 남긴다(항목은 core가 거른다)."""
+    cid = str(course_id)
+    base = str(base_url or "").rstrip("/")
+    out, seen = [], set()
+    for it in _flatten(raw):
+        cd = it.get("content_data") if isinstance(it.get("content_data"), dict) else {}
+        icd = next((d for d in (cd.get("item_content_data"), it.get("commons_content"), cd.get("commons_content"))
+                    if isinstance(d, dict)), {})
+
+        def pick(key, it=it, cd=cd):
+            v = cd.get(key)
+            return it.get(key) if v is None else v
+
+        kind = str(it.get("type") or it.get("content_type") or cd.get("type") or "").strip().lower()
+        media = str(icd.get("content_type") or cd.get("item_content_type") or "").strip().lower()
+        if kind in _NOT_VIDEO_KINDS or media in _DOC_MEDIA or media in _LIVE_MEDIA:
+            continue
+        if _flag(it.get("published")) is False or _flag(cd.get("published")) is False:
+            continue
+        attend = _flag(pick("use_attendance"))
+        if not (attend is True or (media in _VIDEO_MEDIA and attend is not False)):
+            continue
+        vid = next((v for v in (cd.get("item_id"), it.get("component_id"), it.get("item_id"), it.get("module_item_id"),
+                                it.get("id")) if v not in (None, "") and not isinstance(v, (bool, dict, list))), None)
+        if vid is None or len(str(vid)) > 64 or str(vid) in seen:
+            continue
+        seen.add(str(vid))
+        status = it.get("attendance_status") if it.get("attendance_status") is not None else cd.get("attendance_status")
+        status = str(status).strip().lower()[:30] if isinstance(status, str) and status.strip() else None
+        done = _flag(it.get("completed"))
+        if done is None:
+            done = status == "attendance"
+        view = it.get("view_info") if isinstance(it.get("view_info"), dict) else {}
+        mid = it.get("module_item_id")
+        url = (f"{base}/courses/{_seg(cid)}/modules/items/{_seg(mid)}" if base and mid not in (None, "") else None) \
+            or _same_site(view.get("view_url"), base) or _same_site(icd.get("view_url"), base) \
+            or (f"{base}/courses/{_seg(cid)}/external_tools/{_seg(tool_id)}" if base and tool_id is not None else None)
+        title = " ".join(str(it.get("title") or cd.get("title") or "").split())[:200] or "강의 영상"
+        out.append({"course_id": cid, "id": str(vid), "title": title,
+                    "unlock_at": _when(pick("unlock_at")), "due_at": _when(pick("due_at")),
+                    "late_at": _when(pick("late_at")), "lock_at": _when(pick("lock_at")),
+                    "completed": bool(done), "attendance": status,
+                    "duration": _seconds(icd.get("duration"), cd.get("duration"), it.get("duration")), "url": url})
+    return out
+
+
+_LX_ITEM_IN_URL = re.compile(r"/learningx/[^?#]*?/(?:items/view|components|attendance_items)/(\d+)")
+
+
+def canvas_module_videos(modules, course_id, base_url: str) -> list[dict]:
+    """대체 길: Canvas 공식 모듈 API(`/api/v1/courses/<과목>/modules?include[]=items&include[]=content_details`)의 항목 중
+    LearningX를 띄우는 외부 도구 항목(주소에 /learningx/)이면서 마감(content_details.due_at)이 있는 것 → 영상 기록.
+    완료는 완료 조건(completion_requirement.completed). id는 주소 속 LearningX 항목 번호(없으면 'm' + Canvas 모듈 항목 id)."""
+    cid = str(course_id)
+    out, seen = [], set()
+    for m in modules if isinstance(modules, list) else []:
+        for it in (m.get("items") if isinstance(m, dict) and isinstance(m.get("items"), list) else []):
+            if not isinstance(it, dict) or str(it.get("type") or "") != "ExternalTool":
+                continue
+            link = str(it.get("external_url") or it.get("url") or "")
+            if "/learningx/" not in link or _flag(it.get("published")) is False:
+                continue
+            det = it.get("content_details") if isinstance(it.get("content_details"), dict) else {}
+            m_id = _LX_ITEM_IN_URL.search(link)
+            vid = m_id.group(1) if m_id else (f"m{it['id']}" if it.get("id") not in (None, "") else None)
+            if vid is None or vid in seen or not _when(det.get("due_at")):
+                continue
+            seen.add(vid)
+            req = it.get("completion_requirement") if isinstance(it.get("completion_requirement"), dict) else {}
+            out.append({"course_id": cid, "id": vid,
+                        "title": " ".join(str(it.get("title") or "").split())[:200] or "강의 영상",
+                        "unlock_at": _when(det.get("unlock_at")), "due_at": _when(det.get("due_at")),
+                        "late_at": None, "lock_at": _when(det.get("lock_at")),
+                        "completed": bool(_flag(req.get("completed"))), "attendance": None, "duration": None,
+                        "url": _same_site(it.get("html_url"), base_url)})
+    return out

@@ -79,8 +79,9 @@ def test_briefing_counts_a_task_once_and_cites_items(store):
     mid = by_title(store, "중간 프로젝트 보고서")
     dl = line(card, "deadline")
     # 같은 과제의 두 후보(LAB4 목·토)는 하나로 — 더 최근 글(메시지)의 토요일 후보
-    assert set(dl["item_ids"]) == {hw5["id"], lab4_new["id"], mid["id"]} and lab4_old["id"] not in all_ids(card)
-    assert dl["text"].startswith("이번 주 마감 3개") and "고비" not in dl["text"]   # 하루에 2개 이상 몰린 날은 없다
+    video = by_title(store, "12주차 1차시: Clock Tree Synthesis")   # 데모 강의 영상 T+6(목) 23:59:59(계약 26-6)
+    assert set(dl["item_ids"]) == {hw5["id"], lab4_new["id"], mid["id"], video["id"]} and lab4_old["id"] not in all_ids(card)
+    assert dl["text"].startswith("이번 주 마감 4개") and "고비" not in dl["text"]   # 하루에 2개 이상 몰린 날은 없다
     warn = line(card, "warn")
     assert set(warn["item_ids"]) == {lab4_new["id"], mid["id"]} and "2개는 아직 확인 전" in warn["text"]
     exam = line(card, "exam")
@@ -99,11 +100,11 @@ def test_briefing_busiest_day_and_what_is_left(store):
     extra = by_title(store, "과제 3")
     card = coach.state(store, now=at(3))["briefing"]
     dl = line(card, "deadline")
-    assert extra["id"] in dl["item_ids"] and dl["text"].startswith("이번 주 마감 4개")
+    assert extra["id"] in dl["item_ids"] and dl["text"].startswith("이번 주 마감 5개")   # + 강의 영상(계약 26-6)
     assert "금요일이 고비예요" in dl["text"]                             # 금요일: 중간 프로젝트 + 과제 3
     # 금요일 낮: 화요일 Homework 5는 지났다(제출 안 함) → 남은 것만 세고, 오늘이 고비
     dl = line(coach.state(store, now=at(7, 12))["briefing"], "deadline")
-    assert dl["text"].startswith("이번 주 마감 4개 중 3개 남았어요") and "오늘이 고비예요" in dl["text"]
+    assert dl["text"].startswith("이번 주 마감 5개 중 3개 남았어요") and "오늘이 고비예요" in dl["text"]
     # 다 내면 응원
     for v in store.view():
         if v["id"] in dl["item_ids"]:
@@ -131,7 +132,7 @@ def test_briefing_study_priority_without_letter_grades(store):
     # 알림 문구에는 공부 줄(성적에서 나온 말)이 들어가지 않는다
     title, body = notify.briefing_message(card)
     assert title == f"LMS Agent · {card['week']}주차 작전"
-    assert "공부" not in body and "학점" not in body and body.startswith("마감 3개")
+    assert "공부" not in body and "학점" not in body and body.startswith("마감 4개")   # + 강의 영상(계약 26-6)
 
 
 def test_hidden_course_is_left_out(store):
@@ -197,12 +198,14 @@ def test_retro_only_on_monday_and_tuesday(store):
     mid = by_title(store, "중간 프로젝트 보고서")                       # 확인 안 한 채 지나감
     card = coach.state(store, now=at(10))["retro"]                      # 그다음 월요일: 지난주 = T+3~T+9
     assert card["kind"] == "retro" and card["id"] == f"retro:{(T + timedelta(days=10)).isoformat()}"
-    assert (card["total"], card["done"]) == (2, 1)
+    video = by_title(store, "12주차 1차시: Clock Tree Synthesis")   # 데모 강의 영상 T+6(계약 26-6, 시청 안 함)
+    assert (card["total"], card["done"]) == (3, 1)
     head = line(card, "deadline")
-    assert head["text"] == "지난주 마감 2개 중 1개 제출했어요" and set(head["item_ids"]) == {lab4["id"], hw5["id"]}
+    assert head["text"] == "지난주 마감 3개 중 1개 제출했어요" and set(head["item_ids"]) == {lab4["id"], hw5["id"], video["id"]}
     warns = [ln for ln in card["lines"] if ln["tone"] == "warn"]
-    assert warns[0]["item_ids"] == [lab4["id"]] and "LAB4 보고서" in warns[0]["text"]
-    assert warns[1]["item_ids"] == [mid["id"]] and "확인 안 한 후보 1개" in warns[1]["text"]
+    assert warns[0]["item_ids"] == [lab4["id"]] and "LAB4 보고서" in warns[0]["text"] and "제출 표시" in warns[0]["text"]
+    assert warns[1]["item_ids"] == [video["id"]] and warns[1]["text"].startswith("시청 완료 표시가 없어요")   # 영상은 따로
+    assert warns[2]["item_ids"] == [mid["id"]] and "확인 안 한 후보 1개" in warns[2]["text"]
     assert coach.state(store, now=at(11, 21))["retro"]["id"] == card["id"]      # 화요일 밤에도
     for n in (12, 13, 14, 15, 16):                                              # 수~일에는 없다
         assert coach.state(store, now=at(n))["retro"] is None
@@ -230,9 +233,10 @@ def test_report_after_the_last_week(store):
     assert card["kind"] == "report" and card["id"] == f"report:{sem['weeks'][-1]['end']}"
     head = card["lines"][0]
     lab3, hw5, lab5 = by_title(store, "LAB3 보고서"), by_title(store, "Homework 5"), by_title(store, "LAB5 예비보고서")
-    assert head["text"] == "한 학기 마감 3개 중 1개를 냈어요" and set(head["item_ids"]) == {lab3["id"], hw5["id"], lab5["id"]}
+    videos = {v["id"] for v in store.view() if v["origin"] == "video"}   # 데모 강의 영상 3개(하나는 시청 완료, 계약 26-6)
+    assert head["text"] == "한 학기 마감 6개 중 2개를 냈어요" and set(head["item_ids"]) == {lab3["id"], hw5["id"], lab5["id"]} | videos
     texts = [ln["text"] for ln in card["lines"]]
-    assert "ASIC설계(영강): 마감 2개 중 1개 제출" in texts and "디지털신호처리: 마감 1개 중 0개 제출" in texts
+    assert "ASIC설계(영강): 마감 4개 중 2개 제출" in texts and "디지털신호처리: 마감 2개 중 0개 제출" in texts
     assert any("메달" in t for t in texts)
     with store.locked():
         assert coach.dismiss(store, card["id"], now=now)

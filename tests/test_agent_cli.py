@@ -205,8 +205,13 @@ def test_session_caps_and_disabled(store):
     assert attempts == [2, 2, 1, 0] and len(fake.calls) == 5
     assert "이번 동기화" in s.run("grading_weights", {"text": "y"}).error
     store.data["ai_runs"] = [{"at": iso(now_local()), "task": "x", "ok": True, "attempts": 30}]
+    store.data.setdefault("settings", {})["ai_daily_limit"] = 30   # 설정의 하루 한도(계약 26-0)
     s2 = agent_cli.AiSession(store, runner=fake, command=CMD)
     assert "오늘" in s2.run("grading_weights", {"text": "y"}).error and len(fake.calls) == 5
+    store.data["settings"]["ai_daily_limit"] = 0                  # 제한 없음
+    assert agent_cli.daily_limit(store) is None and agent_cli.AiSession(store, runner=fake, command=CMD).blocked() is None
+    store.data["settings"]["ai_daily_limit"] = 7                  # 고를 수 없는 값 → 기본 100
+    assert agent_cli.daily_limit(store) == 100
 
 
 def test_run_log_has_no_content_and_keeps_50(store):
@@ -518,7 +523,7 @@ def test_ai_and_grade_settings_routes(tmp_path):
 
     st = ai_feature.ai_state(app, None)
     assert st["available"] and st["command"] == "claude" and not st["enabled"] and st["calls_today"] == 0
-    assert st["limits"] == {"per_sync": 5, "per_day": 30, "max_chars": 12000} and st["last_triage"] is None
+    assert st["limits"] == {"per_sync": 5, "per_day": 100, "max_chars": 12000} and st["last_triage"] is None
     with pytest.raises(ApiError) as e:
         call("/api/ai/triage", {})
     assert e.value.status == 400 and not fake.calls

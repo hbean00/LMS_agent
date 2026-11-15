@@ -94,13 +94,8 @@ _WEEK = re.compile(r"\(주차/week (\d+)\)")
 _TERM = re.compile(r"^학기 / term: (\d+)주차 / (\d+)주")
 
 
-def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
-    after = text.split(mark, 1)[1].split("\n", 3)
-    msg = after[1].strip()
-    if len(after) > 2 and after[2].startswith(FOLLOW_PREFIX):   # 생략 질문 — 앞 대화와 합친 뜻으로 읽는다(계약 24-1)
-        msg = after[2][len(FOLLOW_PREFIX):].strip().removesuffix(")").strip()
-    state_part = text.split("지금 상태 / current state:", 1)[-1].split("찾은 글 / found texts", 1)[0]
-    found_part = text.split("찾은 글 / found texts", 1)[-1].split("=== 입력 글 끝", 1)[0]
+def _parse_state(state_part: str) -> tuple[dict, int | None]:
+    """'지금 상태' 글 → ({course_id: {"short", "items", "comps", "cands"}}, 학기 주 수). assist·agent가 같은 모양을 보낸다."""
     courses: dict = {}
     total, cur, sect = None, None, None
     for line in state_part.splitlines():
@@ -109,7 +104,8 @@ def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
             total = int(m.group(2))
         if line.startswith("## course_id "):
             cid, _, short = line[len("## course_id "):].partition(" · ")
-            cur = courses.setdefault(cid.strip(), {"short": short.strip(), "items": [], "comps": [], "cands": []})
+            cur = courses.setdefault(cid.strip(), {"short": re.sub(r" \(P/NP\)$", "", short.strip()), "items": [],
+                                                   "comps": [], "cands": []})
             sect = None
         elif cur is not None and line.startswith("평가 항목 / grading components"):
             sect = "comps"
@@ -129,14 +125,30 @@ def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
             cur["cands"].append({"key": m.group(1), "label": m.group(2), "source": m.group(3),
                                  "linked": not m.group(4).startswith("없음"), "text": m.group(5),
                                  "week": int(wk.group(1)) if wk else None})
+    return courses, total
+
+
+def _parse_found(found_part: str) -> list[dict]:
+    """'### source_key: …' 덩어리들(찾은 글·search_texts 결과) → [{"key", "course_id", "posted", "title", "text"}]."""
     snippets = []
-    for block in found_part.split("\n### source_key: ")[1:]:
+    for block in ("\n" + found_part).split("\n### source_key: ")[1:]:
         head, _, body = block.partition("\n")
         meta, _, rest = body.partition("\n")
         f = dict(x.split(": ", 1) for x in meta.split(" | ") if ": " in x)
         snippets.append({"key": head.strip(), "course_id": f.get("course_id"), "posted": f.get("게시/posted", ""),
-                         "title": f.get("제목/title", ""), "text": rest.strip()})
-    return {"message": msg, "courses": courses, "snippets": snippets, "weeks_total": total}
+                         "title": f.get("제목/title", ""), "text": rest.split("\n#### 차례 ", 1)[0].strip()})
+    return snippets
+
+
+def _parse_assist(text: str, mark: str = ASSIST_MARK) -> dict:
+    after = text.split(mark, 1)[1].split("\n", 3)
+    msg = after[1].strip()
+    if len(after) > 2 and after[2].startswith(FOLLOW_PREFIX):   # 생략 질문 — 앞 대화와 합친 뜻으로 읽는다(계약 24-1)
+        msg = after[2][len(FOLLOW_PREFIX):].strip().removesuffix(")").strip()
+    state_part = text.split("지금 상태 / current state:", 1)[-1].split("찾은 글 / found texts", 1)[0]
+    found_part = text.split("찾은 글 / found texts", 1)[-1].split("=== 입력 글 끝", 1)[0]
+    courses, total = _parse_state(state_part)
+    return {"message": msg, "courses": courses, "snippets": _parse_found(found_part), "weeks_total": total}
 
 
 def _assist_deadlines(p: dict, fam_q: set) -> tuple[list, list]:
@@ -257,9 +269,12 @@ def _assist(text: str) -> dict:
 # 하므로 한 글자도 바꾸지 않음). 답에는 그 문장과 글 제목만 쓴다(다른 숫자를 지어내지 않음). 맞는 문장이 없으면 찾지 못했다고 한다.
 
 def _answer(text: str) -> dict:
+    return _answer_from(_parse_assist(text, ANSWER_MARK))
+
+
+def _answer_from(p: dict) -> dict:
     from . import links as lk
     from .agent import SCORE_WORDS, TOPICS, question_topics, tokens
-    p = _parse_assist(text, ANSWER_MARK)
     msg = p["message"]
     topics = question_topics(msg)
     fam_q = lk.families(msg)
@@ -324,10 +339,158 @@ def _chat(text: str) -> dict:
     return {"answer": answer}
 
 
+# ---------------------------------------------------------------- agent(에이전트 v2 루프의 한 차례, 계약 26-1)
+# 진짜 모델이 아니므로 단순한 규칙으로 '먼저 판단'한다: 인사·잡담·위험한 말 → 도구 없이 답(done), '중복·지워·없애 … 제목' → 1차례
+# list_items → 2차례 propose_item_remove(평가 항목 이름이면 propose_component_remove, auto: true), 만약에 → whatif, 메일 → draft_mail,
+# 계획 → make_plan, 앱 명령 → propose_action(규칙이 고름), 과목 질문 → search_texts → 인용으로 답하거나(question) 놓친 마감 제안
+# (missing). 인용·근거는 보낸 도구 결과에서 그대로 자른다. '했어요'라고 하지 않는다(바로 반영은 앱이 정한다).
+
+AGENT_MARK = "학생 요청 / student request (에이전트 / agent):"   # agent_cli.AGENT_MARK
+AGENT_COURSE_PREFIX = "(앞 대화의 과목 / course from the previous turns:"   # agent_cli.AGENT_COURSE_PREFIX
+AGENT_TOOLS_MARK = "도구 결과 / tool results"
+_FIX_ASK = re.compile(r"중복|지워|지우|없애|삭제|제거|빼\s*(?:줘|주세요)|합쳐", re.I)
+_TOOL_HEAD = re.compile(r"^(\d+) · (\w+)")
+_LISTED = re.compile(r"\| course_id (\S+)")
+_ANSWER_LINE = re.compile(r"^답 / answer: (.*)$", re.M)
+
+
+def _mnorm(s) -> str:
+    return re.sub(r"[^0-9a-z가-힣]+", "", str(s or "").lower())
+
+
+def _parse_agent(text: str) -> dict:
+    body = text.split("=== 입력 글 시작 / INPUT START ===", 1)[-1]
+    lines = body.split(AGENT_MARK, 1)[1].split("\n")
+    typed = lines[1].strip()
+    msg, course = typed, None
+    for ln in lines[2:5]:
+        if ln.startswith(FOLLOW_PREFIX):
+            msg = ln[len(FOLLOW_PREFIX):].strip().removesuffix(")").strip()
+        elif ln.startswith(AGENT_COURSE_PREFIX):
+            course = ln[len(AGENT_COURSE_PREFIX):].strip().split(" ", 1)[0]
+    cpart = body.split("과목 / courses (course_id: 이름):", 1)[-1].split("\n\n", 1)[0]
+    courses = [{"id": m.group(1), "name": m.group(2).strip()} for m in re.finditer(r"^- (\S+): (.+)$", cpart, re.M)]
+    state_part = body.split("지금 상태 / current state:", 1)[-1].split(AGENT_TOOLS_MARK, 1)[0]
+    states, total = _parse_state(state_part)
+    tools_part = body.split(AGENT_TOOLS_MARK, 1)[-1].split("=== 입력 글 끝", 1)[0]
+    tools = []
+    for block in tools_part.split("\n#### 차례 ")[1:]:
+        head, _, rest = block.partition("\n")
+        m = _TOOL_HEAD.match(head)
+        if m:
+            tools.append({"round": int(m.group(1)), "tool": m.group(2), "text": rest})
+    return {"typed": typed, "message": msg, "course": course, "courses": courses, "states": states,
+            "weeks_total": total, "tools": tools, "history": HISTORY_HEAD in body}
+
+
+def _chat_reply(msg: str, history: bool) -> str:
+    """도구 없이 하는 짧은 대화(chat 흉내와 같은 문장 — 날짜·점수·'했어요' 없음)."""
+    head = "앞 이야기에 이어서 말해 볼게요. " if history else ""
+    if _CRISIS.search(msg):
+        return ("많이 힘들었겠어요. 혼자 견디지 않아도 돼요. 자살예방상담전화 109나 정신건강위기상담 1577-0199, "
+                "학교 학생상담센터에 꼭 이야기해 주세요. 위급하면 112나 119예요.")
+    if _HARM.search(msg):
+        return "그건 도와드릴 수 없어요 — 학교 규정이나 법을 어기는 일이라서요. 대신 정당하게 준비하는 방법이라면 같이 고민해 볼게요."
+    if _HELLO.search(msg):
+        return head + "안녕하세요! 오늘도 같이 달려 봐요. 마감이나 과목 이야기는 언제든 물어봐 주세요."
+    if _TIRED.search(msg):
+        return head + "많이 지쳤죠. 여기까지 온 것만으로도 잘 달리고 있어요. 오늘은 가장 가까운 것 하나만 같이 끝내 봐요."
+    return (head + "저는 데모의 가짜 AI라 깊은 이야기는 못 하지만, 같이 달리는 페이스메이커로 여기 있을게요. "
+            "학기 이야기라면 '기말 범위 어디까지야?'처럼 물어봐 주세요.")
+
+
+def _agent_first(p: dict) -> dict:
+    from . import actions, maildraft, plan, whatif
+    from .agent import chat_intent, strong_academic
+    typed, msg = p["typed"], p["message"]
+    course = {"course_id": p["course"]} if p["course"] else {}
+    done = lambda say, calls=(): {"say": say, "calls": list(calls), "done": True}   # noqa: E731
+    ask = lambda *calls: {"say": "", "calls": list(calls), "done": False}   # noqa: E731
+    if _CRISIS.search(typed) or _HARM.search(typed):
+        return done(_chat_reply(typed, p["history"]))
+    if _FIX_ASK.search(typed):
+        return ask({"tool": "list_items", "args": dict(course)})
+    if whatif.parse(typed):
+        return ask({"tool": "whatif", "args": {"question": msg, **course}})
+    if maildraft.is_mail_request(typed):
+        return ask({"tool": "draft_mail", "args": dict(course)})
+    if plan._PLAN.search(typed) and not plan._NOT_PLAN.search(typed):
+        return ask({"tool": "make_plan", "args": dict(course)})
+    if actions._is_command(typed) and not strong_academic(typed, p["courses"]):
+        return done("말한 앱 동작을 카드로 준비했어요 — 맞으면 [실행]을 눌러 주세요.",
+                    [{"tool": "propose_action", "args": {"reason": "학생이 앱 동작을 시켰어요"}}])
+    if chat_intent(typed, p["courses"]) or not strong_academic(msg, p["courses"]):
+        return done(_chat_reply(typed, p["history"]))
+    return ask({"tool": "search_texts", "args": {"query": msg, **course}})
+
+
+def _agent_fix(p: dict, listed: list[dict]) -> dict:
+    hay = _mnorm(p["typed"])
+    for cid, st in p["states"].items():
+        for c in st["comps"]:
+            if len(_mnorm(c["name"])) >= 2 and _mnorm(c["name"]) in hay:
+                return {"say": f"‘{c['name']}’ 평가 항목을 지워 달라는 말로 알아들었어요. 앱이 확인하면 바로 반영되고, "
+                               "[되돌리기]로 언제든 되돌릴 수 있어요.", "done": True,
+                        "calls": [{"tool": "propose_component_remove",
+                                   "args": {"course_id": cid, "component": c["name"], "auto": True,
+                                            "reason": "학생이 이 평가 항목을 지워 달라고 했어요"}}]}
+    hits = [it for it in listed if len(_mnorm(it["title"])) >= 2 and _mnorm(it["title"]) in hay]
+    if not hits:
+        return {"say": "목록에서 어느 항목인지 찾지 못했어요. 항목 제목을 그대로 적어 다시 말해 주세요.", "calls": [],
+                "done": True}
+    dup = [it for it in hits if it.get("duplicate") or it["status"] == "duplicate"]
+    it = (dup or hits)[-1]
+    return {"say": f"‘{it['title']}’ 항목을 일정에서 빼 달라는 말로 알아들었어요. 앱이 확인하면 바로 반영되고, "
+                   "[되돌리기]로 언제든 되돌릴 수 있어요.", "done": True,
+            "calls": [{"tool": "propose_item_remove",
+                       "args": {"item_id": it["id"], "auto": True, "reason": "학생이 이 항목을 지워 달라고 했어요"}}]}
+
+
+def _agent(text: str) -> dict:
+    from . import links as lk
+    from .agent import DATE_WORDS, classify
+    p = _parse_agent(text)
+    if not p["tools"]:
+        return _agent_first(p)
+    used = {t["tool"] for t in p["tools"]}
+    if "list_items" in used:
+        listed = []
+        for t in p["tools"]:
+            if t["tool"] != "list_items":
+                continue
+            for line in t["text"].splitlines():
+                m = _ITEM.match(line)
+                if m:
+                    listed.append({"id": m.group(1), "title": m.group(2), "due": m.group(4), "status": m.group(5),
+                                   "duplicate": "duplicate_of" in line})
+        return _agent_fix(p, listed)
+    for tool, say in (("whatif", None), ("draft_mail", "메일 초안을 만들었어요 — 받는 사람과 본문을 확인하고 직접 보내 주세요"
+                                                        "(앱은 보내지 않아요)."),
+                      ("make_plan", "공부 계획 미리 보기를 짰어요 — 괜찮으면 [캘린더에 넣기]를 눌러 주세요.")):
+        if tool in used:
+            body = next(t["text"] for t in p["tools"] if t["tool"] == tool)
+            m = _ANSWER_LINE.search(body)
+            return {"say": say or (m.group(1).strip() if m else "계산 결과를 봐 주세요."), "calls": [], "done": True}
+    snippets = [sn for t in p["tools"] if t["tool"] == "search_texts" for sn in _parse_found(t["text"])]
+    pp = {"message": p["message"], "courses": p["states"], "snippets": snippets, "weeks_total": p["weeks_total"]}
+    fam_q = lk.families(p["message"])
+    if classify(p["message"]) == "missing" and (DATE_WORDS.search(p["message"]) or fam_q):
+        props, said = _assist_deadlines(pp, fam_q)
+        if props:
+            head = f"찾은 글 {len(snippets)}개를 읽었어요."
+            return {"say": " ".join([head] + said[:3] + ["[반영]을 누르기 전에 날짜와 항목이 맞는지 확인해 주세요."]),
+                    "done": True, "calls": [{"tool": "propose_add_deadline", "args": {k: v for k, v in x.items() if k != "type"}}
+                                            for x in props[:3]]}
+    ans = _answer_from(pp)
+    return {"say": ans["answer"], "calls": [], "done": True, "citations": ans["citations"]}
+
+
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """triage_review·assist·answer·chat만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지
+    """agent·triage_review·assist·answer·chat만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지
     못함'으로 답한다(데모는 규칙이 찾는다)."""
-    if CHAT_MARK in (input or ""):   # chat(일반 대화 — 계약 24-2)
+    if AGENT_MARK in (input or ""):   # agent(에이전트 v2 루프 한 차례 — 계약 26-1)
+        model = json.dumps(_agent(input), ensure_ascii=False)
+    elif CHAT_MARK in (input or ""):   # chat(일반 대화 — 계약 24-2)
         model = json.dumps(_chat(input), ensure_ascii=False)
     elif ANSWER_MARK in (input or ""):   # answer(과목 질문 — 계약 22-2)
         model = json.dumps(_answer(input), ensure_ascii=False)

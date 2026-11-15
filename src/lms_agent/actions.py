@@ -45,11 +45,13 @@ TUTORIALS = {"tour": "튜토리얼 보기", "whatsnew": "달라진 점 보기"}
 FORBIDDEN = {
     "logout": ("로그아웃", "account"), "wipe_data": ("데이터 지우기", "account"), "student_id": ("학번 넣기·바꾸기", "grades"),
     "ai_enable": ("AI 켜기·끄기", "ai"), "ai_provider": ("AI 실행기 바꾸기", "ai"),
+    "ai_limit": ("하루 AI 사용 한도 바꾸기", "ai"),   # 에이전트가 자기 한도를 바꾸지 않게(계약 26-0)
     "google_connect": ("구글 캘린더 연결", "google"), "google_disconnect": ("구글 연결 해제", "google"),
     "token": ("Canvas 토큰·로그인", "account"),
 }
 FORBIDDEN_SETTINGS = {"ai_cli": "ai_enable", "ai_auto_triage": "ai_enable", "ai_provider": "ai_provider",
-                      "ai_custom": "ai_provider", "ai_model": "ai_provider", "student_id": "student_id",
+                      "ai_custom": "ai_provider", "ai_model": "ai_provider", "ai_daily_limit": "ai_limit",
+                      "student_id": "student_id",
                       "token": "token", "canvas_url": "token"}
 
 

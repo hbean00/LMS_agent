@@ -5,6 +5,8 @@ docs/CONTRACTS.md 2절의 시나리오를 today 기준 상대 날짜로 만들�
   Canvas `external_tools` → `sessionless_launch`(Canvas 토큰) → 실행 화면(토큰 없이, verifier 1회용)
   → LTI 1.1 양식 POST(서명 확인, 쿠키 xn_api_token·laravel_session·XSRF-TOKEN) → LearningX API(Bearer xn_api_token)
   → 첨부 `/files/<id>/download?verifier=`(Authorization이 있으면 403) → 302 → `/storage/<id>`(파일 바이트).
+26-6의 LearningX 주차학습(강의 영상)도 같은 길이다: 도구 '주차학습'(VIDEO_TOOL_ID) 실행 → 출입증 →
+  `/learningx/api/v1/courses/<과목>/modules?include_detail=true`(또는 옛 `allcomponents_db`). 데모는 101·102에 영상 셋.
 인증 규칙: `/api/v1/...`만 Canvas 토큰. 나머지 길은 각자 규칙(위). 실패 흉내는 server.lx_fail(start_mock_canvas 참고).
 """
 from __future__ import annotations
@@ -28,7 +30,10 @@ BOARD_TOOL_ID = 5          # LearningX '게시판' 도구 id (CONTRACTS 10절 �
 LX_PAGE_SIZE = 20          # LearningX 글 목록 기본 페이지 크기(server.lx_page_size로 바꿈)
 LTI_SECRET = "mock-lti-secret"
 LTI_ACTION_PATH = "/learningx/lti/learningx_board/boards"
+VIDEO_TOOL_ID = 7          # LearningX '주차학습' 도구 id(강의 영상, 계약 26-6) — 데모에서는 101(게시판도 있음)·102(주차학습만)
+VIDEO_ACTION_PATH = "/learningx/lti/lecture_attendance"
 _LX_API = re.compile(r"/learningx/api/v1/learningx_board/courses/([^/]+)/boards(?:/([^/]+)/posts(?:/([^/]+))?)?")
+_LX_COURSE_API = re.compile(r"/learningx/api/v1/courses/([^/]+)/(modules|allcomponents_db)")
 # strftime("%b")는 윈도 한국어 로캘에서 "11월"이 나오므로 직접 둔다
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 WEEKDAYS = "월화수목금토일"
@@ -204,6 +209,43 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         return {"id": fid + 10000, "filename": filename, "filesize": len(data), "canvas_file_id": fid,
                 "url": f"{base_url}/files/{fid}/download?download_frd=1&verifier=v{fid}"}
 
+    def ats(n: int, hh: int, mm: int, ss: int = 0) -> str:
+        local = datetime.combine(day(n), time(hh, mm, ss), tzinfo=tz)
+        return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # LearningX 주차학습(계약 26-6): 다른 학교 LearningX의 실제 `/modules?include_detail=true` 기록과 같은 모양.
+    # 강의 영상 셋(하나는 시청 완료, 하나는 6일 뒤(베타테스터 'ASIC 영상 6일 남음'), 하나는 2주 뒤) + 영상이 아닌 것(자료·실시간 수업).
+    def lecture(item_id, title, unlock, due, late=None, completed=False, duration=1500, media="everlec"):
+        return {"module_item_id": item_id + 50000, "title": title, "content_type": "attendance_item",
+                "completed": completed, "completion_determinable": True, "published": True,
+                "attendance_status": "attendance" if completed else "none",
+                "content_data": {"item_id": item_id, "title": title, "use_attendance": True, "opened": True,
+                                 "unlock_at": unlock, "due_at": due, "late_at": late, "lock_at": late or due,
+                                 "item_content_data": {"content_type": media, "duration": duration,
+                                                       "progress_support": True}}}
+
+    def material(item_id, title, media="pdf", use_attendance=False):
+        return {"module_item_id": item_id + 50000, "title": title, "content_type": "attendance_item",
+                "completed": False, "published": True, "attendance_status": None,
+                "content_data": {"item_id": item_id, "title": title, "use_attendance": use_attendance,
+                                 "unlock_at": at(-6, 0), "due_at": None, "late_at": None, "lock_at": None,
+                                 "item_content_data": {"content_type": media}}}
+
+    # 시청 완료한 영상은 지난 주차(12일 전 마감) — 코치 카드 시험(오늘 = 금요일)의 '이번 주'·'지난주' 밖이라 그 기대값을 흔들지 않는다
+    asic_modules = [
+        {"module_id": 710, "title": "10주차", "position": 10, "module_items": [
+            lecture(61001, "10주차 1차시: Static Timing Analysis", at(-18, 0), ats(-12, 23, 59, 59), ats(-10, 23, 59, 59),
+                    completed=True, duration=1745),
+            material(61002, "10주차 강의자료(PDF)")]},
+        {"module_id": 712, "title": "12주차", "position": 12, "module_items": [
+            lecture(61003, "12주차 1차시: Clock Tree Synthesis", at(-1, 0), ats(6, 23, 59, 59), ats(8, 23, 59, 59),
+                    duration=1520)]},
+    ]
+    dsp_modules = [
+        {"module_id": 721, "title": "13주차", "position": 13, "module_items": [
+            lecture(62001, "13주차: FIR 필터 설계", at(7, 0), ats(14, 23, 59, 59), duration=2280, media="movie"),
+            material(62002, "13주차 실시간 질의응답(Zoom)", media="zoom", use_attendance=True)]},
+    ]
     learningx = {"101": {
         "boards": [{"id": 9101, "title": "과제"}, {"id": 9102, "title": "강의자료실"}],
         "posts": {
@@ -213,7 +255,10 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                     "attachments": [attach(8001, "Lab6.pdf", lab6_pdf)]}],
             9102: [{"id": 46002, "title": "Week 11 강의자료", "created_at": at(-3, 9), "updated_at": at(-3, 9),
                     "content": "<p>11주차 강의자료입니다.</p>", "attachments": [attach(8002, "Week11.pdf", slides)]}],
-        }}}
+        },
+        "modules": asic_modules},
+        "102": {"modules": dsp_modules},   # 게시판 없이 주차학습만(board_tool(102)는 지금처럼 None)
+    }
     files = {8001: lab6_pdf, 8002: slides,
              SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1),
              PRELAB_FILE: prelab_pdf(), SHEET_FILE: score_table_xlsx()}
@@ -229,6 +274,8 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         "learningx": learningx,
         "files": files,
         "file_names": file_names,
+        # Canvas 공식 모듈 API(`/api/v1/courses/<과목>/modules`) — 영상 수집의 대체 길(LearningX를 못 읽을 때)만 쓴다. 기본은 빈 목록
+        "canvas_modules": {},
     }
 
 
@@ -474,7 +521,7 @@ class _Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path.rstrip("/")
         if (path + "/").startswith("/api/v1/"):
             return self._not_found() if self._canvas_auth_ok() else None
-        if path == LTI_ACTION_PATH:
+        if path in (LTI_ACTION_PATH, VIDEO_ACTION_PATH):
             return self._lti_launch(path, body)
         self._not_found()
 
@@ -490,6 +537,15 @@ class _Handler(BaseHTTPRequestHandler):
         data = srv.data
         if path == "/api/v1/users/self":
             return self._send(200, data["user"])
+        if path == "/api/v1/users/self/profile":   # 로그인 id(가짜 "demo") — allcomponents_db 길만 쓴다
+            u = data["user"]
+            return self._send(200, {"id": u["id"], "name": u["name"], "short_name": u["short_name"],
+                                    "login_id": u.get("login_id"), "primary_email": None, "time_zone": "Asia/Seoul"})
+        m = re.fullmatch(r"/api/v1/courses/([^/]+)/modules", path)
+        if m:
+            if not any(str(c["id"]) == m.group(1) for c in data["courses"]):
+                return self._not_found()
+            return self._send(200, list((data.get("canvas_modules") or {}).get(m.group(1)) or []))
         if path == "/api/v1/courses":
             keep = "syllabus_body" in query.get("include[]", [])
             return self._send(200, [c if keep else {k: v for k, v in c.items() if k != "syllabus_body"}
@@ -531,8 +587,11 @@ class _Handler(BaseHTTPRequestHandler):
         m = _LX_API.fullmatch(path)
         if m:
             return self._learningx_api(*m.groups(), query)
-        if re.fullmatch(r"/learningx/courses/[^/]+/boards", path):  # LTI 실행 뒤 리디렉션되는 화면
-            return self._html(200, '<div id="app">LearningX 게시판</div>')
+        m = _LX_COURSE_API.fullmatch(path)
+        if m:
+            return self._learningx_course_api(m.group(1), m.group(2), query)
+        if re.fullmatch(r"/learningx/courses/[^/]+/(?:boards|modules)", path):  # LTI 실행 뒤 리디렉션되는 화면
+            return self._html(200, '<div id="app">LearningX</div>')
         m = re.fullmatch(r"/files/([0-9]+)/download", path)
         if m:
             return self._file_download(int(m.group(1)), query)
@@ -546,7 +605,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _tools(self, course_id: str, parents: bool) -> list:
         base, out = self.server.base_url, []
-        if course_id in self.server.data.get("learningx", {}):
+        lx = self.server.data.get("learningx", {}).get(course_id)
+        if lx is not None and "boards" in lx:
             nav = {"text": "게시판", "enabled": True, "visibility": None}
             out += [
                 {"id": 3, "name": "출석", "url": f"{base}/learningx/lti/attendance",
@@ -555,6 +615,9 @@ class _Handler(BaseHTTPRequestHandler):
                 {"id": 6, "name": "전체 게시판", "url": f"{base}/learningx/lti/learningx_board/total", "course_navigation": None},
                 {"id": BOARD_TOOL_ID, "name": "게시판", "url": f"{base}{LTI_ACTION_PATH}", "course_navigation": nav},
             ]
+        if lx is not None and "modules" in lx:   # 주차학습(강의 영상, 계약 26-6)
+            out.append({"id": VIDEO_TOOL_ID, "name": "주차학습", "url": f"{base}{VIDEO_ACTION_PATH}",
+                        "course_navigation": {"text": "주차학습", "enabled": True, "visibility": None}})
         if parents:  # 계정 수준 도구(모든 과목에 붙음): 게시판과 무관
             out.append({"id": 12, "name": "Zoom", "url": "https://tools.example.com/lti/launch",
                         "course_navigation": {"text": "Zoom", "enabled": True}})
@@ -574,11 +637,13 @@ class _Handler(BaseHTTPRequestHandler):
         if srv.lx_fail == "sessionless":
             return self._send(500, {"errors": [{"message": "An error occurred."}]})
         tool_id = (query.get("id") or [""])[0]
-        if course_id not in srv.data.get("learningx", {}) or tool_id != str(BOARD_TOOL_ID):
+        lx = srv.data.get("learningx", {}).get(course_id)
+        tools = {str(BOARD_TOOL_ID): ("boards", "게시판"), str(VIDEO_TOOL_ID): ("modules", "주차학습")}
+        if lx is None or tool_id not in tools or tools[tool_id][0] not in lx:
             return self._not_found()
         verifier = secrets.token_hex(16)
-        srv.lx_verifiers[verifier] = course_id  # 1회용(진짜 Canvas처럼)
-        self._send(200, {"id": BOARD_TOOL_ID, "name": "게시판",
+        srv.lx_verifiers[verifier] = (course_id, int(tool_id))  # 1회용(진짜 Canvas처럼)
+        self._send(200, {"id": int(tool_id), "name": tools[tool_id][1],
                          "url": f"{srv.base_url}/courses/{course_id}/external_tools/sessionless_launch"
                                 f"?verifier={verifier}"})
 
@@ -586,13 +651,16 @@ class _Handler(BaseHTTPRequestHandler):
         """Canvas가 서명한 LTI 1.1 자동 제출 양식(토큰 없이 verifier로 연다)."""
         srv = self.server
         verifier = (query.get("verifier") or [""])[0]
-        if not verifier or srv.lx_verifiers.pop(verifier, None) != course_id:
+        course_tool = srv.lx_verifiers.pop(verifier, None) if verifier else None
+        if not course_tool or course_tool[0] != course_id:
             return self._html(401, "<p>실행 주소가 만료됐거나 올바르지 않습니다.</p>")
         if srv.lx_fail == "form":
             return self._html(200, "<p>이 도구를 지금 실행할 수 없습니다.</p>")
         course = next(c for c in srv.data["courses"] if str(c["id"]) == course_id)
-        action = (f"{srv.base_url}{LTI_ACTION_PATH}" if srv.lx_fail != "foreign"
-                  else f"http://lti.example.net{LTI_ACTION_PATH}")
+        tool_id = course_tool[1]
+        lti_path = VIDEO_ACTION_PATH if tool_id == VIDEO_TOOL_ID else LTI_ACTION_PATH
+        action = (f"{srv.base_url}{lti_path}" if srv.lx_fail != "foreign"
+                  else f"http://lti.example.net{lti_path}")
         nonce = secrets.token_hex(16)
         srv.lx_nonces[nonce] = course_id
         params = [
@@ -609,8 +677,8 @@ class _Handler(BaseHTTPRequestHandler):
             ("lis_person_contact_email_primary", ""),  # 빈 값도 서명에 들어간다
             ("lis_person_name_full", "데모 학생"),
             ("lti_message_type", "basic-lti-launch-request"), ("lti_version", "LTI-1p0"),
-            ("resource_link_id", hashlib.sha1(f"tool-{BOARD_TOOL_ID}-{course_id}".encode()).hexdigest()),
-            ("resource_link_title", "게시판"), ("roles", "Learner"),
+            ("resource_link_id", hashlib.sha1(f"tool-{tool_id}-{course_id}".encode()).hexdigest()),
+            ("resource_link_title", "주차학습" if tool_id == VIDEO_TOOL_ID else "게시판"), ("roles", "Learner"),
             ("tool_consumer_instance_name", "데모 대학교"),
             ("user_id", hashlib.sha1(f"user-{USER_ID}".encode()).hexdigest()),
         ]
@@ -622,7 +690,7 @@ class _Handler(BaseHTTPRequestHandler):
                    '<form action="/logout" method="post" id="logout_form">'
                    '<input type="hidden" name="authenticity_token" value="mock-csrf" /></form>'
                    f'<form action="{esc(action)}" method="POST" target="tool_content" id="tool_form" '
-                   f'data-tool-id="{BOARD_TOOL_ID}">{fields}<button type="submit">게시판 열기</button></form>'
+                   f'data-tool-id="{tool_id}">{fields}<button type="submit">열기</button></form>'
                    '<script>document.getElementById("tool_form").submit();</script>')
 
     def _lti_launch(self, path: str, body: bytes) -> None:
@@ -640,11 +708,13 @@ class _Handler(BaseHTTPRequestHandler):
             return self._html(401, "<p>LTI 실행 요청을 확인하지 못했습니다.</p>")
         cookies = [("Set-Cookie", f"laravel_session={secrets.token_hex(20)}; Max-Age=7200; Path=/; HttpOnly; SameSite=Lax"),
                    ("Set-Cookie", f"XSRF-TOKEN={secrets.token_hex(20)}; Max-Age=7200; Path=/; SameSite=Lax")]
+        page = "modules" if path == VIDEO_ACTION_PATH else "boards"
         if srv.lx_fail != "cookie":
             token = f"xn{course_id}.{secrets.token_urlsafe(24)}"
             srv.lx_tokens[token] = course_id
+            srv.lx_token_tools[token] = page          # 어느 도구로 받은 출입증인지(lx_video_own_token 시험용)
             cookies.append(("Set-Cookie", f"xn_api_token={token}; Path=/; SameSite=Lax"))
-        self._redirect(f"{srv.base_url}/learningx/courses/{course_id}/boards", cookies)
+        self._redirect(f"{srv.base_url}/learningx/courses/{course_id}/{page}", cookies)
 
     def _learningx_api(self, course_id: str, board: str | None, post: str | None, query: dict) -> None:
         """Bearer xn_api_token만 받는다(없거나 틀리면 401, 다른 과목 출입증이면 403)."""
@@ -657,6 +727,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(403, {"message": "This action is unauthorized."})
         lx = srv.data.get("learningx", {}).get(course_id)
         if lx is None:
+            return self._send(404, {"message": "Not Found"})
+        if "boards" not in lx:
             return self._send(404, {"message": "Not Found"})
         if board is None:
             return self._send(200, [dict(b) for b in lx["boards"]])
@@ -681,6 +753,47 @@ class _Handler(BaseHTTPRequestHandler):
         item["attachments"] = [dict(a) for a in found.get("attachments") or []]
         item["post_url"] = f"{srv.base_url}/learningx/courses/{course_id}/boards/{bid}/posts/{found['id']}"
         self._send(200, item if srv.lx_unwrapped else {"item": item})
+
+    def _learningx_course_api(self, course_id: str, what: str, query: dict) -> None:
+        """주차학습(계약 26-6): `/modules?include_detail=true`(모듈 → module_items) 또는 옛 `allcomponents_db`
+        (평평한 목록, user_id·user_login·role=1이 맞아야 함). Bearer xn_api_token만 받는다(게시판 API와 같은 규칙).
+        손잡이: lx_video_api "modules"(기본 — allcomponents_db는 404) | "allcomponents"(modules는 404) | "none"(둘 다 404),
+        lx_video_fail(정수면 그 HTTP 코드로 실패), lx_video_own_token(True면 게시판 도구로 받은 출입증은 403)."""
+        srv = self.server
+        auth = self.headers.get("Authorization") or ""
+        token = auth[len("Bearer "):] if auth.startswith("Bearer ") else ""
+        if srv.lx_fail == "api" or token not in srv.lx_tokens:
+            return self._send(401, {"message": "Unauthenticated."})
+        if srv.lx_tokens[token] != course_id or (srv.lx_video_own_token and srv.lx_token_tools.get(token) != "modules"):
+            return self._send(403, {"message": "This action is unauthorized."})
+        if srv.lx_video_fail:
+            return self._send(int(srv.lx_video_fail), {"message": "Server Error"})
+        lx = srv.data.get("learningx", {}).get(course_id) or {}
+        want = "modules" if what == "modules" else "allcomponents"
+        if "modules" not in lx or srv.lx_video_api != want:
+            return self._send(404, {"message": "Not Found"})
+        if want == "modules":
+            return self._send(200, [dict(m) for m in lx["modules"]])
+        user = srv.data["user"]
+        if (query.get("user_id") or [""])[0] != str(user["id"]) or (query.get("user_login") or [""])[0] != str(
+                user.get("login_id")) or (query.get("role") or [""])[0] != "1":
+            return self._send(400, {"message": "Bad Request"})
+        out = [{"component_id": 90001, "assignment_id": 1013, "title": "LAB5 예비보고서", "type": "assignment",
+                "due_at": None, "completed": False, "use_attendance": False}]     # Canvas 과제도 섞여 온다(영상 아님)
+        for m in lx["modules"]:
+            for it in m.get("module_items") or []:
+                cd = it.get("content_data") or {}
+                icd = cd.get("item_content_data") or {}
+                view = f"{srv.base_url}/learningx/commons/view/{cd.get('item_id')}"
+                out.append({"component_id": cd.get("item_id"), "assignment_id": None, "title": it.get("title"),
+                            "type": "commons", "opened": True, **{k: cd.get(k) for k in
+                                                                 ("unlock_at", "due_at", "late_at", "lock_at",
+                                                                  "use_attendance")},
+                            "completed": it.get("completed"), "attendance_status": it.get("attendance_status"),
+                            "commons_content": {"content_type": icd.get("content_type"),
+                                                "duration": icd.get("duration"), "view_url": view},
+                            "view_info": {"view_url": view}})
+        self._send(200, out)
 
     def _file_download(self, fid: int, query: dict) -> None:
         """Canvas 파일 주소: 확인값(verifier)이 주소 안에 있어 인증 헤더 없이 받는다. 헤더가 있으면 403(실제 사이트처럼)."""
@@ -713,7 +826,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._not_found()
         name = (srv.data.get("file_names") or {}).get(fid) or next(
             (a.get("filename") for lx in srv.data.get("learningx", {}).values()
-             for posts in lx["posts"].values() for p in posts for a in p.get("attachments") or []
+             for posts in (lx.get("posts") or {}).values() for p in posts for a in p.get("attachments") or []
              if a.get("canvas_file_id") == fid), None) or f"file_{fid}.pdf"
         self._send(200, {"id": fid, "display_name": name, "filename": name,
                          "content-type": _content_type(srv.data, fid)[0],
@@ -770,7 +883,10 @@ def start_mock_canvas(port: int = 0, today: date | None = None,
                | "launch"(LTI POST 401) | "cookie"(POST는 되지만 xn_api_token 없음) | "api"(LearningX API 늘 401)
       lx_page_size: 글 목록 페이지 크기(기본 20). lx_unwrapped: True면 글 상세를 {"item": …}로 감싸지 않는다.
       storage_base: 첨부가 리디렉션되는 저장소 주소(기본 = 이 서버). 다른 서버를 주면 다른 호스트 리디렉션.
-      lx_tokens: 발급한 xn_api_token → 과목 id.
+      lx_tokens: 발급한 xn_api_token → 과목 id(lx_token_tools: → "boards"|"modules", 어느 도구로 받았는지).
+      주차학습(강의 영상, 계약 26-6): lx_video_api "modules"(기본) | "allcomponents"(옛 LearningX) | "none",
+      lx_video_fail: None | HTTP 코드(예: 500), lx_video_own_token: True면 주차학습 도구로 받은 출입증만 받는다.
+      data["canvas_modules"][과목 id]: Canvas 공식 모듈 API가 돌려줄 목록(영상의 대체 길).
     """
     server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
     server.daemon_threads = True
@@ -785,5 +901,7 @@ def start_mock_canvas(port: int = 0, today: date | None = None,
     server.lx_unwrapped = False
     server.storage_base = server.base_url
     server.lx_tokens, server.lx_verifiers, server.lx_nonces = {}, {}, {}
+    server.lx_token_tools = {}
+    server.lx_video_api, server.lx_video_fail, server.lx_video_own_token = "modules", None, False
     threading.Thread(target=server.serve_forever, args=(0.1,), name="mock-canvas", daemon=True).start()
     return server, server.base_url

@@ -148,7 +148,7 @@ def test_ask_creates_continues_and_clears_one_conversation(tmp_path):
     assert set(first) == {"id", "title", "started_at", "last_at", "turns", "legacy", "running"}
     assert (first["title"], first["turns"], first["legacy"], first["running"]) == ("회로이론 기말 범위 어디까지야?", 2, False, False)
     assert parse_iso(first["started_at"]) == parse_iso(th1["at"]) and parse_iso(first["last_at"]) >= parse_iso(th2["at"])
-    assert st["limits"]["history_turns"] == 6 and st["limits"]["max_threads"] == 80 and st["limits"]["per_ask"] == 2
+    assert st["limits"]["history_turns"] == 6 and st["limits"]["max_threads"] == 80 and st["limits"]["per_ask"] == 4
     # 그 대화만 지우기
     state = fa.clear(app, {"conversation": conv})
     assert not [t for t in state["agent"]["threads"] if t["conversation"] == conv]
@@ -303,7 +303,7 @@ def test_history_in_ai_inputs_is_redacted_capped_and_never_evidence(tmp_path):
         {"type": "add_deadline", "course_id": "301", "evidence": made_up, "title": "기말고사", "kind": "시험",
          "due": iso(datetime.combine(fake_day, time(9, 0), tzinfo=TZ)), "reason": "앞 대화"}]}
     r = agent.answer(s, "회로이론 기말고사 날짜가 안 보여요", ai_enabled=True, runner=fake_runner(seen, assist=assist),
-                     command="claude", names=["김가짜"], history=hist)
+                     command="claude", names=["김가짜"], history=hist, loop=False)
     sec = _history_section(seen[0])
     assert len(sec) <= agent_cli.HISTORY_MAX and "질문 5" in sec                  # 최근 차례부터 1,500자 안에
     assert "@example.ac.kr" not in seen[0] and "김가짜" not in seen[0]           # 가린 뒤 보냄
@@ -314,16 +314,17 @@ def test_history_in_ai_inputs_is_redacted_capped_and_never_evidence(tmp_path):
     ans = lambda inp, n: {"answer": "범위는 5장부터 9장까지예요.", "citations": [{"source_key": "announcement:1",
                                                                        "quote": made_up}]}
     r = agent.answer(s, "회로이론 기말 범위 어디까지야?", ai_enabled=True, runner=fake_runner(seen, answer=ans),
-                     command="claude", history=hist)
+                     command="claude", history=hist, loop=False)
     assert agent_cli.HISTORY_MARK in seen[0] and all(made_up not in c["quote"] for c in r["citations"])
     # 생략 질문은 친 그대로 + 합친 뜻 한 줄
     seen.clear()
-    agent.answer(s, "그럼 중간은?", ai_enabled=True, runner=fake_runner(seen), command="claude", history=HIST)
+    agent.answer(s, "그럼 중간은?", ai_enabled=True, runner=fake_runner(seen), command="claude", history=HIST,
+                 loop=False)
     head = seen[0].split(agent_cli.ANSWER_MARK, 1)[1].split("\n")
     assert head[1] == "그럼 중간은?" and head[2].startswith(agent_cli.FOLLOW_PREFIX) and "범위" in head[2]
     # 이전 대화가 없으면 그 덩어리도 없다
     seen.clear()
-    agent.answer(s, "회로이론 기말 범위 어디까지야?", ai_enabled=True, runner=fake_runner(seen), command="claude")
+    agent.answer(s, "회로이론 기말 범위 어디까지야?", ai_enabled=True, runner=fake_runner(seen), command="claude", loop=False)
     assert agent_cli.HISTORY_MARK not in seen[0]
 
 
@@ -334,7 +335,7 @@ def test_chat_with_ai_uses_chat_task_without_proposals_or_private_data(tmp_path)
     s.data["gcal_events"] = {"events": [{"summary": "비밀 약속 장소", "start": z(1)}]}
     seen = []
     run = fake_runner(seen, chat=lambda inp, n: mock_ai._chat(inp))
-    r = agent.answer(s, "안녕!", ai_enabled=True, runner=run, command="claude", names=["김가짜"])
+    r = agent.answer(s, "안녕!", ai_enabled=True, runner=run, command="claude", names=["김가짜"], loop=False)
     assert (r["kind"], r["by"], r["intent"], r["attempts"], r["error"]) == ("chat", "ai", "greeting", 1, None)
     assert "안녕하세요" in r["answer"] and r["proposals"] == [] and r["citations"] == [] and r["results"] == []
     sent = seen[0]
@@ -345,7 +346,7 @@ def test_chat_with_ai_uses_chat_task_without_proposals_or_private_data(tmp_path)
     assert s.data["ai_runs"][-1]["task"] == "chat" and "안녕" not in json.dumps(s.data["ai_runs"], ensure_ascii=False)
     # 이전 대화를 받는다
     seen.clear()
-    r = agent.answer(s, "오늘 저녁 뭐 먹지?", ai_enabled=True, runner=run, command="claude", history=HIST)
+    r = agent.answer(s, "오늘 저녁 뭐 먹지?", ai_enabled=True, runner=run, command="claude", history=HIST, loop=False)
     assert r["kind"] == "chat" and agent_cli.HISTORY_MARK in seen[0] and r["answer"].startswith("앞 이야기에 이어서")
 
 
@@ -355,7 +356,7 @@ def test_chat_validation_claims_facts_length_and_links(tmp_path):
     def run(chat):
         seen = []
         return agent.answer(s, "오늘 저녁 뭐 먹지?", ai_enabled=True, runner=fake_runner(seen, chat=chat),
-                            command="claude"), seen
+                            command="claude", loop=False), seen
     # 앱 동작을 했다고 하면 다시 묻고, 끝까지 그러면 규칙 답
     r, seen = run(lambda inp, n: {"answer": "자동 실행을 켰어요. 이제 편해요."})
     assert r["by"] == "rules" and len(seen) == 2 and "앱 동작을 했다고" in seen[1] and "검사를 통과하지" in r["error"]
@@ -379,6 +380,7 @@ def test_chat_validation_claims_facts_length_and_links(tmp_path):
 def test_chat_daily_cap_falls_back_to_rules(tmp_path):
     s = make_store(tmp_path / "s.json")
     s.data["ai_runs"] = [{"at": iso(now_local()), "task": "triage_review", "ok": True, "attempts": 30}]
+    s.data.setdefault("settings", {})["ai_daily_limit"] = 30   # 설정의 하루 한도(계약 26-0)
     seen = []
     r = agent.answer(s, "안녕", ai_enabled=True, runner=fake_runner(seen), command="claude")
     assert seen == [] and (r["kind"], r["by"]) == ("chat", "rules") and "한도" in r["error"]
@@ -391,7 +393,7 @@ def test_general_addendum_for_academic_question_without_course_text(tmp_path):
     nf = lambda inp, n: {"answer": "보낸 글에서 주차 안내는 찾지 못했어요.", "citations": []}
     gen = lambda inp, n: {"answer": "일반적으로 큰 시험장 근처는 주차가 어려워요. 대중교통을 권해요."}
     r = agent.answer(s, "회로이론 기말 시험장 주차 가능해?", ai_enabled=True, runner=fake_runner(seen, answer=nf, chat=gen),
-                     command="claude")
+                     command="claude", loop=False)
     assert (r["kind"], r["by"], r["citations"], r["attempts"]) == ("question", "ai", [], 2)
     assert r["general"] == {"answer": "일반적으로 큰 시험장 근처는 주차가 어려워요. 대중교통을 권해요.", "by": "ai"}
     assert r["answer"].startswith("보낸 글에서 주차 안내는 찾지 못했어요.") and agent.GENERAL_HEAD in r["answer"]
@@ -400,7 +402,7 @@ def test_general_addendum_for_academic_question_without_course_text(tmp_path):
     seen.clear()
     claim = lambda inp, n: {"answer": "주차는 공학관 뒤편에 할 수 있어요.", "citations": []}
     r = agent.answer(s, "회로이론 기말 시험장 주차 가능해?", ai_enabled=True, runner=fake_runner(seen, answer=claim, chat=gen),
-                     command="claude")
+                     command="claude", loop=False)
     assert len(seen) == 2 and r["by"] == "rules" and "general" not in r and r["kind"] == "question"
     # AI가 꺼져 있으면 지금처럼 '찾지 못했어요'만
     r = agent.answer(s, "Operating Systems 제출 파일명 형식이 뭐야?")

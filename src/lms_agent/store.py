@@ -363,6 +363,8 @@ class Store:
                 "conflict": it.get("conflict"), "notes": it.get("notes") or [],
                 "evidence": it.get("evidence") or [], "url": it.get("url"),
                 "found_by": it.get("found_by"),   # '에이전트에게 묻기'로 반영한 마감이면 "ai" | "rules"(계약 20-4)
+                # 강의 영상(origin "video", 계약 26-6): {unlock_at, due_at, late_at, lock_at, duration, attendance} — 그 밖은 None
+                "video": dict(it["video"]) if isinstance(it.get("video"), dict) else None,
                 # 그 반영을 되돌릴 대화·제안({"thread", "proposal"}) — 대화 기록이 남아 있고 아직 반영 상태일 때만
                 "agent_ref": _ref_if(u.get("agent_ref") or it.get("agent_ref"), applied),
                 "edited": bool(u.get("title") or u.get("due")),

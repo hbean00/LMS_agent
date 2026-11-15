@@ -314,14 +314,19 @@ def _retro(sem: dict, items: list[dict], lv: list[dict], cel: dict | None, now: 
     if not sched and not review:
         return None
     done = [v for v in sched if v.get("submitted")]
-    missed = [v for v in sched if not v.get("submitted")]
+    missed = [v for v in sched if not v.get("submitted") and v.get("origin") != "video"]
+    unseen = [v for v in sched if not v.get("submitted") and v.get("origin") == "video"]   # 강의 영상(계약 26-6)
     lines = []
     if sched and not missed:
         lines.append(_line(f"지난주 마감 {len(sched)}개 모두 제출 — {wk}주차 완주했어요!", _ids(sched), "cheer"))
     elif sched:
         lines.append(_line(f"지난주 마감 {len(sched)}개 중 {len(done)}개 제출했어요", _ids(sched), "deadline"))
-        lines.append(_line(f"제출 표시가 없어요: {_names(missed)} — 이메일·종이로 냈다면 체크해 주세요",
-                           _ids(missed), "warn"))
+        if missed:
+            lines.append(_line(f"제출 표시가 없어요: {_names(missed)} — 이메일·종이로 냈다면 체크해 주세요",
+                               _ids(missed), "warn"))
+        if unseen:
+            lines.append(_line(f"시청 완료 표시가 없어요: {_names(unseen)} — 지각 인정 기간이 남았으면 지금 보세요",
+                               _ids(unseen), "warn"))
     if review:
         lines.append(_line(f"확인 안 한 후보 {len(review)}개가 지난주 마감이었어요 — 확인함에서 정리해 주세요",
                            _ids(review), "warn"))
