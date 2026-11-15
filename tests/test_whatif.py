@@ -316,7 +316,10 @@ def test_demo_lab_one_zero_matches_screen_engine(demo, tmp_path):
     wsum = sum(e["weight"] for e in known)
     mk = sum(e["weight"] * e["mean"] / e["max_score"] for e in known) / wsum
     sk = sum(e["weight"] * e["sd"] / e["max_score"] for e in known) / wsum
-    mx = known[0]["max_score"]
+    # 세부 점수의 만점이 다르면(Lab0 50점·Canvas 성적부 LAB3 보고서 10점 — 계약 27-1) whatif는 100점 기준으로 가정한다
+    maxes = {float(e.get("max_score") or 100) for e in exp
+             if e.get("parent") == "Homework assignments" and e["score"] is not None}
+    mx = maxes.pop() if len(maxes) == 1 else 100.0
     one = {"name": "가정", "weight": rem["weight"] / n, "score": 0.0, "max_score": mx, "mean": mk * mx, "sd": sk * mx,
            "fixed": False}
     hyp = [e for e in exp if e is not rem] + [one, dict(rem, weight=rem["weight"] * (n - 1) / n)]

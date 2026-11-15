@@ -1364,3 +1364,50 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
   (v0.8.0은 이름의 '주차학습'만 보고 '설문(주차학습)'을 골랐다 — 출입증은 같아 읽히긴 했음).
 - 확인(사용자 계정, 임시 폴더에 동기화 한 번): ASIC 영상 6개(‘Logic Synthesis STA’ 11/20 00:00 미시청 = 베타테스터가 말한 영상), 로봇공학개론 영상 0개이고
   항목은 Project1·Project2·Report·기말고사뿐('Assignment' 없음 — 26-5 고침도 실제 데이터로 확인), 인권과 성평등 교육(온라인) 영상 5개, 오류 없음.
+
+## 27. 성적 파일 — 어디서 오든, 어떤 형식이든, 어디서 막혔는지 보이게 — v0.8.2 (사용자 요청 2026-11-15)
+
+요청: "PDF를 다운 못 받는 것인지, 받았는데 성적을 산출 못하는 것인지 원인을 확정. 과목마다 pdf·csv·xlsx 등 파일과 성적 양식이 다 다를 텐데 모든 case를 처리하는지 검토".
+리드 진단(사용자 계정 읽기 전용, 2026-11-15):
+- 2026년 1학기 과목(VLSI 등)은 Canvas가 학생에게 닫았다(`access_restricted_by_date`, 과목·파일·과제·LearningX 실행 모두 401) → 앱이 받을 수 없음(앱 고장 아님).
+  사용자가 받아 둔 VLSI 기말 채점결과 PDF(두 칸 표·분포 그래프·글자 섞인 학번)는 지금 코드로 내 점수 88·평균 64.3·표준편차 22.0·80명 중 8등 → '기말고사'에 자동 연결 → 추정 반영(확인).
+- 지금 학기: 받은 점수 파일(ASIC Lab0·Lab1)은 모두 읽고 연결됨. 그러나 **받지 못하는 곳**이 실제로 있음: Canvas 공지의 첨부 칸
+  (ASIC 'Updated Grading Policy'의 `Update Grading Policy.pdf` — 본문 링크만 받아 왔음), **Canvas 성적부 점수**(인권과 성평등 교육 퀴즈 80/100·반 통계 — 축하 카드에만 쓰고 추정에는 안 씀).
+  읽지 못하는 형식: zip·hwp·hwpx·docx·pptx·그림·스캔 PDF. 강의 파일함(Files)은 학생에게 401(못 씀), 메시지 첨부는 최근 150일 0개.
+
+### 27-0. 파일 소유
+| 담당 | 파일 | 테스트 |
+|---|---|---|
+| G 출처 | `core.py`(`_linked_files`에 공지·토론의 첨부 칸), `canvas.py`(과제에 `include[]=score_statistics`), `gradebook.py`(Canvas 성적부 후보 — `candidates` 쪽만), `mock_canvas.py`(데모: 공지 첨부 칸 파일 하나, 성적부 점수·통계 하나) | `tests/test_grade_sources.py`(새), 기존 유지 |
+| F 형식 | `docs.py`(새 — docx·pptx·hwpx·hwp·zip 글자), `materials.py`(받은 파일을 형식별로 읽기: PDF·표·문서·zip 속 파일, 다시 읽기 일에 문서 확장자 포함) | `tests/test_docs.py`(새), 기존 유지 |
+| T 진단 | `gradetrace.py`(새 — 파일마다 단계: 찾음→받음→읽음→점수표?→내 줄?→후보→연결), `features/materials.py`·`features/grades.py`(상태 칸), `cli.py`(`lms-agent grades-check`), `web/index.html`(성적·자료 화면의 '성적 파일 진단') | `tests/test_gradetrace.py`(새) |
+| 리드 | 문서·버전·통합 | 전체 |
+
+### 27-1. 출처 (G)
+- 공지(`cache.announcements[].attachments`)와 강의 토론 글의 첨부 칸 파일을 가상 게시판 "announcements"에 본문 링크 파일과 함께 넣는다(같은 파일 id는 한 번, `{"id": "cf<id>", "filename", "filesize", "canvas_file_id", "url"}`). 받기·카테고리·attached_to는 지금 모양 그대로.
+- Canvas 성적부: `assignments[].submission.score`가 있으면 점수 후보 `source_type "canvas_grade"`(label = 과제 이름, score, max_score = points_possible, mean·sd = score_statistics에서 — `celebrate._stats`와 같은 계산, n·high·low 있으면), key `"canvas:<assignment id>"`.
+  평가 항목 연결은 다른 후보와 같은 규칙(이름 계열·사용자/AI 연결). 같은 점수가 파일·글에도 있으면 하나로(같은 과목·같은 이름·같은 점수).
+### 27-2. 형식 (F)
+- `docs.read(name, data) -> (text, notes) | None`: docx(word/document.xml — 문단·표는 행마다 칸을 공백으로), pptx(슬라이드 글·표), hwpx(Contents/section*.xml), hwp(OLE2 BodyText/Section* — zlib, HWPTAG_PARA_TEXT, `sheets.py`의 OLE2 읽기를 함께 씀), zip(안의 pdf·표·문서 파일, 개수·크기 한도, 경로 무시, 압축 폭탄 막기, 디스크에 풀지 않음).
+  못 읽으면 None + 이유(그림·스캔 PDF·암호 걸림·지원 안 함은 notes로 — 진단에 보임). 결과 글자는 `pdf_texts`에 PDF와 같은 모양(`kind`: "doc"·"zip:<안 이름>")으로 넣어 점수표·마감 찾기가 그대로 읽게 한다.
+### 27-3. 진단 (T)
+- `gradetrace.trace(store) -> [{course_id, file, source("announcement"|"board"|"assignment"|"syllabus"|"canvas_grade"…), found, downloaded, read(ok|reason), score_table(bool), my_row(bool|null — 학번 없으면 null), candidate(label·score) | null, linked(component|null), stop(첫 번째로 막힌 단계 한국어)}]`.
+  화면: 성적 화면 아래 '성적 파일 진단'(접힘) — 파일마다 단계 칩, 막힌 곳 한 줄. `lms-agent grades-check`: 같은 표를 글로(학번·다른 학생 정보 없음 — 베타테스터가 그대로 보내도 됨).
+
+### 27-4. 구현 결과 (v0.8.2, 서브에이전트 G 출처·F 형식·T 진단 병렬 → 리드 통합)
+
+- **G**: 공지 첨부 칸 파일 → 가상 게시판 "announcements"(본문 링크 먼저, 같은 파일 id 한 번, 파일 API를 다시 묻지 않음), 성적이 있는 토론(과제의 discussion_topic)의 본문 링크·첨부도
+  그 과제 글에. 성적이 없는 일반 토론은 아직 안 모음. Canvas 성적부 후보: `{source_type "canvas_grade", source_title "Canvas 성적부", key "canvas:<과제 id>", label, score,
+  max_score(points_possible>0), mean·sd(celebrate._stats), high·low·n(score_statistics), sentence "Canvas 성적부: <이름> 80/100 (반 평균 72.4)", assignment_id, merged[]}`,
+  채점 안 함·면제는 빼고, 같은 과목·같은 이름(정규화)·같은 점수의 파일/글 후보는 하나로(Canvas 쪽에 merged·없는 통계 채움). 후보 상한 100 → 300. 축하 카드는 Canvas 성적을
+  `_graded_events`만 알린다(리드 — 두 번 알리지 않게).
+- **F**: `docs.read`/`read_detail` — docx·pptx·hwpx·hwp(5.x, OLE2 BodyText, 표 칸 주소)·zip(안의 pdf·표·문서, 50개·30MB·압축률 200배·30초 한도, 디스크에 풀지 않음).
+  그림·스캔 PDF·암호·옛 형식(.doc·.ppt·HWP 3)·다른 압축은 이유만. `pdf_texts`: 문서 `kind "doc"`, zip 속 `"<첨부 키>/<이름>"`(PDF·문서는 `kind "zip:<이름>"`, 표는 `kind "sheet"` 그대로).
+  다운로드 기록에 `read_ok`·`read_notes`·`read_kind`(+ `zip_members`), 옛 기록은 확장자로 채움. 받아 둔 문서·zip은 동기화마다 최대 20개 다시 읽음.
+  **실제 Word·한글·PowerPoint 파일로는 확인 못 함**(만든 파일로만 — 사용자 문서 읽기는 권한이 막음).
+- **T**: `gradetrace.trace(store)` — 파일·출처마다 단계 8개(찾음·받음·읽음·점수표·내 줄·후보·연결·추정), `stage`(처음 막힌 곳)·`stop`(한국어 한 줄)·`stages[{id,label,state}]`.
+  `state.grades.trace`·`trace_summary`, 성적 화면 아래 '성적 파일 진단'(`#grade-trace`, 접힘, 필터·자료에서 보기·항목 고르기·학번 넣기), 자료 화면 문서·zip 꼬리표,
+  `lms-agent grades-check [--all] [--scores]`(학번·다른 학생·주소·토큰 없음, 7자리 이상 숫자 가림, 내 점수 숫자는 --scores일 때만).
+- **확인(사용자 계정, 임시 폴더 동기화)**: ASIC 'Updated Grading Policy'의 첨부 칸 PDF를 이제 받고 읽음(점수표 아님 — 평가 정책), 인권과 성평등 교육 퀴즈가 Canvas 성적부 후보
+  (그 과목은 평가 항목이 없어 '연결'에서 멈춤 — 화면이 그렇게 말함), ASIC Lab0·Lab1은 추정까지. 남은 다듬을 것: 학번 표가 든 과제 안내 PDF(Midterm_project)를 점수표로 보는 것.
+

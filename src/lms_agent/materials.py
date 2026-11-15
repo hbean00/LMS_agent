@@ -2,11 +2,16 @@
 파일(core._linked_files의 가상 게시판, 계약 24-3)을 내 PC 폴더에 받고, PDF는 글자를 뽑아 마감 찾기 출처(type "pdf")로 넘긴다.
 표 파일(엑셀 xlsx·xls, CSV — sheets.kind_of)은 sheets.read로 칸을 읽어 같은 저장소(pdf_texts)에 "kind": "sheet" 기록으로 둔다
 (글 = sheets.to_text, 표 = "sheets" — 성적 후보가 읽음, 계약 25-2).
+문서(워드 docx·파워포인트 pptx·한글 hwp·hwpx — docs.read_detail)는 글자를 "kind": "doc" 기록으로, zip은 안의 파일마다
+(pdf·문서 = "kind": "zip:<안 이름>", 표 = "kind": "sheet") key "<첨부 key>/<안 이름>"·parent_key = 첨부 key로 둔다(계약 27-2).
+받은 기록(downloads)마다 read_ok(읽음 True·못 읽음 False·아직 모름 None)·read_notes(못 읽은 이유가 첫 줄)·read_kind(형식)를 남긴다
+— 진단(gradetrace)·자료 화면용. PDF의 pdf_ok·pdf_notes, 표의 sheet_ok·sheet_notes는 그대로 둔다(옛 화면 호환).
 계약 10장 "첨부 자료(materials) — B". 기록(downloads·pdf_texts)에는 어느 글에서 받았는지(board_id·post)와 canvas_file_id를 남긴다.
 
 - plan(): 수집 결과(cache["boards"])에서 아직 안 받은 첨부만 고르고 안전한 저장 위치를 정한다(네트워크 없음).
-  받아 둔 표 파일 중 아직 안 읽었거나 옛 규칙(sheet_version)으로 읽은 것은 디스크에서 다시 읽는 일("reread": True)로 더한다
-  (한 번에 SHEET_REREAD_MAX개, 다운로드 폴더 안·크기 한도 안만) — v0.7.3 이전에 받아 둔 엑셀도 다음 동기화에서 읽힌다.
+  받아 둔 표·문서·zip 중 아직 안 읽었거나 옛 규칙(sheet_version·doc_version·읽기 판)으로 읽은 것은 디스크에서 다시 읽는 일
+  ("reread": True)로 더한다(한 번에 SHEET_REREAD_MAX개, 다운로드 폴더 안·크기 한도 안만) — 전에 받아 둔 엑셀·한글·zip도
+  다음 동기화에서 읽힌다.
 - fetch(): 실제로 받는다. 받는 함수(get_bytes)와 PDF 읽는 함수(pdf_reader)는 넘겨받는다(테스트는 가짜). 다시 읽기는 받지 않는다.
 - apply()/run(): 결과를 state.json의 downloads·pdf_texts·materials_errors에 합친다.
 
@@ -22,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from . import docs as _docs
 from . import sheets as _sheets
 from .learningx import safe_name
 from .timeutil import iso, now_local, parse_iso
@@ -31,10 +37,14 @@ MAX_BYTES = 50_000_000            # 파일당 50MB
 PDF_TEXT_LIMIT = 60_000           # pdf_texts에 남기는 글자 수
 SHEET_VERSION = 1                 # 표 기록 만드는 판(이 모듈). 올리면 받아 둔 표 파일을 다음 동기화들에서 다시 읽는다
 SHEET_READER = int(getattr(_sheets, "VERSION", 1) or 1)   # 표 읽기 판(sheets.VERSION) — 올라가도 다시 읽는다
-SHEET_REREAD_MAX = 20             # 한 번의 동기화에서 디스크에서 다시 읽는 표 파일 수
+SHEET_REREAD_MAX = 20             # 한 번의 동기화에서 디스크에서 다시 읽는 표·문서 파일 수
 SHEET_CELL_LIMIT = 20_000         # pdf_texts의 표 기록에 남기는 칸 수(파일마다 — state.json이 커지지 않게)
 SHEET_CELL_CHARS = 200            # 칸마다 남기는 글자 수
 SHEET_EXTS = (".xlsx", ".xlsm", ".xls", ".csv", ".tsv")   # 받아 둔 파일 중 다시 읽어 볼 이름
+DOC_VERSION = 1                   # 문서·zip 기록 만드는 판(이 모듈). 올리면 받아 둔 문서를 다시 읽는다
+DOC_READER = int(getattr(_docs, "VERSION", 1) or 1)       # 문서 읽기 판(docs.VERSION) — 올라가도 다시 읽는다
+DOC_EXTS = tuple(_docs.TEXT_EXTS)  # 받아 둔 파일 중 문서로 다시 읽어 볼 이름(docx·pptx·hwp·hwpx·zip)
+ZIP_TEXT_LIMIT = 300_000          # zip 하나에서 pdf_texts에 남기는 글자 합(state.json이 커지지 않게)
 # 칸마다 길이 제한. 그래도 폴더 경로가 길어 Windows 한도(파일 259자·폴더 247자)를 넘으면 dest_parts가 더 줄인다.
 LIMITS = {"course": 40, "board": 30, "post": 50, "file": 80}
 PATH_MAX, DIR_MAX = 259, 247
@@ -250,9 +260,26 @@ def _sheet_due(key: str, m: dict, texts: dict | None) -> bool:
     return False
 
 
+def _doc_due(key: str, m: dict, texts: dict | None) -> bool:
+    """받아 둔 파일을 문서·zip으로 (다시) 읽어야 하나: 이름이 docx·pptx·hwp·hwpx·zip이고, 아직 안 읽었거나 옛 판으로 읽었거나,
+    읽었다는데 pdf_texts에 기록이 없음(texts를 줄 때만 — zip은 안 파일 기록 중 하나라도 없으면)."""
+    name = str(m.get("filename") or m.get("path") or "").lower()
+    if not name.endswith(DOC_EXTS):
+        return False
+    if _int(m.get("doc_version")) < DOC_VERSION or _int(m.get("doc_reader")) < DOC_READER:
+        return True
+    if texts is not None and m.get("read_ok"):
+        if m.get("read_kind") == "zip":
+            want = [z.get("key") for z in m.get("zip_members") or [] if isinstance(z, dict) and z.get("key")]
+            return any(not isinstance(texts.get(k), dict) for k in want)
+        rec = texts.get(key)
+        return not isinstance(rec, dict) or rec.get("kind") != "doc" or _int(rec.get("doc_version")) < DOC_VERSION
+    return False
+
+
 def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = None,
                 limit: int = SHEET_REREAD_MAX) -> list[dict]:
-    """받아 둔 표 파일을 디스크에서 다시 읽는 일(네트워크 없음): 최근 글의 파일부터 limit개. 파일이 지금 다운로드 폴더 안에
+    """받아 둔 표·문서·zip 파일을 디스크에서 다시 읽는 일(네트워크 없음): 최근 글의 파일부터 limit개. 파일이 지금 다운로드 폴더 안에
     그대로 있고 MAX_BYTES 이하일 때만. skip = 이번에 받기로 한 key(받으면서 읽는다)."""
     folder = Path(folder)
     out: list[dict] = []
@@ -264,7 +291,7 @@ def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = Non
     for key, m in sorted(((k, m) for k, m in (downloads or {}).items() if isinstance(m, dict)), key=newest):
         if len(out) >= limit:
             break
-        if key in skip or not _sheet_due(key, m, texts):
+        if key in skip or not (_sheet_due(key, m, texts) or _doc_due(key, m, texts)):
             continue
         path = m.get("path")
         try:
@@ -381,11 +408,81 @@ def _sheet_record(job: dict, got: dict) -> dict:
 
 def _apply_sheet(entry: dict, got: dict, at: str) -> None:
     entry.update(sheet_ok=bool(got["ok"]), sheet_notes=list(got["notes"]), sheet_kind=got["kind"],
-                 sheet_version=SHEET_VERSION, sheet_reader=SHEET_READER, sheet_read_at=at)
+                 sheet_version=SHEET_VERSION, sheet_reader=SHEET_READER, sheet_read_at=at,
+                 read_ok=bool(got["ok"]), read_notes=list(got["notes"]), read_kind="sheet")
 
 
-def _reread(job: dict, max_bytes: int, at: str) -> tuple[dict, dict | None] | None:
-    """받아 둔 표 파일을 디스크에서 다시 읽는다 → (downloads 기록, 표 기록 | None). 파일이 없거나 폴더 밖·너무 크면 None(그대로 둠)."""
+# ------------------------------------------------------------ 문서·zip (docs)
+
+def _read_doc(data: bytes, name: str, pdf_reader: Callable | None) -> dict:
+    """docs.read_detail(이유는 notes — 파일 내용·경로 없음). 어떤 입력에도 dict를 돌려준다."""
+    try:
+        got = _docs.read_detail(name, data, pdf_reader)
+    except Exception:  # docs는 예외를 내지 않지만, 받기 전체가 멈추지 않게
+        got = None
+    if not isinstance(got, dict):
+        return {"kind": None, "ok": False, "text": "", "notes": ["문서를 읽지 못했습니다"]}
+    return got
+
+
+def _doc_records(job: dict, got: dict) -> tuple[dict, list[str]]:
+    """pdf_texts에 넣을 기록 {key: 기록}과 메모. 문서 = 첨부 key 하나("kind": "doc"), zip = 안의 읽은 파일마다
+    key "<첨부 key>/<안 이름>"(pdf·문서 "kind": "zip:<안 이름>", 표 "kind": "sheet" — 성적 후보가 칸으로 읽게),
+    filename = 안 이름, zip_name = zip 이름, parent_key = 첨부 key. 다른 칸은 PDF 기록과 같다."""
+    key = job["key"]
+    base = {"course_id": job.get("course_id"), "filename": job.get("filename"), "post_key": job.get("post_key"),
+            "board_id": job.get("board_id"), "post": job.get("post"), "canvas_file_id": job.get("canvas_file_id"),
+            "posted_at": job.get("posted_at")}
+    ver = {"doc_version": DOC_VERSION, "doc_reader": DOC_READER}
+    if got.get("kind") != "zip":
+        if not got.get("ok"):
+            return {}, []
+        return {key: {"text": str(got.get("text") or "")[:PDF_TEXT_LIMIT], **base, "kind": "doc",
+                      "doc_kind": got.get("kind"), **ver}}, []
+    out, notes, left = {}, [], ZIP_TEXT_LIMIT
+    for m in got.get("members") or []:
+        if not isinstance(m, dict) or not m.get("ok"):
+            continue
+        text = str(m.get("text") or "")[:PDF_TEXT_LIMIT]
+        if len(text) > left:
+            notes.append(f"zip 안 글이 많아 앞의 파일들만 저장했습니다(글자 {ZIP_TEXT_LIMIT:,}자)")
+            break
+        left -= len(text)
+        name = str(m.get("name") or "파일")
+        inner = {**base, "filename": name, "zip_name": job.get("filename"), "parent_key": key, "member": name,
+                 "member_kind": m.get("sheet_kind") or m.get("kind"), **ver}
+        if m.get("kind") == "sheet":
+            stored, extra = _limit_sheets(m.get("sheets") or [])
+            if not any(sh["rows"] for sh in stored):
+                continue
+            rec = {"text": text, "sheets": stored, "kind": "sheet", "sheet_kind": m.get("sheet_kind"),
+                   "sheet_version": SHEET_VERSION, "sheet_reader": SHEET_READER, **inner}
+        else:
+            rec = {"text": text, **inner, "kind": f"zip:{name}"}
+        out[f"{key}/{name.replace('#', '_')}"] = rec
+    return out, notes
+
+
+def _apply_doc(entry: dict, got: dict, at: str, recs: dict, extra: list[str]) -> None:
+    """받은 기록에 문서 읽기 결과: read_ok·read_notes(못 읽은 이유가 첫 줄)·read_kind + doc_* 판, zip은 zip_members
+    [{"name", "kind", "ok", "notes"(2줄), "key"(pdf_texts key | None)}]."""
+    notes = [str(n)[:200] for n in got.get("notes") or []][:10] + extra
+    kind = got.get("kind")
+    entry.update(read_ok=bool(got.get("ok") and recs), read_notes=notes, read_kind=kind, doc_kind=kind, doc_version=DOC_VERSION, doc_reader=DOC_READER,
+                 doc_read_at=at)
+    if kind == "zip":
+        keys = {r.get("member"): k for k, r in recs.items()}
+        entry["zip_members"] = [{"name": str(m.get("name") or "")[:120], "kind": m.get("kind"), "ok": bool(m.get("ok")),
+                                 "notes": [str(n)[:200] for n in m.get("notes") or []][:2],
+                                 "key": keys.get(m.get("name"))}
+                                for m in (got.get("members") or [])[:_docs.MAX_MEMBERS] if isinstance(m, dict)]
+    else:
+        entry.pop("zip_members", None)
+
+
+def _reread(job: dict, max_bytes: int, at: str, pdf_reader: Callable | None = None) -> tuple[dict, dict] | None:
+    """받아 둔 표·문서 파일을 디스크에서 다시 읽는다 → (downloads 기록, {pdf_texts key: 기록}).
+    파일이 없거나 폴더 밖·너무 크면 None(그대로 둠)."""
     path = Path(job["dest"])
     try:
         if not inside(path, job["root"]) or not path.is_file() or path.stat().st_size > max_bytes:
@@ -396,9 +493,15 @@ def _reread(job: dict, max_bytes: int, at: str) -> tuple[dict, dict | None] | No
     if len(data) > max_bytes:
         return None
     entry = dict(job.get("entry") or {})
-    got = _sheet_or_marker(data, job.get("filename") or path.name)
+    name = job.get("filename") or path.name
+    if not str(name).lower().endswith(SHEET_EXTS):
+        got = _read_doc(data, name, pdf_reader)
+        recs, extra = _doc_records({**job, "filename": name}, got)
+        _apply_doc(entry, got, at, recs, extra)
+        return entry, recs
+    got = _sheet_or_marker(data, name)
     _apply_sheet(entry, got, at)
-    return entry, (_sheet_record(job, got) if got["ok"] else None)
+    return entry, ({job["key"]: _sheet_record(job, got)} if got["ok"] else {})
 
 
 def _sheet_or_marker(data: bytes, name: str) -> dict | None:
@@ -412,8 +515,9 @@ def _sheet_or_marker(data: bytes, name: str) -> dict | None:
 def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf_reader: Callable | None = None,
           now: datetime | None = None) -> tuple[dict, dict, list[str]]:
     """jobs(plan 결과)를 받아 저장한다. 한 파일이 실패해도 나머지는 계속.
-    PDF는 pdf_reader로 글자를, 표 파일(엑셀·CSV)은 sheets로 칸을 읽는다. 다시 읽기 일("reread")은 받지 않고 디스크에서 읽는다
-    (downloads 기록은 그대로 두고 sheet_* 칸만 바뀜 — downloaded_at도 그대로).
+    PDF는 pdf_reader로 글자를, 표 파일(엑셀·CSV)은 sheets로 칸을, 문서·zip은 docs로 글자를 읽는다(zip 안의 PDF도 pdf_reader —
+    없으면 pdftext). 다시 읽기 일("reread")은 받지 않고 디스크에서 읽는다
+    (downloads 기록은 그대로 두고 sheet_*·doc_*·read_* 칸만 바뀜 — downloaded_at도 그대로).
     → (downloads에 합칠 것, pdf_texts에 합칠 것, 한국어 오류 목록)."""
     at = iso(now or now_local())
     limit_mb = f"{max_bytes / 1_000_000:g}MB"
@@ -423,11 +527,10 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
     taken: set = set()
     for job in jobs:
         if job.get("reread"):
-            done = _reread(job, max_bytes, at)
+            done = _reread(job, max_bytes, at, pdf_reader)
             if done is not None:
                 updates[job["key"]] = done[0]
-                if done[1] is not None:
-                    texts[job["key"]] = done[1]
+                texts.update(done[1])
             continue
         name = job.get("filename") or "첨부"
         if job.get("size") is not None and job["size"] > max_bytes:
@@ -476,6 +579,7 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
             if not ok and not notes:
                 notes = ["PDF에서 글자를 찾지 못했습니다(스캔본일 수 있습니다)"]
             entry["pdf_ok"], entry["pdf_notes"] = ok, notes
+            entry.update(read_ok=ok, read_notes=_docs.pdf_notes(ok, notes), read_kind="pdf")
             if ok:
                 texts[job["key"]] = {"text": text[:PDF_TEXT_LIMIT], "course_id": job["course_id"], "filename": name,
                                      "post_key": job["post_key"], **place, "posted_at": job.get("posted_at")}
@@ -485,6 +589,11 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
                 _apply_sheet(entry, got, at)
                 if got["ok"]:
                     texts[job["key"]] = _sheet_record({**job, "filename": name}, got)
+            else:   # 문서·zip·그림·모르는 형식 — 읽거나 못 읽은 이유만
+                doc = _read_doc(bytes(data), name, pdf_reader)
+                recs, extra = _doc_records({**job, "filename": name}, doc)
+                _apply_doc(entry, doc, at, recs, extra)
+                texts.update(recs)
         updates[job["key"]] = entry
     return updates, texts, errors
 
@@ -497,15 +606,46 @@ def short_names_of(cache: dict | None) -> dict:
 
 
 def apply(data: dict, updates: dict, texts: dict, errors: list[str]) -> None:
-    """fetch 결과를 store.data에 합친다. 다시 받은 PDF에서 글자를 못 찾았으면 예전 글자는 지운다."""
+    """fetch 결과를 store.data에 합친다. 다시 받은 PDF에서 글자를 못 찾았으면 예전 글자는 지운다
+    (zip을 다시 받거나 읽었으면 이번에 없는 안 파일 기록도 지운다). 읽음 표시(read_*)가 없는 옛 기록에는 아는 만큼 채운다."""
     downloads = data.setdefault("downloads", {})
     pdf_texts = data.setdefault("pdf_texts", {})
+    children: dict = {}
+    for k, rec in pdf_texts.items():
+        if isinstance(rec, dict) and rec.get("parent_key"):
+            children.setdefault(rec["parent_key"], []).append(k)
     for key, entry in updates.items():
         downloads[key] = entry
         if key not in texts:
             pdf_texts.pop(key, None)
+        for k in children.get(key, []):
+            if k not in texts:
+                pdf_texts.pop(k, None)
     pdf_texts.update(texts)
+    backfill_read_flags(downloads)
     data["materials_errors"] = list(errors)
+
+
+def backfill_read_flags(downloads: dict) -> None:
+    """read_ok·read_notes·read_kind가 없는 받은 기록(v0.8.1까지)에 채운다(디스크를 읽지 않음): PDF는 pdf_ok·pdf_notes에서,
+    표는 sheet_ok·sheet_notes에서, 그림·옛 오피스·zip 아닌 압축·모르는 형식은 이름으로 이유만. 문서·zip은 다시 읽기가 채운다."""
+    for m in (downloads or {}).values():
+        if not isinstance(m, dict) or "read_ok" in m:
+            continue
+        if m.get("pdf_ok") is not None:
+            m.update(read_ok=bool(m["pdf_ok"]), read_notes=_docs.pdf_notes(m["pdf_ok"], m.get("pdf_notes")),
+                     read_kind="pdf")
+            continue
+        if m.get("sheet_ok") is not None:
+            m.update(read_ok=bool(m["sheet_ok"]), read_notes=list(m.get("sheet_notes") or []), read_kind="sheet")
+            continue
+        name = str(m.get("filename") or m.get("path") or "")
+        kind = _docs.kind_by_name(name)
+        if kind in ("pdf", "sheet") or name.lower().endswith(DOC_EXTS):
+            continue      # 아직 읽기 전(PDF 읽기 없이 받음)·다시 읽을 차례 — 모름(None)으로 둔다
+        reason = {"image": _docs.R_IMAGE, "doc": _docs.R_DOC_OLD, "ppt": _docs.R_PPT_OLD,
+                  "archive": _docs.R_ARCHIVE}.get(kind, _docs.R_UNSUPPORTED)
+        m.update(read_ok=False, read_notes=[reason], read_kind=kind)
 
 
 def run(data: dict, folder: Path, get_bytes: Callable, pdf_reader: Callable | None = None,

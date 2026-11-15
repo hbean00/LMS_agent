@@ -61,23 +61,36 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     def md(n: int) -> str:
         return f"{day(n).month}월 {day(n).day}일"
 
-    def assignment(course, aid, name, due, types, state, created, description="", submitted_at=None, score=None):
-        return {
+    def assignment(course, aid, name, due, types, state, created, description="", submitted_at=None, score=None,
+                   points=10.0, graded_at=None, stats=None):
+        a = {
             "id": aid, "course_id": course, "name": name, "description": description,
-            "due_at": due, "lock_at": None, "unlock_at": None, "points_possible": 10.0,
+            "due_at": due, "lock_at": None, "unlock_at": None, "points_possible": points,
             "submission_types": types, "published": True,
             "created_at": at(created, 9), "updated_at": at(created + 1, 9),
             "html_url": f"{base_url}/courses/{course}/assignments/{aid}",
             "submission": {"assignment_id": aid, "user_id": USER_ID, "score": score,
-                           "workflow_state": state, "submitted_at": submitted_at},
+                           "workflow_state": state, "submitted_at": submitted_at, "graded_at": graded_at},
         }
+        if stats is not None:   # Canvas는 include[]=score_statistics일 때만 준다(_assignments가 거름)
+            a["score_statistics"] = stats
+        return a
 
-    def announcement(course, aid, posted, title, message):
+    def announcement(course, aid, posted, title, message, attachments=None):
+        # attachments: Canvas 공지(토론 글)의 첨부 칸 — 본문에 링크가 없어도 파일이 붙어 있다(계약 27-1)
         return {
             "id": aid, "title": title, "message": message, "posted_at": posted,
             "delayed_post_at": None, "context_code": f"course_{course}", "read_state": "unread",
             "html_url": f"{base_url}/courses/{course}/discussion_topics/{aid}",
+            "attachments": list(attachments or []),
         }
+
+    def field_file(fid, display_name, data):
+        """공지 첨부 칸의 파일 하나(Canvas 모양: filename은 저장 이름, display_name이 보이는 이름)."""
+        return {"id": fid, "uuid": f"mock-{fid}", "folder_id": 1, "display_name": display_name,
+                "filename": display_name.replace(" ", "+"), "content-type": "application/pdf",
+                "url": f"{base_url}/files/{fid}/download?download_frd=1&verifier=v{fid}", "size": len(data),
+                "locked": False, "hidden": False, "locked_for_user": False}
 
     def conversation(cid, subject, code, name, sent, body, author):
         return {
@@ -141,9 +154,15 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
         "102": [assignment(102, 1021, "Homework 5", at(4, 18), ["online_upload"], "unsubmitted", -9)],
         "103": [],
         "104": [assignment(104, 1041, "Weekly log 9", None, ["none"], "unsubmitted", -7)],
-        "105": [],
+        # Canvas 성적부 점수 + 반 통계(계약 27-1, 실제 '인권과 성평등 교육' 퀴즈 80/100·반 통계와 같은 모양) — 한 달 전 채점이라
+        # 첫 실행의 성적 반응에는 조용히 들어간다(14일보다 오래됨). 이 과목은 평가 항목이 없어 연결되지 않은 후보로 보인다.
+        "105": [assignment(105, 1051, "연구실 안전 퀴즈", at(-30, 23, 59), ["online_quiz"], "graded", -40,
+                           submitted_at=at(-31, 20), score=80.0, points=100.0, graded_at=at(-29, 10),
+                           stats={"min": 40.0, "max": 100.0, "mean": 72.4, "median": 75.0,
+                                  "lower_q": 62.0, "upper_q": 85.0})],
     }
     quiz_day = day(5)
+    policy_pdf = grading_policy_pdf()
     # 실제 ASIC의 'Updated Grading Policy'·'Announcement about Midterm Week'·'Lab0, Lab1 Score Announcement'와 같은 모양(계약 14장).
     # 점수 공지는 본문에 Canvas 파일 링크만 있다 → core._linked_files가 가상 게시판 '공지'로 모아 받는다.
     policy = ("<p>Dear All,</p><p>I have attached the updated grading policy, which includes the midterm quiz (5%) "
@@ -181,7 +200,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
                      f"<p>Please email your final report to capstone@example.ac.kr by "
                      f"{MONTHS[cap.month - 1]} {cap.day}, 11:59 PM.</p>"),
         # 아래 넷은 at(-7)~at(0) 밖에 올려 공지 필터 시험(test_canvas)의 기대값을 그대로 둔다
-        announcement(101, 9006, at(-36, 14), "Updated Grading Policy", policy),
+        # 실제 ASIC 'Updated Grading Policy'처럼 PDF는 본문 링크 없이 첨부 칸에만(계약 27-1)
+        announcement(101, 9006, at(-36, 14), "Updated Grading Policy", policy,
+                     attachments=[field_file(POLICY_FILE, "Update Grading Policy.pdf", policy_pdf)]),
         announcement(101, 9007, at(-20, 10), "Lab0, Lab1 Score Announcement", scores_post),
         announcement(101, 9008, at(-9, 11), "Announcement about Midterm Week", midterm_week),
         announcement(101, 9009, at(-12, 15), "Final week schedule", final_week),
@@ -261,9 +282,9 @@ def build_demo_data(today: date | None = None, tz: tzinfo | None = None, base_ur
     }
     files = {8001: lab6_pdf, 8002: slides,
              SCORE_FILES[0]: score_table_pdf("Lab0", 0), SCORE_FILES[1]: score_table_pdf("Lab1", 1),
-             PRELAB_FILE: prelab_pdf(), SHEET_FILE: score_table_xlsx()}
+             PRELAB_FILE: prelab_pdf(), SHEET_FILE: score_table_xlsx(), POLICY_FILE: policy_pdf}
     file_names = {SCORE_FILES[0]: "Lab0_score.pdf", SCORE_FILES[1]: "Lab1_score.pdf", PRELAB_FILE: "Lab5_prelab.pdf",
-                  SHEET_FILE: "Quiz2_성적.xlsx"}
+                  SHEET_FILE: "Quiz2_성적.xlsx", POLICY_FILE: "Update Grading Policy.pdf"}
     return {
         "user": {"id": USER_ID, "name": "데모 학생", "short_name": "데모 학생",
                  "sortable_name": "학생, 데모", "login_id": "demo"},
@@ -395,6 +416,16 @@ def tiny_xlsx(sheets: list) -> bytes:
             z.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), body.encode("utf-8"),
                        compress_type=zipfile.ZIP_DEFLATED)
     return buf.getvalue()
+
+
+POLICY_FILE = 8501         # 'Updated Grading Policy' 공지의 첨부 칸에만 있는 PDF(본문 링크 없음, 계약 27-1)
+
+
+def grading_policy_pdf() -> bytes:
+    """공지 첨부 칸의 PDF: 날짜·비중이 없는 안내만(마감·평가 비중 찾기 기대값을 흔들지 않게)."""
+    return tiny_pdf(["ASIC Design - Grading policy notes",
+                     "Regrade requests are handled by the teaching assistant.",
+                     "Write your student ID in the email subject."])
 
 
 def prelab_pdf() -> bytes:
@@ -843,8 +874,10 @@ class _Handler(BaseHTTPRequestHandler):
             page = max(1, int(dict(pairs).get("page", 1)))
         except ValueError:
             page = 1
-        if "submission" not in [v for k, v in pairs if k == "include[]"]:
-            items = [{k: v for k, v in a.items() if k != "submission"} for a in items]
+        includes = [v for k, v in pairs if k == "include[]"]
+        drop = {k for k in ("submission", "score_statistics") if k not in includes}
+        if drop:
+            items = [{k: v for k, v in a.items() if k not in drop} for a in items]
         size = ASSIGNMENT_PAGE_SIZE
         last = max(1, -(-len(items) // size))
 

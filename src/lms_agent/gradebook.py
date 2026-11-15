@@ -15,6 +15,7 @@ import hashlib
 import math
 import re
 import statistics
+import unicodedata
 from datetime import datetime, timedelta
 
 from . import agent_cli
@@ -89,9 +90,13 @@ def candidate_key(cid, source_type, source_title, label, score) -> str:
     return f"txt:{source_type}:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
+MAX_CANDIDATES = 300   # Canvas 성적부 점수까지 들어오면 학기 말에는 100개를 넘을 수 있다(잘리면 추정에서 빠짐)
+
+
 def candidates(store, include_hidden: bool = False) -> list[dict]:
-    """공지·메시지·직접 입력에서 찾은 점수 문장. 사용자가 골라 평가 항목에 넣는다.
-    모든 후보에 안정적인 key(계약 14-1). 제외한(hidden) 과목의 후보는 빼고 돌려준다(include_hidden이면 모두)."""
+    """공지·메시지·직접 입력에서 찾은 점수 문장, 점수표 파일의 내 줄, Canvas 성적부 점수(계약 27-1). 평가 항목에 연결된다.
+    모든 후보에 안정적인 key(계약 14-1). 같은 과목·같은 이름·같은 점수가 성적부와 글·파일에 함께 있으면 성적부 하나만
+    남긴다(merge_canvas_duplicates). 제외한(hidden) 과목의 후보는 빼고 돌려준다(include_hidden이면 모두)."""
     cache = store.data.get("cache") or {}
     names = {c["id"]: c["name"] for c in cache.get("courses", [])}
     texts = []
@@ -117,11 +122,130 @@ def candidates(store, include_hidden: bool = False) -> list[dict]:
                         "sentence": f.sentence, "notes": f.notes,
                         "key": candidate_key(cid, typ, title, f.label, f.score)})
     out += score_file_candidates(store, names)
+    canvas = canvas_grade_candidates(store, names)
+    out = canvas + merge_canvas_duplicates(canvas, out)
     if not include_hidden:
         hidden = hidden_courses(store.data)
         out = [c for c in out if str(c.get("course_id")) not in hidden]
     out.sort(key=lambda c: c["posted_at"] or "", reverse=True)
-    return out[:100]
+    return out[:MAX_CANDIDATES]
+
+
+# ---------------------------------------------------------------- Canvas 성적부(계약 27-1)
+
+CANVAS_GRADE = "canvas_grade"
+
+
+def _fnum(v):
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _g(x) -> str:
+    return f"{x:g}"
+
+
+_NOTE_NO_MAX = "Canvas에 배점이 없어 만점을 몰라요"
+_NOTE_NO_SD = "Canvas 반 통계에 사분위가 없어 표준편차를 몰라요"
+_NOTE_NO_STATS = "Canvas가 반 통계를 주지 않았어요(교수가 숨겼거나 채점된 학생이 적음)"
+
+
+def canvas_grade_candidates(store, names: dict | None = None) -> list[dict]:
+    """Canvas 과제(cache.assignments)의 내 점수(submission.score)가 있으면 점수 후보 하나씩: source_type "canvas_grade",
+    label = 과제 이름, max_score = points_possible(0·없음이면 None), 반 통계(score_statistics: mean·lower_q·upper_q·max·min)가
+    있으면 평균·표준편차를 축하 카드(celebrate._stats)와 같은 계산으로. 면제(excused)·채점 안 함(not_graded)은 뺀다.
+    key "canvas:<과제 id>". 제외한 과목도 여기서는 만든다(candidates가 거른다)."""
+    from .celebrate import _stats   # 축하 카드와 같은 평균·표준편차(사분위로 어림)
+    cache = store.data.get("cache") or {}
+    if names is None:
+        names = {c["id"]: c["name"] for c in cache.get("courses", [])}
+    out = []
+    for a in cache.get("assignments") or []:
+        if not isinstance(a, dict) or a.get("id") in (None, "") or a.get("grading_type") == "not_graded":
+            continue
+        sub = a.get("submission")
+        sub = sub if isinstance(sub, dict) else {}
+        score = _fnum(sub.get("score"))
+        if score is None or sub.get("excused"):
+            continue
+        cid = str(a["course_id"]) if a.get("course_id") not in (None, "") else None
+        name = " ".join(str(a.get("name") or "").split()) or "과제"
+        mx = _fnum(a.get("points_possible"))
+        mx = mx if mx and mx > 0 else None
+        st = a.get("score_statistics") if isinstance(a.get("score_statistics"), dict) else {}
+        mean, sd = _stats(a)
+        n = st.get("count")
+        n = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else None
+        notes = []
+        if mx is None:
+            notes.append(_NOTE_NO_MAX)
+        if mean is not None and sd is None:
+            notes.append(_NOTE_NO_SD)
+        if not st:
+            notes.append(_NOTE_NO_STATS)
+        sentence = f"Canvas 성적부: {name} {_g(score)}" + (f"/{_g(mx)}" if mx else "점")
+        if mean is not None:
+            sentence += f" (반 평균 {_g(round(mean, 1))})"
+        posted = sub.get("graded_at") or sub.get("submitted_at")
+        out.append({"course_id": cid, "course_short": _core.short_course_name(names.get(cid)) if cid else None,
+                    "source_type": CANVAS_GRADE, "source_title": "Canvas 성적부",
+                    "posted_at": iso(parse_iso(posted)) if posted else None, "url": a.get("html_url"),
+                    "label": name, "score": score, "max_score": mx, "mean": mean, "sd": sd,
+                    "high": _fnum(st.get("max")), "low": _fnum(st.get("min")), "n": n, "rank": None,
+                    "sentence": sentence, "notes": notes, "key": f"canvas:{a['id']}", "file_kind": None,
+                    "assignment_id": str(a["id"]), "merged": []})
+    return out
+
+
+def _same_label(label) -> str:
+    """같은 이름인지 볼 때: 대소문자·띄어쓰기·문장부호 무시('Quiz 2' = 'quiz-2' = 'QUIZ2')."""
+    s = unicodedata.normalize("NFKC", str(label or "")).lower()
+    return re.sub(r"[\W_]+", "", s)
+
+
+def _same_score(a, b) -> bool:
+    return a is not None and b is not None and abs(float(a) - float(b)) < 1e-6
+
+
+def merge_canvas_duplicates(canvas: list[dict], others: list[dict]) -> list[dict]:
+    """같은 점수가 Canvas 성적부와 글·파일 후보에 함께 있으면(같은 과목·같은 이름(_same_label)·같은 점수, 만점이 둘 다
+    적혀 있으면 만점도 같음) 성적부 후보 하나만 센다 — 다른 쪽은 빼고 성적부 후보의 merged·notes에 남긴다.
+    성적부에 없는 반 통계(평균·표준편차·최고·최저·인원·등수)는 뺀 후보에서 채운다. → 남은 others."""
+    by: dict = {}
+    for c in canvas:
+        by.setdefault((c.get("course_id"), _same_label(c.get("label"))), []).append(c)
+    keep = []
+    for o in others:
+        lab = _same_label(o.get("label"))
+        match = None
+        if o.get("course_id") is not None and lab and o.get("score") is not None:
+            match = next((c for c in by.get((o.get("course_id"), lab)) or []
+                          if _same_score(c.get("score"), o.get("score"))
+                          and (c.get("max_score") is None or o.get("max_score") is None
+                               or _same_score(c.get("max_score"), o.get("max_score")))), None)
+        if match is None:
+            keep.append(o)
+            continue
+        match["merged"].append({"key": o.get("key"), "source_type": o.get("source_type"),
+                                "source_title": o.get("source_title"), "posted_at": o.get("posted_at")})
+        filled = [k for k in ("mean", "sd", "high", "low", "n", "rank") if match.get(k) is None and o.get(k) is not None]
+        for k in filled:
+            match[k] = o[k]
+        if match.get("max_score") is None and o.get("max_score") is not None:
+            match["max_score"] = o["max_score"]
+            match["notes"] = [x for x in match["notes"] if x != _NOTE_NO_MAX]
+        if match.get("mean") is not None:
+            match["notes"] = [x for x in match["notes"] if x != _NOTE_NO_STATS
+                              and (x != _NOTE_NO_SD or match.get("sd") is None)]
+        where = o.get("source_title") or o.get("source_type") or "다른 글"
+        match["notes"].append(f"같은 점수가 '{where}'에도 있어 하나로 셌어요"
+                              + (" (반 통계는 그쪽에서)" if any(k in filled for k in ("mean", "sd")) else ""))
+    return keep
 
 
 # ---------------------------------------------------------------- 점수표 PDF(성적 공지 첨부)
@@ -693,7 +817,9 @@ def link_candidates(store, course_id, components, cands) -> dict:
         key = c.get("key")
         if not key or c.get("course_id") is None or str(c.get("course_id")) != cid:
             continue
-        u = user.get(key)
+        # 성적부 후보에 합쳐진 글·파일 후보(merge_canvas_duplicates)의 사용자·AI 연결은 이어받는다(자기 연결이 먼저)
+        alts = [key] + [m.get("key") for m in c.get("merged") or [] if isinstance(m, dict) and m.get("key")]
+        u = next((user[k] for k in alts if isinstance(user.get(k), dict) and "component" in user[k]), None)
         if isinstance(u, dict) and "component" in u:
             if u["component"] is None:
                 out[key] = {"component": None, "by": "user", "reason": "이 과목 성적에 넣지 않음(직접 정함)", "evidence": None}
@@ -702,7 +828,7 @@ def link_candidates(store, course_id, components, cands) -> dict:
                 out[key] = {"component": names[lk.norm(u["component"])], "by": "user", "reason": "직접 연결함",
                             "evidence": None}
                 continue
-        a = ai.get(key)
+        a = next((ai[k] for k in alts if isinstance(ai.get(k), dict)), None)
         if isinstance(a, dict) and a.get("component") and lk.norm(a["component"]) in names:
             out[key] = {"component": names[lk.norm(a["component"])], "by": "ai",
                         "reason": a.get("reason") or "AI가 연결함", "evidence": a.get("evidence")}

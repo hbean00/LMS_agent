@@ -250,6 +250,8 @@ def _candidates(store) -> list[dict]:
 def _score_events(store, memo) -> list[dict]:
     groups: dict = {}
     for c in _candidates(store):
+        if c.get("source_type") == "canvas_grade":
+            continue  # Canvas 성적부 점수는 _graded_events가 같은 과제를 이미 알린다(계약 27-1 — 두 번 알리지 않게)
         score = _num(c.get("score"))
         if score is None:
             continue  # 평균만 적힌 공지 등은 내 점수가 아니다

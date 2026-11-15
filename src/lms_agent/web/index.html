@@ -1305,6 +1305,36 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
 .sem-side > aside, .sem-side > section { background: var(--paper); border: 1px solid var(--panel-line); border-radius: var(--r-panel); padding: var(--panel-y) var(--panel-x); }
 .plan-list .excl { margin-top: 6px; }
 .plan-list li.is-past .side-title { color: var(--graphite); }
+/* ---------- 성적 파일 진단(계약 27-3): 파일마다 찾음 → 받음 → 읽음 → 점수표 → 내 줄 → 후보 → 연결 → 추정. 멈춘 단계만 버건디 ---------- */
+.gt { margin-top: var(--panel-gap); padding-top: 4px; padding-bottom: 4px; }
+.gt > .group { margin-top: 0; border-top: 0; }
+.gt > .group > summary .sec-h { flex-wrap: wrap; }
+.gt > .group > .group-body { padding-bottom: 12px; }
+.gt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.gt-bar .seg { flex-wrap: wrap; max-width: 100%; }
+.gt-bar .seg button { height: 30px; padding: 0 11px; }
+.gt-bar .seg .gt-n { margin-left: 5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.gt-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.gt-row { min-width: 0; padding: 12px 0; border-top: 1px solid var(--rule); }
+.gt-row:first-child { border-top: 0; padding-top: 2px; }
+.gt-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 15.5px; }
+.gt-course { font-weight: 600; color: var(--graphite); }
+.gt-file { font-weight: 700; color: var(--ink); overflow-wrap: anywhere; word-break: normal; }
+.gt-src { font-size: 13.5px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.gt-stages { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.gt-chip { display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 8px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font-size: 13.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+.gt-chip .ico { width: 13px; height: 13px; stroke-width: 2.2; color: var(--graphite); }
+.gt-chip.is-stop { border-color: var(--burgundy); color: var(--burgundy); box-shadow: inset 0 0 0 1px var(--burgundy); }
+.gt-chip.is-todo { border-style: dashed; color: var(--muted); font-weight: 500; }
+.gt-chip.is-na { border-color: transparent; background: var(--desk); color: var(--muted); font-weight: 500; }
+.gt-stop { margin-top: 6px; font-size: 15px; font-weight: 600; color: var(--burgundy); }
+.gt-ok { margin-top: 6px; font-size: 15px; }
+.gt-cand { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 4px; font-size: 14.5px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.gt-cand b { color: var(--ink); font-weight: 600; }
+.gt-notes { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: 13.5px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.gt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 14.5px; }
+.gt-acts .linkish, .gt-acts a { font-size: 14.5px; }
+.gt-foot { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -1674,7 +1704,12 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   };
   const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
-  const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력', board: '게시판', pdf: '첨부 PDF', canvas: 'Canvas 과제' };
+  const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력', board: '게시판', pdf: '첨부 PDF', canvas: 'Canvas 과제', canvas_grade: 'Canvas 성적부' };
+  // 출처 이름 + ‘제목’(제목이 출처 이름과 같으면 한 번만 — Canvas 성적부 후보의 source_title은 'Canvas 성적부', 계약 27-1)
+  const srcText = (type, title) => {
+    const s = SOURCE[type] || '글';
+    return title && String(title) !== s ? s + ' ‘' + title + '’' : s;
+  };
   const METHOD = { lms: 'LMS 제출', email: '이메일 제출', paper: '종이 제출', unknown: '제출 방법 확인 필요' };
   const CONF = { high: '높음', medium: '보통', low: '낮음' };
 
@@ -4374,6 +4409,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const main = h('div', null, estimateBlock(gc, d), isPF(gc) ? null : neededBlock(gc), editorBlock(gc, d));
     const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G), studentIdBlock(G, !!sb));
     body.appendChild(h('div', { class: 'g-grid' }, main, side));
+    const gt = gradeTraceBlock(G);   // 맨 아래, 접힌 채로(계약 27-3)
+    if (gt) body.appendChild(gt);
   }
   // P/NP 과목(계약 15): 점수는 보여 주고 학점·상위 % 추정은 하지 않는다
   const isPF = (gc) => !!gc && (gc.mode === 'pass_fail' || gc.pass_fail === true || modeOf(gc.course_id) === 'pass_fail');
@@ -4702,7 +4739,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const d = parseDate(c.posted_at);
     return h('div', { class: 'cand' },
       h('div', { class: 'side-meta' }, h('span', { style: 'font-weight:600;color:var(--ink)' }, c.course_short || '과목 미상'),
-        h('span', null, (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’'), d ? h('span', null, fmtShort(d)) : null,
+        h('span', null, srcText(c.source_type, c.source_title)), d ? h('span', null, fmtShort(d)) : null,
         c.url ? extLink(c.url, '원문') : null),
       c.sentence ? h('blockquote', null, c.sentence) : null,
       h('div', { class: 'vals' }, c.label ? h('span', null, '항목 ', h('b', null, c.label)) : null, valsOf(c)),
@@ -4910,7 +4947,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         has('sd') ? h('span', null, '표준편차 ' + fmtNum(m.sd)) : null,
         has('rank') ? h('span', null, (has('n') ? fmtNum(m.n, 0) + '명 중 ' : '') + fmtNum(m.rank, 0) + '등') : has('n') ? h('span', null, fmtNum(m.n, 0) + '명') : null),
       linkChip(gc, m, L.name),
-      h('span', { class: 'mem-src' }, (SOURCE[m.source_type] || '글') + (m.source_title ? ' ‘' + m.source_title + '’' : ''), d ? ' · ' + fmtShort(d) : '',
+      h('span', { class: 'mem-src' }, srcText(m.source_type, m.source_title), d ? ' · ' + fmtShort(d) : '',
         m.url ? [' · ', extLink(m.url, '원문')] : null, m.link_reason ? ' · 연결 근거: ' + m.link_reason : null));
   }
   function linkChip(gc, m, cur) {
@@ -4929,6 +4966,136 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       remainLine(gc, L),
       ms.length ? h('ul', { class: 'mem-list', 'aria-label': L.name + ' 세부 점수' }, ms.map((m) => memberRow(gc, L, m)))
         : h('p', { class: 'gmap-line' }, h('span', { class: 'gmap-q' }, '아직 받은 ' + (fam || '세부') + ' 점수가 없어요.' + (num(G.score_files_waiting) ? ' 위에서 학번을 넣으면 점수표 PDF에서 찾아 여기에 넣어요.' : ''))));
+  }
+
+  // ---------------------------------------------------------------- 성적 파일 진단(계약 27-3): 파일·출처마다 어디서 멈췄는지
+  // 서버(gradetrace)가 단계(stages)와 멈춘 곳 한 줄(stop)을 만든다. 여기서는 보여 주고, 다음 할 일 단추만 붙인다
+  const GT_STATE = { done: '지나감', stop: '여기서 멈춤', todo: '아직', na: '해당 없음' };
+  const GT_SRC = { announcement: '공지', assignment: '과제', syllabus: '강의계획서', board: '게시판', canvas_grade: 'Canvas 성적부' };
+  const GT_FILTERS = [['all', '전체'], ['stop', '멈춘 것'], ['ok', '추정에 반영']];
+  const gtUi = { filter: 'all' };
+  const traceRows = (G) => (G && Array.isArray(G.trace) ? G.trace.filter((r) => r && typeof r === 'object') : []);
+  function gtChip(s) {
+    const st = GT_STATE[s && s.state] ? s.state : 'todo';
+    return h('li', { class: 'gt-chip is-' + st }, st === 'done' ? icon('check') : null, String((s && (s.label || s.id)) || ''),
+      h('span', { class: 'sr-only' }, ' ' + GT_STATE[st]));
+  }
+  function gtCand(c) {
+    if (!c || typeof c !== 'object') return null;
+    const has = (k) => c[k] !== null && c[k] !== undefined && c[k] !== '' && isFinite(Number(c[k]));
+    return h('p', { class: 'gt-cand' }, h('span', null, '후보 ', h('b', null, String(c.label || '이름 없음'))),
+      has('score') ? h('span', null, '내 점수 ', h('b', null, fmtNum(c.score) + (has('max_score') ? '/' + fmtNum(c.max_score) : ''))) : h('span', null, '내 점수 없음'),
+      has('mean') ? h('span', null, '평균 ' + fmtNum(c.mean)) : null,
+      has('sd') ? h('span', null, '표준편차 ' + fmtNum(c.sd)) : null,
+      has('n') ? h('span', null, fmtNum(c.n, 0) + '명') : null);
+  }
+  // 이 줄의 후보가 성적 화면 후보 목록의 어느 것인지(Canvas 성적부로 합쳐졌으면 그 후보)
+  function gtCandOf(G, r) {
+    const key = r.candidate && r.candidate.key;
+    if (!key) return null;
+    const all = Array.isArray(G.candidates) ? G.candidates : [];
+    return all.find((c) => c && c.key === key) || all.find((c) => c && Array.isArray(c.merged) && c.merged.some((m) => m && m.key === key)) || null;
+  }
+  function gtFocusSid() {
+    const el = $('sid-top') || $('sid-side');
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.focus({ preventScroll: true });
+  }
+  function gtShowCourse(cid) {
+    selGrade = String(cid);
+    render();
+    const tab = byKey('gtab-' + cid);
+    if (tab) { window.scrollTo(0, 0); tab.focus({ preventScroll: true }); }
+  }
+  // 자료 화면에서 그 파일 찾기: 검색 칸에 파일 이름(zip 속 파일이면 zip 이름)을 넣고, 보이면 그 [열기]로
+  function gtToMaterial(r) {
+    const name = String(r.file || '').split(' › ')[0];
+    matUi.q = name;
+    matUi.cat = 'all';
+    matUi.shut.clear();
+    go('#materials', () => setTimeout(() => {
+      const b = r.material_key ? byKey('mat-open-' + r.material_key) : null;
+      const li = b && b.closest('.mat-file');
+      if (li) { li.scrollIntoView({ block: 'center' }); flashEl(li); b.focus({ preventScroll: true }); }
+    }, 0))();
+  }
+  function gtActions(G, r, i) {
+    const acts = [];
+    const k = 'gt-' + i + '-';
+    if (r.stage === 'my_row' && r.my_row === null && !G.student_id_set) acts.push(h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': k + 'sid', on: { click: gtFocusSid } }, '학번 넣기'));
+    if (r.stage === 'linked' && r.course_id && gradeCourse(r.course_id)) {
+      const cand = gtCandOf(G, r);
+      const gc = gradeCourse(r.course_id);
+      if (cand && courseComps(r.course_id).length) {
+        const lk = candLink(cand);
+        acts.push(h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': k + 'link', on: { click: () => openLinkChooser(gc, cand, lk.component, lk.by, lk.reason) } }, '항목 고르기'));
+      } else if (!courseComps(r.course_id).length) {
+        acts.push(h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': k + 'course', on: { click: () => gtShowCourse(r.course_id) } }, '평가 항목 넣으러 가기'));
+      }
+    }
+    if (r.stage === 'downloaded' && r.downloaded === 'off') acts.push(h('a', { href: '#settings', 'data-key': k + 'set' }, '자동 저장 켜기(설정)'));
+    if (r.material_key && r.material_exists) {
+      acts.push(h('button', { type: 'button', class: 'linkish', 'data-key': k + 'open', 'aria-label': (r.file || '파일') + ' 열기', on: { click: (e) => openMaterial(r.material_key, e.currentTarget, r.file) } }, '파일 열기'));
+    }
+    if (r.material_key) acts.push(h('button', { type: 'button', class: 'linkish', 'data-key': k + 'mat', on: { click: () => gtToMaterial(r) } }, '자료에서 보기'));
+    const ext = extLink(r.url, r.kind === 'canvas_grade' ? 'Canvas에서 보기' : '글 보기');
+    if (ext) acts.push(ext);
+    return acts.length ? h('div', { class: 'gt-acts' }, acts) : null;
+  }
+  function gtRow(G, r, i) {
+    const src = GT_SRC[r.source] || '';
+    const where = r.post_title ? (src ? src + ' ' : '') + '‘' + r.post_title + '’' : src;
+    const stages = Array.isArray(r.stages) ? r.stages : [];
+    const notes = Array.isArray(r.notes) ? r.notes.filter(Boolean).slice(0, 3) : [];
+    const ok = !r.stage && r.in_estimate;
+    return h('li', { class: 'gt-row', id: 'gt-row-' + i, 'data-stage': r.stage || 'none' },
+      h('div', { class: 'gt-head' },
+        h('span', { class: 'gt-course' }, r.course_short || '과목 모름'),
+        h('span', { class: 'gt-file' }, r.file || '파일'),
+        where ? h('span', { class: 'gt-src' }, where) : null),
+      h('ol', { class: 'gt-stages', 'aria-label': (r.file || '파일') + ' 단계' }, stages.map(gtChip)),
+      r.stop ? h('p', { class: 'gt-stop' }, (STAGE_KO[r.stage] ? STAGE_KO[r.stage] + '에서 멈춤: ' : '멈춤: ') + r.stop)
+        : ok ? h('p', { class: 'gt-ok' }, h('b', null, '추정에 반영됨'), r.linked ? ' · ' + r.linked + (LINK_BY[r.link_by] ? ' (' + LINK_BY[r.link_by] + ')' : '') : '') : null,
+      gtCand(r.candidate),
+      r.stop && r.linked ? h('p', { class: 'gt-cand' }, '연결된 항목 ', h('b', null, r.linked)) : null,
+      notes.length ? h('ul', { class: 'gt-notes' }, notes.map((n) => h('li', null, String(n)))) : null,
+      gtActions(G, r, i));
+  }
+  const STAGE_KO = { found: '찾음', downloaded: '받음', read: '읽음', score_table: '점수표', my_row: '내 줄', candidate: '후보', linked: '연결', estimate: '추정' };
+  function gradeTraceBlock(G) {
+    if (!G || !Object.prototype.hasOwnProperty.call(G, 'trace')) return null;   // 진단이 없는 예전 서버
+    const rows = traceRows(G);
+    const sum = G.trace_summary && typeof G.trace_summary === 'object' ? G.trace_summary : {};
+    const nStop = rows.filter((r) => r.stage).length;
+    const nOk = rows.filter((r) => r.in_estimate).length;
+    if (!GT_FILTERS.some((f) => f[0] === gtUi.filter)) gtUi.filter = 'all';
+    const pick = (r) => gtUi.filter === 'stop' ? !!r.stage : gtUi.filter === 'ok' ? !!r.in_estimate : true;
+    const count = { all: rows.length, stop: nStop, ok: nOk };
+    const list = h('ul', { class: 'gt-list', id: 'grade-trace-list' });
+    const fill = () => {
+      list.replaceChildren();
+      const shown = rows.map((r, i) => [r, i]).filter((x) => pick(x[0]));
+      if (!shown.length) list.appendChild(h('li', { class: 'gt-row' }, h('p', { class: 'empty' }, gtUi.filter === 'stop' ? '멈춘 파일이 없어요.' : '추정에 들어간 파일이 아직 없어요.')));
+      for (const [r, i] of shown) list.appendChild(gtRow(G, r, i));
+    };
+    const seg = h('div', { class: 'seg', role: 'group', 'aria-label': '진단 줄 고르기' }, GT_FILTERS.map((f) =>
+      h('button', { type: 'button', 'data-key': 'gt-f-' + f[0], 'aria-pressed': gtUi.filter === f[0] ? 'true' : 'false', 'aria-controls': 'grade-trace-list',
+        on: { click: (e) => { gtUi.filter = f[0]; for (const b of seg.querySelectorAll('button')) b.setAttribute('aria-pressed', b === e.currentTarget ? 'true' : 'false'); fill(); } } },
+        f[1], h('span', { class: 'gt-n' }, String(count[f[0]])))));
+    const hid = num(sum.hidden_skipped);
+    const body = [
+      h('p', { class: 'help' }, '성적이 될 만한 파일과 Canvas 성적부 점수를 하나씩 따라가요. 못 받은 건지, 받았는데 점수표로 못 읽은 건지, 내 줄이 없는 건지, 평가 항목에 연결이 안 된 건지 어디서 멈췄는지 보여 줘요.'),
+      sum.error ? h('p', { class: 'inline-error' }, String(sum.error)) : null,
+      rows.length ? h('div', { class: 'gt-bar' }, seg) : null,
+      rows.length ? list : h('p', { class: 'empty' }, '성적이 될 만한 파일·점수를 아직 찾지 못했어요. 동기화하면 점수표 첨부와 Canvas 성적부 점수를 여기서 확인할 수 있어요.'),
+      hid ? h('p', { class: 'help gt-foot' }, '제외한 과목의 ' + hid + '개는 뺐어요.') : null,
+      h('p', { class: 'help gt-foot' }, '터미널에서 ', h('code', null, 'lms-agent grades-check'), '로 같은 표를 글로 볼 수 있어요. 학번·다른 학생 정보·주소가 없어 그대로 보내도 돼요.')
+    ];
+    if (rows.length) fill();
+    const head = h('h2', { class: 'sec-h', id: 'gt-h' }, '성적 파일 진단',
+      h('span', { class: 'sec-n' + (nStop ? ' warn' : '') }, rows.length ? '파일·출처 ' + rows.length + '개 · 반영 ' + nOk + (nStop ? ' · 멈춤 ' + nStop : '') : '아직 없음'));
+    return h('section', { class: 'g-sec gt', id: 'grade-trace', 'aria-labelledby': 'gt-h' }, group('gtrace', head, body));
   }
 
   // ---------------------------------------------------------------- 학번(점수표에서 내 줄 찾기, 계약 14-7)
@@ -5017,7 +5184,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     }
     const row = d.components[idx];
     for (const k of ['score', 'max_score', 'mean', 'sd']) if (c[k] !== null && c[k] !== undefined) row[k] = String(c[k]);
-    row.source = (SOURCE[c.source_type] || '글') + ' ‘' + (c.source_title || '') + '’';
+    row.source = srcText(c.source_type, c.source_title);
     d.dirty = true;
     gradeMsg.delete(target);
     focusKey = 'g-' + target + '-' + idx + '-' + (row.weight ? 'score' : 'weight');
@@ -5745,6 +5912,9 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
           isPdf && f.pdf_ok === false ? tag('내용을 못 읽은 PDF', 'dash', '스캔한 PDF처럼 글자를 뽑을 수 없어 마감 찾기에 쓰지 못했어요. 직접 열어 확인하세요.') : null,
           f.sheet_ok === true ? tag('표 내용 읽음', 'quiet', '이 표(엑셀·CSV)의 내용을 성적 후보·마감 찾기에 썼어요') : null,
           f.sheet_ok === false ? tag('내용을 못 읽은 표', 'dash', (Array.isArray(f.sheet_notes) && f.sheet_notes[0]) ? String(f.sheet_notes[0]) : '이 표 파일을 읽지 못했어요. 직접 열어 확인하세요.') : null,
+          // 문서·zip(docx·pptx·hwp·hwpx·zip, 계약 27-2): PDF·표 꼬리표가 없는 파일만
+          !isPdf && f.sheet_ok == null && f.read_ok === true ? tag('내용 읽음', 'quiet', '이 파일의 글자를 성적 후보·마감 찾기에 썼어요') : null,
+          !isPdf && f.sheet_ok == null && f.read_ok === false ? tag('내용을 못 읽은 파일', 'dash', (Array.isArray(f.read_notes) && f.read_notes[0]) ? String(f.read_notes[0]) : '이 파일을 읽지 못했어요. 직접 열어 확인하세요.') : null,
           missing ? h('span', { class: 'warn' }, '파일이 없어요(다음 동기화 때 다시 받아요)') : null,
           runnable && !missing ? h('span', null, '실행 파일이라 앱에서 열지 않아요') : null),
         deadlineLinks(links || [], '이 파일')),

@@ -98,8 +98,9 @@ def test_demo_courses_modes_suggestions_and_read_counts(demo):
     assert cs["104"]["mode_suggest"]["mode"] == "pass_fail" and "P/NP" in cs["104"]["mode_suggest"]["evidence"]
     assert cs["105"]["mode_suggest"]["mode"] == "hidden" and cs["105"]["short_name"] == "연구실 안전 교육"
     assert cs["101"]["mode_suggest"] is None and cs["102"]["mode_suggest"] is None
-    # attachments 5 = LearningX 2 + 공지 점수표 2 + 'LAB5 예비보고서' 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
-    assert cs["101"]["read_counts"] == {"announcements": 5, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 5}
+    # attachments 6 = LearningX 2 + 공지 점수표 2 + 'LAB5 예비보고서' 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
+    #   + 'Updated Grading Policy' 공지의 첨부 칸 PDF(계약 27-1)
+    assert cs["101"]["read_counts"] == {"announcements": 5, "board_posts": 2, "messages": 1, "pdfs": 0, "attachments": 6}
     assert cs["105"]["read_counts"] == {"announcements": 0, "board_posts": 0, "messages": 0, "pdfs": 0, "attachments": 0}
     # 사용자가 [맞아요]로 정한다 — 한 번 정하면 다시 제안하지 않는다(normal로 정해도)
     code, st = call(app, "POST", "/api/course/104/mode", {"mode": "normal"})
@@ -160,8 +161,9 @@ def test_hidden_course_downloads_and_news(tmp_path):
         store.data["course_prefs"] = {}
         core.sync(Canvas(base, DEMO_TOKEN), store, downloads_to=tmp_path / "dl")
         got = store.data["downloads"]
-        # 101의 5 = LearningX 2 + 공지 점수표 2 + 과제 설명에 링크된 Lab5_prelab.pdf(계약 24-3) — 더하기 102 엑셀 1
-        assert len(got) == 6 and sorted(k for k, m in got.items() if m["course_id"] != "101") == ["102:cf8401"]
+        # 101의 6 = LearningX 2 + 공지 점수표 2 + 과제 설명에 링크된 Lab5_prelab.pdf(계약 24-3)
+        #   + 공지 첨부 칸의 Update Grading Policy.pdf(계약 27-1) — 더하기 102 엑셀 1
+        assert len(got) == 7 and sorted(k for k, m in got.items() if m["course_id"] != "101") == ["102:cf8401"]
         app = App(store, tmp_path, cfg={}, scheduler=_Sched())
         mats = app.state()["materials"]["items"]
         ann = [m for m in mats if m["filename"] in ("Lab0_score.pdf", "Lab1_score.pdf")]

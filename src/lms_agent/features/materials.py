@@ -81,6 +81,12 @@ def download_folder(app) -> Path | None:
     return folder_of(app)
 
 
+def _notes(v, limit: int) -> list[str]:
+    """받은 파일 기록의 메모(목록 또는 글 하나) → 글 목록(한도·칸마다 200자)."""
+    items = v if isinstance(v, (list, tuple)) else [v] if v else []
+    return [str(n)[:200] for n in items[:limit] if n]
+
+
 @router.state_section("materials")
 def materials_state(app, ctx):
     d = app.store.data
@@ -90,7 +96,7 @@ def materials_state(app, ctx):
     for key, m in (d.get("downloads") or {}).items():
         path = m.get("path") or ""
         ann = str(m.get("post_key") or "").startswith(ANNOUNCEMENT_POST)
-        items.append({
+        item = {
             "key": key, "course_short": m.get("course_short") or shorts.get(str(m.get("course_id"))),
             # 공지 본문에 링크된 파일을 모은 가상 게시판은 화면에서 '공지 첨부 파일'(저장 폴더 이름 '공지'는 그대로: board_folder)
             "board_title": ANNOUNCEMENT_FILES if ann else m.get("board_title"), "board_folder": m.get("board_title"),
@@ -101,7 +107,12 @@ def materials_state(app, ctx):
             "category": category_of(m.get("post_key"), m.get("board_title")),
             # 표 파일(엑셀·CSV, 계약 25-2): 내용을 읽었는지와 못 읽은 이유(화면 꼬리표)
             "sheet_ok": m.get("sheet_ok"), "sheet_notes": list(m.get("sheet_notes") or [])[:3],
-        })
+        }
+        # 문서·zip(docx·pptx·hwp·hwpx·zip, 계약 27-2): 내용을 읽었는지와 못 읽은 이유(화면 꼬리표). PDF·표는 pdf_ok·sheet_ok가
+        # 이미 말하므로 그 밖의 파일에만 더한다(칸이 없으면 '모름')
+        if m.get("read_ok") is not None and m.get("pdf_ok") is None and m.get("sheet_ok") is None:
+            item.update(read_ok=bool(m.get("read_ok")), read_notes=_notes(m.get("read_notes"), 3))
+        items.append(item)
     items.sort(key=lambda x: (x["posted_at"] or x["downloaded_at"] or "", x["downloaded_at"] or ""), reverse=True)
     return {"folder": str(folder_of(app)), "auto_download": bool(_settings(app).get("auto_download", True)),
             "count": len(items), "items": items, "errors": list(d.get("materials_errors") or []),

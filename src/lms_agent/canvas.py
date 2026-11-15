@@ -197,7 +197,8 @@ class Canvas:
         return [c for c in self._get_all("/api/v1/courses", params) if c.get("name")]
 
     def assignments(self, course_id) -> list[dict]:
-        params = [("include[]", "submission"), ("per_page", 100)]
+        # score_statistics: 반 평균·사분위·최고·최저(교수가 숨기지 않았고 채점된 학생이 충분할 때만 Canvas가 준다, 계약 27-1)
+        params = [("include[]", "submission"), ("include[]", "score_statistics"), ("per_page", 100)]
         return self._get_all(f"/api/v1/courses/{_seg(course_id)}/assignments", params)
 
     def announcements(self, course_ids: list, start: datetime, end: datetime) -> list[dict]:

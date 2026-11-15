@@ -139,19 +139,50 @@ def file_links(html, host: str | None = None) -> list[int]:
     return out
 
 
+def _field_file(a) -> dict | None:
+    """Canvas 글의 첨부 칸(`attachments[]` — 공지·토론 글: id, display_name, filename, size, url, content-type) 하나 →
+    가상 게시판 첨부 모양. id가 없거나 숫자가 아니면 None(받을 길이 없음)."""
+    if not isinstance(a, dict):
+        return None
+    try:
+        fid = int(str(a.get("id")).strip())
+    except (TypeError, ValueError):
+        return None
+    return {"id": f"cf{fid}", "filename": a.get("display_name") or a.get("filename") or f"첨부 {fid}",
+            "filesize": a.get("size"), "canvas_file_id": fid, "url": a.get("url")}
+
+
 def _linked_files(canvas: Canvas, cache: dict, prev: dict | None, errors: list[str]) -> list[dict]:
-    """Canvas 공지 본문·과제 설명·강의계획서에 링크된 파일(예: 'Lab0_score-1.pdf', 'project2-1.pdf')을 첨부처럼 모은다
-    (계약 10장·24-3). 다운로드(materials)가 같은 모양으로 처리하도록 과목마다 가상 게시판(source "canvas")으로 묶는다:
-    board_id "announcements"(공지 — 글 = 공지) · "assignments"(과제 — 글 = 과제, id = 과제 id) · "syllabus"(강의계획서 — 글 id = 과목 id).
+    """Canvas 공지 본문·과제 설명·강의계획서에 링크된 파일(예: 'Lab0_score-1.pdf', 'project2-1.pdf')과 공지·토론 글의
+    **첨부 칸** 파일(예: 'Update Grading Policy.pdf' — 본문에 링크가 없음)을 첨부처럼 모은다(계약 10장·24-3·27-1).
+    다운로드(materials)가 같은 모양으로 처리하도록 과목마다 가상 게시판(source "canvas")으로 묶는다:
+    board_id "announcements"(공지 — 글 = 공지) · "assignments"(과제 — 글 = 과제, id = 과제 id; 채점 토론이면 그 토론 글의
+    본문 링크·첨부 칸도) · "syllabus"(강의계획서 — 글 id = 과목 id). 한 글 안에서 같은 파일 id는 한 번(본문 링크 먼저, 다음 첨부 칸).
     본문은 각 출처(announcement·assignment·syllabus)가 이미 읽으므로 board 출처에서는 건너뛴다(글 content는 "").
-    새 파일만 파일 API로 이름·크기를 묻고 지난번에 안 파일은 그대로 쓴다. 한 실행에서 같은 파일은 한 번만 묻는다."""
+    첨부 칸 파일은 이름·크기·주소가 글에 이미 있어 묻지 않는다(본문 링크가 같은 파일이면 그 정보를 쓴다).
+    본문 링크의 새 파일만 파일 API로 이름·크기를 묻고 지난번에 안 파일은 그대로 쓴다. 한 실행에서 같은 파일은 한 번만 묻는다."""
     host = urllib.parse.urlsplit(str(getattr(canvas, "base_url", "") or "")).netloc.lower() or None
     known = {a.get("canvas_file_id"): a for b in (prev or {}).get("boards", []) if b.get("source") == "canvas"
              for p in b.get("posts", []) for a in p.get("attachments", [])}
     failed: set = set()
     boards: dict[str, dict[str, list[dict]]] = {bid: {} for bid, _ in LINKED_BOARDS}
 
-    def attachments(html, what: str) -> list[dict]:
+    def topic_files(t) -> list[dict]:
+        """글(공지·토론)의 첨부 칸 파일. 이번에 받은 정보가 가장 새것이라 known도 그것으로 바꾼다(주소의 확인값)."""
+        out = []
+        for a in (t.get("attachments") if isinstance(t, dict) else None) or []:
+            f = _field_file(a)
+            if f is not None:
+                known[f["canvas_file_id"]] = f
+                out.append(dict(f))
+        return out
+
+    fields = {("announcements", str(n.get("id"))): topic_files(n) for n in cache.get("announcements") or []}
+    for a in cache.get("assignments") or []:
+        if isinstance(a.get("discussion_topic"), dict):
+            fields[("assignments", str(a.get("id")))] = topic_files(a["discussion_topic"])
+
+    def attachments(html, what: str, extra=()) -> list[dict]:
         out = []
         for fid in file_links(html, host):
             if fid in known:
@@ -168,10 +199,15 @@ def _linked_files(canvas: Canvas, cache: dict, prev: dict | None, errors: list[s
             known[fid] = {"id": f"cf{fid}", "filename": info.get("display_name") or info.get("filename"),
                           "filesize": info.get("size"), "canvas_file_id": fid, "url": info.get("url")}
             out.append(dict(known[fid]))
+        have = {a["canvas_file_id"] for a in out}
+        for f in extra:                          # 첨부 칸(본문에 같은 파일 링크가 있으면 이미 들어 있음)
+            if f["canvas_file_id"] not in have:
+                have.add(f["canvas_file_id"])
+                out.append(dict(f))
         return out
 
     def add(board_id, cid, post, html, what):
-        atts = attachments(html, what)
+        atts = attachments(html, what, fields.get((board_id, str(post["id"]))) or ())
         if atts:
             boards[board_id].setdefault(str(cid), []).append({**post, "content": "", "attachments": atts})
 
@@ -182,10 +218,11 @@ def _linked_files(canvas: Canvas, cache: dict, prev: dict | None, errors: list[s
             n.get("message"), f"공지 '{n.get('title')}'")
     for a in cache.get("assignments") or []:
         name = " ".join(str(a.get("name") or "").split()) or "과제"
+        topic = a.get("discussion_topic") if isinstance(a.get("discussion_topic"), dict) else {}
         add("assignments", a.get("course_id"),
             {"id": a["id"], "title": name, "created_at": a.get("created_at") or a.get("updated_at"),
              "updated_at": a.get("updated_at") or a.get("created_at"), "post_url": a.get("html_url")},
-            a.get("description"), f"과제 '{name}'")
+            "\n".join(str(x or "") for x in (a.get("description"), topic.get("message"))), f"과제 '{name}'")
     base = str(getattr(canvas, "base_url", "") or "")
     for c in cache.get("courses") or []:
         add("syllabus", c["id"],

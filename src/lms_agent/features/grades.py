@@ -1,7 +1,7 @@
 """성적: 과목별 평가 항목 설정 저장과 추정 결과, 점수표용 학번 설정, 점수·개수 연결, 시험 일정. 계약 7·10·14장."""
 from __future__ import annotations
 
-from .. import gradebook
+from .. import gradebook, gradetrace
 from ..api import router
 from .core import courses, items, semester
 
@@ -14,7 +14,15 @@ def section(ctx):
 
 @router.state_section("grades")
 def grades_state(app, ctx):
-    return section(ctx)
+    """성적 묶음 + 성적 파일 진단(계약 27-3): trace = 파일·출처마다 찾음→받음→읽음→점수표→내 줄→후보→연결→추정 중 멈춘 곳,
+    trace_summary = {total, in_estimate, stopped: {단계: 수}, hidden_skipped}. 진단이 실패해도 성적 화면은 그대로 보인다."""
+    out = dict(section(ctx))   # exams_state와 함께 쓰는 묶음은 건드리지 않는다
+    try:
+        out.update(gradetrace.state_fields(app.store, out))
+    except Exception:   # 진단은 덤 — 모르는 모양의 기록 하나로 성적 화면 전체가 깨지지 않게
+        out.update(trace=[], trace_summary={"total": 0, "in_estimate": 0, "stopped": {}, "hidden_skipped": 0,
+                                            "error": "성적 파일 진단을 만들지 못했어요"})
+    return out
 
 
 @router.state_section("exams")

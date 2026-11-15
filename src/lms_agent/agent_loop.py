@@ -797,7 +797,7 @@ class Loop:
         lines = [f"- {_flat(m.get('filename'))[:80]} | course_id {m.get('course_id')} · "
                  f"{self.ctx.shorts.get(str(m.get('course_id'))) or '-'} | 분류/category: {category} | 글/post: "
                  f"{_flat(m.get('post_title'))[:60]} | {str(m.get('posted_at') or '')[:10]}"
-                 + (" | 글자 읽음/text read" if m.get("pdf_ok") or m.get("sheet_ok") else "")
+                 + (" | 글자 읽음/text read" if m.get("pdf_ok") or m.get("sheet_ok") or m.get("read_ok") else "")
                  for m, category in rows[:30]]
         return f"자료 {len(rows)}개 / materials:\n" + "\n".join(lines), f"{len(rows)}개"
 

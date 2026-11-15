@@ -516,7 +516,7 @@ def test_ai_steps_run_after_sync_sharing_session(tmp_path):
 
 
 def test_demo_scenario_with_downloads_and_demo_student_id(tmp_path):
-    """데모(lms_agent demo와 같은 길): 공지 첨부 점수표 2개 + Lab6.pdf 단서 → Homework assignments 9개 중 2개."""
+    """데모(lms_agent demo와 같은 길): 공지 첨부 점수표 2개 + Canvas 성적부 LAB3 + Lab6.pdf 단서 → Homework assignments 9개 중 3개."""
     from lms_agent.canvas import Canvas
     from lms_agent.mock_canvas import DEMO_STUDENT_ID, DEMO_TOKEN, start_mock_canvas
     mock, base = start_mock_canvas()
@@ -528,11 +528,13 @@ def test_demo_scenario_with_downloads_and_demo_student_id(tmp_path):
     finally:
         mock.shutdown()
     hw = comp(st, "Homework assignments", "101")
+    # + Canvas 성적부의 LAB3 보고서 9/10(계약 27-1)
     assert [(m["label"], m["max_score"], m["link_by"]) for m in hw["members"]] == [("Lab0", 50.0, "rules"),
-                                                                                    ("Lab1", 50.0, "rules")]
+                                                                                    ("Lab1", 50.0, "rules"),
+                                                                                    ("LAB3 보고서", 10.0, "rules")]
     assert (hw["count"]["n"], hw["count"]["basis"], hw["count"]["source_title"]) == (9, "hint", "첨부 'Lab6.pdf'")
     c = course(st, "101")
-    assert {"component": "Homework assignments", "weight": 23.33, "count_left": 7, "range": None} in c["remaining"]
+    assert {"component": "Homework assignments", "weight": 20.0, "count_left": 6, "range": None} in c["remaining"]
     assert c["estimate"] and c["estimate"]["grade"]
     assert st["grades"]["score_files_waiting"] == 0 and st["grades"]["score_files_unmatched"] == []
     mats = {m["filename"]: m for m in st["materials"]["items"]}

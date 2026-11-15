@@ -117,7 +117,8 @@ def test_assignment_and_syllabus_links_collected(env):
     assert cache["errors"] == []
 
     ann = virtual(cache, "announcements")
-    assert (ann["board_title"], ann["tool_id"], [p["id"] for p in ann["posts"]]) == ("공지", None, [9007])
+    # 9006 = 'Updated Grading Policy'(PDF가 본문 링크 없이 첨부 칸에만, 계약 27-1)
+    assert (ann["board_title"], ann["tool_id"], [p["id"] for p in ann["posts"]]) == ("공지", None, [9007, 9006])
     assert [a["id"] for a in ann["posts"][0]["attachments"]] == [f"cf{SCORE_FILES[0]}", f"cf{SCORE_FILES[1]}"]  # 지금 그대로
 
     asg = virtual(cache, "assignments")
@@ -218,8 +219,9 @@ def test_downloads_dedupe_pdf_texts_and_search(env, tmp_path):
     got = store.data["downloads"]
     assert sorted(got) == sorted(["101:18001", "101:18002", "101:cf8101", "101:cf8102",   # 지금까지 받던 것
                                   "101:cf8201", "101:cf8301", "101:cf8302", "103:cf8303",
-                                  "102:cf8401"])                       # 데모 엑셀 점수표(계약 25-2)
-    assert r["downloaded"] == 9 and "101:cf8001" not in got
+                                  "102:cf8401",                        # 데모 엑셀 점수표(계약 25-2)
+                                  "101:cf8501"])                       # 공지 첨부 칸의 Update Grading Policy.pdf(27-1)
+    assert r["downloaded"] == 10 and "101:cf8001" not in got
     assert "/공지/" in got["101:cf8101"]["path"].replace("\\", "/")      # 공지·과제 둘 다 → 한 번, 먼저 있던 공지 쪽
     m = got["101:cf8301"]
     assert (m["board_id"], m["post"], m["canvas_file_id"], m["board_title"], m["post_title"]) == \

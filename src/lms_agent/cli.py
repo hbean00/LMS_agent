@@ -1,4 +1,4 @@
-"""명령어: lms-agent [serve|demo|setup|sync|list|ask|update|export]. 인자 없이 실행하면 화면을 연다."""
+"""명령어: lms-agent [serve|demo|setup|sync|list|grades-check|ask|update|export]. 인자 없이 실행하면 화면을 연다."""
 from __future__ import annotations
 
 import argparse
@@ -400,6 +400,18 @@ def cmd_list(args) -> None:
         _out("항목이 없습니다. 먼저 'lms-agent sync'를 실행하세요.")
 
 
+def cmd_grades_check(args) -> None:
+    """성적 파일 진단(계약 27-3): 파일·출처마다 찾음→받음→읽음→점수표→내 줄→후보→연결→추정 중 어디서 멈췄는지.
+    학번·다른 학생 정보·토큰·주소는 찍지 않는다 — 베타테스터가 그대로 붙여 보내도 된다(내 점수 숫자는 --scores일 때만)."""
+    from . import gradetrace
+
+    home = data_dir()
+    if not (home / STATE_FILE).exists():
+        _out("아직 저장된 내용이 없어요. 먼저 'lms-agent sync'를 실행하거나 'lms-agent'로 화면을 열어 동기화하세요.")
+        sys.exit(2)
+    _out(gradetrace.report_text(_store(home), show_all=args.all, show_scores=args.scores, version=__version__))
+
+
 def cmd_export(args) -> None:
     store = _store(data_dir())
     text = core.calendar_text(store, record=True)
@@ -435,6 +447,10 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--background", action="store_true", help="작업 스케줄러가 실행할 때(실행 기록에 표시)")
     sp.set_defaults(fn=cmd_sync)
     sub.add_parser("list", help="찾은 마감 보기").set_defaults(fn=cmd_list)
+    sp = sub.add_parser("grades-check", help="성적 파일 진단(파일마다 어디서 멈췄는지 — 그대로 붙여 보내도 돼요)")
+    sp.add_argument("--all", action="store_true", help="성적과 관계없어 보이는 첨부·제외한 과목까지 모두")
+    sp.add_argument("--scores", action="store_true", help="내 점수·평균·표준편차 숫자도 함께(기본은 '있음'만)")
+    sp.set_defaults(fn=cmd_grades_check)
     sp = sub.add_parser("ask", help="에이전트에게 묻기(예: \"기말고사 날짜가 안 보여요\")")
     sp.add_argument("message", help="물어볼 내용(500자 이하)")
     sp.add_argument("--course", help="과목 id(이 과목 글만 찾기)")

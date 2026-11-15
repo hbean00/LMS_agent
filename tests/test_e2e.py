@@ -48,7 +48,7 @@ def find(store, course, due):
 
 def test_report_counts(demo):
     _, _, _, r = demo
-    assert (r["courses"], r["assignments"], r["errors"]) == (5, 5, [])   # 105 연구실 안전 교육(과제·공지 없음)
+    assert (r["courses"], r["assignments"], r["errors"]) == (5, 6, [])   # 105 연구실 안전 교육(공지 없음, 채점된 퀴즈 1 — 27-1)
     assert r["no_deadline"] == 1  # Weekly log 9
 
 
@@ -232,7 +232,8 @@ def test_server_flow_to_calendar(running):
     assert validate_ics(text) == []
     assert f"UID:{target['id']}@lms-agent" in text
     assert "canvas-101-1013@lms-agent" in text  # Canvas 과제 포함(기본값)
-    assert _deadline_events(text) == 1 + 3 + 3  # 승인 1 + 마감 있는 Canvas 과제 3(LAB3, LAB5, HW5) + 강의 영상 3(계약 26-6)
+    # 승인 1 + 마감 있는 Canvas 과제 4(LAB3, LAB5, HW5, 105 연구실 안전 퀴즈 — 27-1) + 강의 영상 3(계약 26-6)
+    assert _deadline_events(text) == 1 + 4 + 3
     assert "UID:week-" in text and "주차: 마감" in text.replace("\r\n ", "")  # 주간 요약(기본 켜짐)
 
     code, body, _ = _req(url + "/api/settings", "POST", app.token, {"include_canvas": False})
@@ -276,7 +277,10 @@ def test_server_grades_links_exams_and_modes(running):
     # 이 시험은 첨부를 받지 않아(Lab6.pdf의 'Next labs' 단서 없음) 관찰만: LAB 0·1(점수 공지 제목)·3~6 → 최소 7개
     assert (hw["count"]["n"], hw["count"]["low"], hw["count"]["basis"]) == (None, 7, "observed")
     assert {"LAB4 보고서", "LAB5 예비보고서"} <= {s["title"] for s in hw["schedule"]}
-    assert asic["remaining"][0] == {"component": "Homework assignments", "weight": 30.0, "count_left": None, "range": None}
+    # Canvas 성적부의 LAB3 보고서 9/10이 세부 점수 하나(계약 27-1) → 관찰 최소 7개 중 1개 받음: 남은 비중 30×6/7 ~ 30
+    assert [m["key"] for m in hw["members"]] == ["canvas:1011"]
+    assert asic["remaining"][0] == {"component": "Homework assignments", "weight": None, "count_left": None,
+                                    "range": [25.71, 30.0]}
     # 계약 16장: 'Updated Grading Policy'의 학점 가이드라인(A+, A0: 35~45% …) → 강의계획서 비율이 기본값을 대신한다
     ds = asic["dist_source"]
     assert (ds["by"], ds["kind"], ds["source_title"], ds["found_by"]) == ("syllabus", "relative", "Updated Grading Policy",
