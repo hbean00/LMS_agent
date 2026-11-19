@@ -157,6 +157,21 @@ LOCK_WAIT = 10.0    # 다른 프로세스(백그라운드 동기화)가 저장 �
 LOCK_STALE = 60.0    # 이보다 오래된 잠금 파일은 죽은 프로세스가 남긴 것으로 보고 지운다
 
 
+REPLACE_TRIES = 20      # Windows: 다른 스레드·프로그램(화면 새로 고침의 읽기, 백신·색인)이 파일을 잠깐 열고 있으면
+REPLACE_WAIT = 0.05     # os.replace가 PermissionError(공유 위반)로 실패한다 — 잠깐 기다렸다 다시(최대 약 1초, 리드 v0.8.4 CI)
+
+
+def _replace(src, dst) -> None:
+    for i in range(REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == REPLACE_TRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT)
+
+
 class Store:
     """state.json 하나. 앱 화면 서버와 백그라운드 동기화가 같은 파일을 쓴다:
     저장은 잠금 파일로 한 번에 하나씩, 읽는 쪽은 reload_if_changed()로 다른 프로세스의 저장을 따라간다."""
@@ -250,7 +265,7 @@ class Store:
         """잠금을 이미 잡은 상태에서 쓴다(locked() 안에서만). 평소에는 save()."""
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=1), "utf-8")
-        os.replace(tmp, self.path)
+        _replace(tmp, self.path)
         self.mtime = self.path.stat().st_mtime_ns
 
     # ------------------------------------------------------------ 사용자 결정
