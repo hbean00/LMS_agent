@@ -7,15 +7,21 @@
   (Store는 읽은 칸을 모두 지닌 채 저장한다), `app_version`도 낮추지 않는다.
 
 새 단계 추가: 아래처럼 함수 하나에 `@migration("<그 변화가 들어간 버전>")`.
+
+버전이 바뀔 때마다(더 옛 버전이 저장한 파일을 처음 읽을 때 — 단계와 달리 어느 버전이든) ON_VERSION_CHANGE의 함수를 부른다:
+fn(data, 옛 버전 | None, 지금 버전). 지금은 받아 둔 파일 모두 다시 읽기 표시(`reprocess`, 계약 29-3) — 읽는 규칙이 바뀐 새 버전이
+전에 받아 둔 PDF·표·문서도 다시 읽어 성적·마감에 반영하게.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 from . import __version__
+from .timeutil import iso, now_local
 from .updater import parse_version
 
 MIGRATIONS: list[tuple[str, Callable[[dict], None]]] = []
+ON_VERSION_CHANGE: list[Callable[[dict, str | None, str], None]] = []
 
 
 def migration(version: str):
@@ -44,9 +50,28 @@ def stored_version(data: dict) -> str | None:
     return v if isinstance(v, str) and parse_version(v) else None
 
 
+def _mark_reprocess(data: dict, old: str | None, current: str) -> None:
+    """받아 둔 파일(downloads)이나 가져온 성적 파일(score_imports)이 있으면 store.data["reprocess"] = {pending, total(None — 첫 동기화가 셈),
+    done, at, from, to, by}. 다음 동기화들이 읽을 수 있는 받아 둔 파일을 모두(동기화당 materials.REPROCESS_MAX개) 다시 읽고
+    (처음 한 번은 가져온 파일도 — core.reprocess_progress) 다 읽으면 지운다.
+    같은 버전으로 이미 켜져 있으면 그대로(여러 번 돌아도 같은 결과)."""
+    downloads, imports = data.get("downloads"), data.get("score_imports")   # 받아 둔 첨부, 성적 화면에서 가져온 파일(29-1)
+    if not (isinstance(downloads, dict) and downloads) and not (isinstance(imports, dict) and imports):
+        return
+    rp = data.get("reprocess")
+    if isinstance(rp, dict) and rp.get("pending") and rp.get("to") == current:
+        return
+    data["reprocess"] = {"pending": True, "total": None, "done": 0, "at": iso(now_local()), "from": old, "to": current,
+                         "by": "update"}
+
+
+ON_VERSION_CHANGE.append(_mark_reprocess)
+
+
 def migrate(data: dict, current: str = __version__) -> list[str]:
     """data(읽은 state.json)를 그 자리에서 고친다. 돌린 단계의 버전 목록을 돌려준다."""
-    stored = parse_version(stored_version(data)) or (0, 0, 0, 1, "")
+    old = stored_version(data)
+    stored = parse_version(old) or (0, 0, 0, 1, "")
     cur = parse_version(current)
     if cur is not None and stored > cur:     # 더 새 버전이 저장한 파일 — 손대지 않는다
         return []
@@ -55,6 +80,9 @@ def migrate(data: dict, current: str = __version__) -> list[str]:
         if stored < parse_version(version):
             fn(data)
             ran.append(version)
+    if cur is not None and stored < cur:
+        for hook in ON_VERSION_CHANGE:
+            hook(data, old, current)
     if cur is not None:
         data["app_version"] = current
     return ran

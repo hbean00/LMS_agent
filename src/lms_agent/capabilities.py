@@ -730,7 +730,9 @@ SNAPSHOT_SKIP = frozenset({
     # 상태 계산이 스스로 쓰는 축하·소식 기록
     "celebrated", "medals", "celebrate_init", "review_peak", "news_seen", "reward_toasts",
     # 동기화·AI가 스스로 채우는 값(사용자 값은 grades·grade_links·grade_counts·item_links)
-    "weights_auto", "dist_ai", "grade_links_ai", "grade_counts_ai",
+    "weights_auto", "dist_ai", "grade_links_ai", "grade_counts_ai", "ai_scores",   # ai_scores: AI가 찾은 점수(계약 29-2)
+    # 다시 읽기 진행(계약 29-3)·가져온 성적 파일 기록(가져오기·지우기는 능력이 아님 — 29-1)
+    "reprocess", "reprocess_last", "score_imports",
     # 구글 반영 기록·가져온 다른 일정(보기 켜기·캘린더 고르기는 _SIDE로 경로를 불러 되돌림)·업데이트 확인 캐시
     "gcal", "gcal_events", "update",
     # 파일 모양 번호

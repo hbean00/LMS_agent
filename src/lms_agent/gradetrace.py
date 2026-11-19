@@ -18,6 +18,10 @@
 제외한 과목(hidden)은 기본으로 빼고 수만 센다(show_all이면 '제외한 과목' 줄로 넣는다 — 성적 화면처럼 추정에는 들어가지 않음).
 
 화면은 state.grades.trace(행 목록)·state.grades.trace_summary, 터미널은 `lms-agent grades-check`(report_text)가 같은 행을 쓴다.
+
+AI로 철저히 찾기(계약 29-2, aiscores): 줄마다 "ai": {"status": "found"|"none"|"error"|"pending"|None, "results", "at", "note"}.
+규칙이 못 읽은 파일을 AI가 읽었으면 그 결과 후보(source_type "ai_score")로 연결·추정까지 이어 가고 메모 "AI가 찾음",
+AI가 켜져 있고 아직 묻지 않은 대상이면 멈춘 줄에 "AI로 찾아볼 수 있어요". state.grades.ai_lookup(aiscores.lookup_state)도 여기서 더한다.
 """
 from __future__ import annotations
 
@@ -25,7 +29,7 @@ import re
 import urllib.parse
 from pathlib import Path
 
-from . import gradebook, scorefile
+from . import aiscores, gradebook, scorefile
 from .store import course_mode, hidden_courses
 
 STAGES = (("found", "찾음"), ("downloaded", "받음"), ("read", "읽음"), ("score_table", "점수표"),
@@ -34,7 +38,7 @@ STAGE_LABEL = dict(STAGES)
 _FILE_ONLY = ("downloaded", "read", "score_table", "my_row")   # Canvas 성적부 점수에는 해당 없음
 
 SOURCE_KO = {"announcement": "공지", "assignment": "과제", "syllabus": "강의계획서", "board": "게시판",
-             "canvas_grade": "Canvas 성적부", "unknown": "출처 모름"}
+             "canvas_grade": "Canvas 성적부", "upload": "직접 가져온 파일", "unknown": "출처 모름"}
 _VIRTUAL = {"announcements": "announcement", "assignments": "assignment", "syllabus": "syllabus"}
 
 # 점수표일 수 있는 이름(파일 이름·글 제목) — scorefile._SCORE_NAME과 같은 낱말. 진단에 넣을 줄을 고르는 데만 쓴다
@@ -74,6 +78,8 @@ STOP = {
     "no_row": "내 학번 줄이 없어요(다른 분반 파일일 수 있어요)",
     "no_result": "내 줄은 있지만 점수를 계산하지 못했어요(칸 수가 다르거나 인원이 너무 적어요)",
     "empty_cell": "내 칸이 비어 있어요(점수 없음)",
+    "absent": "내 칸이 '{mark}'(결시·미응시 표시)라 점수가 없어요 — 0점으로 세지 않아요",
+    "letter_only": "점수 대신 학점 글자('{letter}')만 있어요 — 학점 글자는 점수가 아니에요",
     "no_canvas_cand": "Canvas 성적부 점수가 점수 후보에 없어요",
     "no_course": "어느 과목 파일인지 몰라 평가 항목에 연결하지 않았어요",
     "hidden": "제외한 과목이라 성적에 넣지 않아요",
@@ -88,6 +94,13 @@ STOP = {
     "not_member": "평가 항목의 세부 점수에 들어가지 않았어요",
     "no_estimate": "추정을 계산하지 못했어요",
 }
+AI_NOTE = {   # 계약 29-2
+    "found": "AI가 찾음 — 규칙이 못 읽은 파일을 AI가 읽었어요(맞지 않으면 성적 화면에서 '넣지 않음')",
+    "pending": "AI로 찾아볼 수 있어요 — 성적 화면의 [AI로 성적 찾기](동기화 뒤에도 몇 개씩 자동으로)",
+    "none": "AI도 내 점수를 찾지 못했어요",
+    "error": "AI로 찾지 못했어요",
+}
+_AI_NONE = {"status": None, "results": [], "at": None, "note": None}
 
 _MEMO: dict = {}
 _MEMO_MAX = 2000
@@ -489,6 +502,12 @@ class _Ctx:
             for comp in (c.get("config") or {}).get("components") or []:
                 if isinstance(comp, dict) and comp.get("name"):
                     slot[comp["name"]] = comp
+        # AI가 찾은 점수 후보(계약 29-2) — 출처 파일(pdf_texts key)별
+        self.ai_on = bool((d.get("settings") or {}).get("ai_cli"))
+        self.ai_by_rec: dict = {}
+        for c in self.shown.values():
+            if c.get("source_type") == aiscores.SOURCE_TYPE and c.get("ai_source"):
+                self.ai_by_rec.setdefault(str(c["ai_source"]), []).append(c)
 
     def short(self, cid) -> str | None:
         return self.names.get(str(cid)) if cid is not None else None
@@ -498,9 +517,12 @@ class _Ctx:
 
 def _base(u: dict, ctx: _Ctx) -> dict:
     m, a, p, b = u.get("dl") or {}, u.get("att") or {}, u.get("post") or {}, u.get("board") or {}
+    rec0 = u["recs"][0][1] if u.get("recs") else {}
     cid = u.get("cid")
     name = _filename(u)
     post_key = m.get("post_key") or (f"board:{b.get('board_id')}-{p.get('id')}" if b else None)
+    # 성적 화면에서 직접 가져온 파일(계약 29-1, pdf_texts "import:…" — source·board_id "upload")
+    upload = rec0.get("source") == "upload" or rec0.get("board_id") == "upload" or str(u.get("key") or "").startswith("import:")
     path = m.get("path")
     exists = False
     if path:
@@ -511,9 +533,10 @@ def _base(u: dict, ctx: _Ctx) -> dict:
     return {"id": "f:" + str(u["key"]), "course_id": cid, "course_short": ctx.short(cid),
             "course_hidden": bool(cid) and cid in ctx.hidden,
             "file": scrub(name, ctx.sid), "kind": _kind_of_name(name),
-            "source": _source_of(b.get("board_id") if b else None, post_key),
+            "source": "upload" if upload else _source_of(b.get("board_id") if b else None, post_key),
             "post_title": scrub(m.get("post_title") or p.get("title"), ctx.sid) or None,
-            "posted_at": m.get("posted_at") or p.get("created_at") or p.get("updated_at"),
+            "posted_at": (m.get("posted_at") or p.get("created_at") or p.get("updated_at") or rec0.get("posted_at")
+                          or rec0.get("imported_at")),
             "url": _clean_url(p.get("post_url")),
             "material_key": u.get("dl_key"), "material_exists": exists,
             "found": True, "downloaded": None, "read": None, "score_table": None, "my_row": None,
@@ -549,7 +572,14 @@ def _after_candidate(row: dict, c: dict, ctx: _Ctx, na=()) -> dict:
     row["id"] = row["id"] + "#" + str(c.get("key"))
     row["relevant"] = True
     row["notes"] = (row["notes"] + _cand_notes(c, ctx.sid))[:4]
-    if c.get("score") is None:
+    if c.get("score") is None:   # 점수 없는 결과(계약 29-3 — scorefile.result_extras): 애매함·결시·학점 글자만
+        if c.get("ambiguous"):
+            row["my_row"], row["candidate"] = False, None
+            return _finish(row, "my_row", STOP["masked_many"], na)
+        if c.get("absent"):
+            return _finish(row, "candidate", STOP["absent"].format(mark=scrub(str(c["absent"]), ctx.sid)[:20]), na)
+        if c.get("letter"):
+            return _finish(row, "candidate", STOP["letter_only"].format(letter=str(c["letter"])[:4]), na)
         return _finish(row, "candidate", STOP["empty_cell"], na)
     cid = str(c.get("course_id")) if c.get("course_id") is not None else None
     if cid is None:
@@ -607,8 +637,23 @@ def _record_rows(base: dict, rkey: str, rec: dict, ctx: _Ctx, zip_name: str | No
     info = _analyze(rkey, rec, ctx.sid)
     row["score_table"] = info["score_table"]
     named = _scoreish(fn) or _scoreish(inner) or _scoreish(base.get("post_title"))
-    row["relevant"] = bool(info["score_table"] or kind == "sheet" or named)
+    row["relevant"] = bool(info["score_table"] or kind == "sheet" or named or base.get("source") == "upload")
+    try:
+        row["ai"] = aiscores.entry_status(ctx.store, rkey, rec, ctx.ai_on)
+    except Exception:  # noqa: BLE001 — AI 칸은 덤(진단 줄은 그대로)
+        row["ai"] = dict(_AI_NONE)
     cands = ctx.by_rec.get(rkey) or []
+    ai_cands = ctx.ai_by_rec.get(rkey) or []
+    if ai_cands and not any(c.get("score") is not None for c in cands):   # 규칙이 못 읽은 것을 AI가 찾음
+        row["my_row"] = True
+        row["relevant"] = True
+        out = []
+        for c in ai_cands:
+            r = _after_candidate(dict(row, notes=list(row["notes"])), c, ctx)
+            r["notes"] = [AI_NOTE["found"]] + [n for n in r["notes"] if n != AI_NOTE["found"]][:3]
+            r["found_by"] = "ai"
+            out.append(r)
+        return out
     if cands:
         row["my_row"] = True
         return [_after_candidate(dict(row, notes=list(row["notes"])), c, ctx) for c in cands]
@@ -771,6 +816,21 @@ def _collect(store, grades: dict | None) -> list[dict]:
         rows += _unit_rows(u, ctx)
     rows += _canvas_rows(store, ctx)
     rows += _not_found_rows(store, ctx)
+    for r in rows:   # AI 칸(계약 29-2): 모든 줄에, 멈춘 줄에는 AI가 할 수 있는 것·한 것을 한 줄
+        ai = r.get("ai")
+        if not isinstance(ai, dict):
+            r["ai"] = ai = dict(_AI_NONE)
+        st = ai.get("status")
+        if not r.get("stage") or r.get("found_by") == "ai" or st not in AI_NOTE:
+            continue
+        if st == "pending" and not ctx.ai_on:
+            continue
+        note = AI_NOTE[st] + (f": {scrub(str(ai['note']), ctx.sid)[:120]}" if st in ("none", "error") and ai.get("note")
+                              else "")
+        if note not in r["notes"]:
+            r["notes"] = [note] + list(r["notes"])[:3]
+        if st in ("pending", "none", "error"):
+            r["relevant"] = True
 
     def order(r):
         return (ctx.order.get(str(r.get("course_id")), 10_000), r["kind"] == "canvas_grade",
@@ -798,7 +858,7 @@ def trace(store, grades: dict | None = None, show_all: bool = False) -> list[dic
     """성적이 될 수 있는 파일·출처마다 한 줄(한 파일에 평가가 여럿이면 평가마다). grades = gradebook.section 결과(없으면 만든다).
 
     줄: {"id", "course_id", "course_short", "course_hidden", "file", "kind"("pdf"|"sheet"|"doc"|"zip"|"image"|"other"|"canvas_grade"),
-         "source"("announcement"|"assignment"|"syllabus"|"board"|"canvas_grade"|"unknown"), "post_title", "posted_at",
+         "source"("announcement"|"assignment"|"syllabus"|"board"|"canvas_grade"|"upload"(직접 가져온 파일)|"unknown"), "post_title", "posted_at",
          "url"(글 주소 — 쿼리 없음, 첨부 주소 아님), "material_key"(받은 파일 key — 자료 열기), "material_exists",
          "found": bool, "downloaded": True | "hidden"|"off"|"size"|"error"|"save"|"outside"|"missing"|"pending" | None,
          "read": "ok" | "scanned"|"image"|"encrypted"|"unsupported"|"unreadable"|"pending" | None,
@@ -806,7 +866,9 @@ def trace(store, grades: dict | None = None, show_all: bool = False) -> list[dic
          "candidate": {"key", "label", "score", "max_score", "mean", "sd", "n"} | None,
          "linked": 평가 항목 이름 | None, "link_by": "rules"|"ai"|"user"|None, "in_estimate": bool,
          "stage": 처음 멈춘 단계 id | None(추정까지 다 됨), "stop": 그 단계의 한국어 한 줄 | None,
-         "stages": [{"id", "label", "state": "done"|"stop"|"todo"|"na"}], "notes": [한국어 메모…]}
+         "stages": [{"id", "label", "state": "done"|"stop"|"todo"|"na"}], "notes": [한국어 메모…],
+         "ai": {"status": "found"|"none"|"error"|"pending"|None, "results": [{key, label, score, max_score, mean, sd,
+                confidence, evidence(화면용 — 학번은 가린 모양)}], "at", "note"}(계약 29-2), "found_by": "ai"(AI가 찾은 후보의 줄)}
     None 값은 '그 단계까지 가지 않음'(또는 Canvas 성적부 점수처럼 해당 없음 — stages의 "na").
     show_all=False면 성적과 관계있어 보이는 것만(점수 낱말 이름·점수표 글·표 파일·후보가 있는 것·Canvas 성적부 점수)과
     제외하지 않은 과목만. show_all이면 받은 모든 첨부와 제외한 과목(메모 '제외한 과목이에요')까지."""
@@ -833,10 +895,22 @@ def summary(rows: list[dict], hidden: int = 0) -> dict:
 
 
 def state_fields(store, grades: dict) -> dict:
-    """state.grades에 더하는 칸: {"trace": [줄…], "trace_summary": {...}}. 무거운 것(글·표 살피기)은 글마다 기억하므로
-    /api/state마다 다시 만들어도 가볍다(점수표 판정·학번 찾기는 같은 글이면 다시 하지 않음)."""
-    rows, hid = _pick(_collect(store, grades), False)
-    return {"trace": rows, "trace_summary": summary(rows, hid)}
+    """state.grades에 더하는 칸: {"trace": [줄…], "trace_summary": {...}, "ai_lookup": aiscores.lookup_state(계약 29-2)}.
+    무거운 것(글·표 살피기)은 글마다 기억하므로 /api/state마다 다시 만들어도 가볍다(점수표 판정·학번 찾기는 같은 글이면 다시 하지 않음).
+    진단이 실패해도 ai_lookup은 남고, AI 상태가 실패해도 진단은 남는다(어느 쪽도 성적 화면을 깨지 않게)."""
+    try:
+        rows, hid = _pick(_collect(store, grades), False)
+        out = {"trace": rows, "trace_summary": summary(rows, hid)}
+    except Exception:  # noqa: BLE001 — features/grades의 대체 모양과 같게
+        out = {"trace": [], "trace_summary": {"total": 0, "in_estimate": 0, "stopped": {}, "hidden_skipped": 0,
+                                              "error": "성적 파일 진단을 만들지 못했어요"}}
+    try:
+        out["ai_lookup"] = aiscores.lookup_state(store)
+    except Exception:  # noqa: BLE001
+        out["ai_lookup"] = {"enabled": bool((store.data.get("settings") or {}).get("ai_cli")), "student_id_set": False,
+                            "running": False, "job": None, "last_at": None, "done": 0, "found": 0, "pending": 0,
+                            "errors": [], "per_sync": aiscores.AUTO_PER_SYNC}
+    return out
 
 
 # ---------------------------------------------------------------- 터미널 글(lms-agent grades-check)

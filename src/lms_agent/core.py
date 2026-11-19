@@ -942,15 +942,23 @@ def sync_options(store, demo_home: Path | None = None) -> dict:
                 opts["downloads_to"] = default_folder()
             except ImportError:
                 pass
+    reader = default_pdf_reader()
+    if reader is not None:
+        opts["pdf_reader"] = reader
+    return opts
+
+
+def default_pdf_reader():
+    """PDF 읽기(pdftext) — materials.fetch가 받는 모양({text, notes, ok})으로. 동기화와 받아 둔 파일 다시 읽기가 함께 쓴다."""
     try:
         from .pdftext import extract_text
-        def read_pdf(data: bytes) -> dict:  # materials.fetch가 받는 모양({text, notes, ok})으로
-            r = extract_text(data)
-            return {"text": r.text, "notes": list(r.notes), "ok": r.ok}
-        opts["pdf_reader"] = read_pdf
     except ImportError:
-        pass
-    return opts
+        return None
+
+    def read_pdf(data: bytes) -> dict:
+        r = extract_text(data)
+        return {"text": r.text, "notes": list(r.notes), "ok": r.ok}
+    return read_pdf
 
 
 def _attachment_bytes(canvas: Canvas, att: dict, max_bytes: int = 50_000_000) -> bytes:
@@ -979,9 +987,17 @@ def _attachment_bytes(canvas: Canvas, att: dict, max_bytes: int = 50_000_000) ->
     return get(str(info.get("url") or ""))
 
 
+def _reprocess_mark(data: dict) -> str | None:
+    """모두 다시 읽기(store.data["reprocess"], 계약 29-3)가 켜져 있으면 그 표시(시작 시각), 아니면 None."""
+    rp = data.get("reprocess")
+    return str(rp.get("at") or "1") if isinstance(rp, dict) and rp.get("pending") else None
+
+
 def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) -> tuple[dict, dict, list[str], set]:
     """새 첨부만 내려받고 PDF는 글자를, 표 파일은 칸을 뽑는다(materials 모듈). 잠금 없이(네트워크) 실행한다.
-    넷째 값 = 받지 않고 디스크에서 다시 읽은 표 파일의 키(보고의 '받은 수'에서 뺀다, 계약 25-2)."""
+    받아 둔 파일 중 옛 판으로 읽었거나 글 기록(pdf_texts)이 빠진 것, 앱 버전이 바뀐 뒤(reprocess)에는 읽을 수 있는 것 모두를
+    디스크에서 다시 읽는다(계약 25-2·27-2·29-3).
+    넷째 값 = 받지 않고 디스크에서 다시 읽은 파일의 키(보고의 '받은 수'에서 뺀다, 계약 25-2)."""
     try:
         from .materials import fetch, plan
     except ImportError:
@@ -989,12 +1005,43 @@ def _download_new(canvas: Canvas, cache: dict, store, folder: Path, pdf_reader) 
     from .store import hidden_courses
     shorts = {c["id"]: short_course_name(c["name"]) for c in cache.get("courses", [])}
     hidden = hidden_courses(store.data)   # 제외한 과목은 새로 받지 않는다(받은 파일은 둠, 계약 15장)
-    jobs = [j for j in plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder))
+    jobs = [j for j in plan(cache.get("boards", []), dict(store.data.get("downloads") or {}), shorts, Path(folder),
+                            texts=dict(store.data.get("pdf_texts") or {}), pdf=pdf_reader is not None,
+                            reprocess=_reprocess_mark(store.data), hidden=hidden)
             if str(j.get("course_id")) not in hidden]
     if not jobs:
         return {}, {}, [], set()
     updates, texts, errors = fetch(jobs, lambda att: _attachment_bytes(canvas, att), pdf_reader=pdf_reader)
     return updates, texts, errors, {j["key"] for j in jobs if j.get("reread")}
+
+
+def reprocess_progress(store, folder: Path, pdf: bool = True, reread=(), pdf_reader=None) -> dict | None:
+    """모두 다시 읽기의 진행을 store.data["reprocess"]에 적는다(잠금 안에서 부른다 — 저장은 부르는 쪽). 다 읽었으면 지우고
+    reprocess_last에 남긴다(materials.reprocess_update). 제외한 과목의 파일은 세지 않는다(다시 읽지 않으므로).
+    한 번의 모두 다시 읽기마다 처음 한 번은 사용자가 가져온 성적 파일(manualscores — pdf_texts의 "import:" 기록)도 다시 읽는다."""
+    try:
+        from .materials import reprocess_update
+    except ImportError:
+        return None
+    from .store import hidden_courses
+    rp = store.data.get("reprocess")
+    if isinstance(rp, dict) and rp.get("pending") and not rp.get("imports_done"):
+        rp["imports"] = reread_imports(store, pdf_reader)
+        rp["imports_done"] = True
+    return reprocess_update(store.data, folder, reread, pdf=pdf, hidden=hidden_courses(store.data))
+
+
+def reread_imports(store, pdf_reader=None, keys=None) -> int:
+    """가져온 성적 파일(<데이터 폴더>/imports, 계약 29-1)을 디스크에서 다시 읽는다(manualscores.reread_imports — 데이터 폴더 =
+    state.json이 있는 폴더). 잠금 안에서 부른다. 실패해도 동기화·다시 읽기를 멈추지 않는다 → 다시 읽은 수."""
+    try:
+        from .manualscores import reread_imports as _again
+    except ImportError:
+        return 0
+    try:
+        return int(_again(store, Path(store.path).parent, keys=keys, pdf_reader=pdf_reader) or 0)
+    except Exception:  # noqa: BLE001 — 가져온 파일 하나가 깨져도 받은 파일 다시 읽기는 계속
+        return 0
 
 
 def _auto_weights(store, ai_enabled: bool, session=None) -> list[str]:
@@ -1018,7 +1065,7 @@ def _auto_dist(store, ai_enabled: bool, session=None) -> list[str]:
 
 
 # 자동 단계(평가 비중·학점 비율·AI 정리·평가 항목 연결/개수)가 바꾸는 칸: id → 값
-_AI_KEYS = ("user", "grades", "weights_auto", "grade_links_ai", "grade_counts_ai", "dist_ai")
+_AI_KEYS = ("user", "grades", "weights_auto", "grade_links_ai", "grade_counts_ai", "dist_ai", "ai_scores")
 
 
 def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_valid=None) -> dict:
@@ -1042,6 +1089,11 @@ def _after_sync(store, ai_enabled: bool, ai_runner=None, ai_command=None, still_
     logs = _auto_dist(store, ai_enabled, session)
     if logs:
         out["auto_dist"] = logs
+    if session is not None:   # 규칙이 못 읽은 성적 파일에서 내 점수(계약 29-2) — ai_links보다 먼저(찾은 점수도 연결되게)
+        from .aiscores import after_sync as _ai_scores
+        r = _ai_scores(store, session)
+        if r.get("asked") or r.get("local") or r.get("error"):
+            out["ai_scores"] = {k: r.get(k) for k in ("asked", "found", "none", "failed", "error")}
     if session is not None:   # 규칙이 못 정한 점수·마감의 평가 항목, 명시·단서 없는 개수(계약 14-2·14-4)
         from .gradebook import ai_links
         r = ai_links(store, session)
@@ -1122,9 +1174,14 @@ def sync(canvas: Canvas, store, full: bool = False, by: str = "app", downloads_t
         store.reload_if_changed()
         if still_valid is not None and not still_valid():
             raise SyncCancelled("동기화하는 동안 로그아웃되어 저장하지 않았습니다")
+        reprocessed = 0
         if downloads_to is not None:
             from .materials import apply
             apply(store.data, downloaded, texts, dl_errors)  # 다시 받은 PDF의 옛 글자 정리까지
+            done_before = int((store.data.get("reprocess") or {}).get("done") or 0) if _reprocess_mark(store.data) else 0
+            rp = reprocess_progress(store, downloads_to, pdf=pdf_reader is not None, reread=reread, pdf_reader=pdf_reader)
+            if rp is not None:
+                reprocessed = max(0, int(rp.get("done") or 0) - done_before)
         cache["pdf_texts"] = dict(store.data.get("pdf_texts") or {})
         cache["errors"] += dl_errors
         store.data["cache"] = cache
@@ -1132,6 +1189,8 @@ def sync(canvas: Canvas, store, full: bool = False, by: str = "app", downloads_t
         report = rebuild(store, mode=mode, reason=reason, by=by)
         # 받아 둔 표 파일을 다시 읽은 것(reread, 계약 25-2)은 새로 받은 수에 넣지 않는다
         report["downloaded"] = len([k for k in downloaded if k not in reread])
+        if reprocessed:
+            report["reprocessed"] = reprocessed   # 앱 버전이 바뀐 뒤 받아 둔 파일을 다시 읽은 수(계약 29-3)
         store.data["rules_version"] = RULES_VERSION
         store.write()
     if still_valid is not None and not still_valid():

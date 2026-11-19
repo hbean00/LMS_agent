@@ -2,6 +2,11 @@
 
 실제로 받는 일은 동기화가 materials.run(store.data, download_folder(app), …)으로 한다(받는 함수는 동기화가 넘김).
 열기는 다운로드 폴더 안의 파일만, 실행 파일은 열지 않는다. 테스트는 App(..., opener=가짜)로 실제 프로그램을 띄우지 않는다.
+
+받아 둔 파일 다시 읽기(계약 29-3): POST /api/materials/reread {key?} — key가 있으면 그 파일 하나, 없으면 읽을 수 있는 받아 둔 파일
+모두(store.data["reprocess"]를 켜고 REREAD_BATCH개씩). 백그라운드 스레드가 app.lock(동기화와 같은 잠금)을 묶음마다 잡고 디스크에서
+읽은 뒤 파일 잠금 안에서 합치고(받기 오류는 그대로), 항목을 다시 만든다(core.refresh_items) → "changed".
+상태 state.materials.reprocess = {pending, running, total, done, at, finished_at, by, current, error}. 능력 materials.reread(direct, 되돌릴 수 없음).
 """
 from __future__ import annotations
 
@@ -9,11 +14,17 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
-from .. import materials
+from .. import capabilities as _caps
+from .. import core, gradebook, grades, materials
 from ..api import ApiError, router
 from ..store import hidden_courses
+from ..timeutil import iso, now_local
+
+REREAD_BATCH = 20   # 화면에서 누른 다시 읽기가 app.lock을 한 번에 잡고 읽는 파일 수(동기화·다른 동작이 오래 기다리지 않게)
+IMPORT_PREFIX = "import:"   # 성적 화면에서 가져온 파일의 pdf_texts key(manualscores — 다시 읽기는 manualscores.reread_imports)
 
 ANNOUNCEMENT_POST = "board:announcements-"   # core._linked_files의 가상 게시판(board_id "announcements")
 ANNOUNCEMENT_FILES = "공지 첨부 파일"
@@ -60,6 +71,10 @@ def os_open(path: Path) -> None:
 @router.on_init
 def attach(app, options):
     app.materials_opener = options.get("opener") or os_open
+    app.reread_guard = threading.Lock()
+    app.reread_thread = None
+    app.reread_current = None     # 다시 읽는 중인 파일 key, 모두면 "all"
+    app.reread_error = None
 
 
 def _settings(app) -> dict:
@@ -116,7 +131,179 @@ def materials_state(app, ctx):
     items.sort(key=lambda x: (x["posted_at"] or x["downloaded_at"] or "", x["downloaded_at"] or ""), reverse=True)
     return {"folder": str(folder_of(app)), "auto_download": bool(_settings(app).get("auto_download", True)),
             "count": len(items), "items": items, "errors": list(d.get("materials_errors") or []),
-            "categories": [{"id": c, "label": label} for c, label in CATEGORIES]}
+            "categories": [{"id": c, "label": label} for c, label in CATEGORIES],
+            "reprocess": reprocess_state(app)}
+
+
+def _running(app) -> bool:
+    t = getattr(app, "reread_thread", None)
+    return bool(t is not None and t.is_alive())
+
+
+def reprocess_state(app) -> dict:
+    """state.materials.reprocess(계약 29-3): pending = 모두 다시 읽기가 남음(업데이트 뒤 또는 [모두 다시 읽기]), running = 지금
+    백그라운드에서 읽는 중, total(모르면 아직 안 읽은 읽을 수 있는 파일 수로 어림)·done·at(시작 시각)·finished_at(끝난 시각, 남은 동안 None)·
+    by("update" | "user")·current(읽는 중인 key 또는 "all")·error(마지막 실패 한 줄)."""
+    d = app.store.data
+    rp = d.get("reprocess") if isinstance(d.get("reprocess"), dict) else None
+    running = _running(app)
+    base = {"running": running, "current": getattr(app, "reread_current", None) if running else None,
+            "error": getattr(app, "reread_error", None)}
+    if rp and rp.get("pending"):
+        total = rp.get("total")
+        if not isinstance(total, int):
+            mark = rp.get("at")
+            hidden = hidden_courses(d)
+            total = int(rp.get("done") or 0) + sum(
+                1 for m in (d.get("downloads") or {}).values()
+                if materials.readable(m) and m.get("reprocessed") != mark and str(m.get("course_id")) not in hidden)
+        return {"pending": True, "total": total, "done": int(rp.get("done") or 0), "at": rp.get("at"),
+                "finished_at": None, "by": rp.get("by") or "update", **base}
+    last = d.get("reprocess_last") if isinstance(d.get("reprocess_last"), dict) else {}
+    return {"pending": False, "total": last.get("total"), "done": int(last.get("done") or 0), "at": last.get("at"),
+            "finished_at": last.get("finished_at"), "by": last.get("by"), **base}
+
+
+@router.route("POST", r"/api/materials/reread")
+def reread(app, body):
+    """받아 둔 파일 다시 읽기: {"key"?} — key(받은 파일 key)면 그 파일, 없으면 읽을 수 있는 받아 둔 파일 모두. 다음 동기화를 기다리지 않고
+    백그라운드에서(진행은 state.materials.reprocess). 응답은 새 state. 이미 도는 중이면 409."""
+    key = body.get("key")
+    if key is not None and not isinstance(key, str):
+        raise ApiError(400, "key는 받은 파일의 키(글자)여야 해요")
+    key = (key or "").strip() or None
+    folder = folder_of(app)
+    if key is not None and key.startswith(IMPORT_PREFIX):   # 성적 화면에서 가져온 파일(manualscores, 계약 29-1)
+        if key not in (app.store.data.get("pdf_texts") or {}) and not any(
+                isinstance(r, dict) and r.get("key") == key
+                for rs in (app.store.data.get("score_imports") or {}).values() for r in (rs if isinstance(rs, list) else [])):
+            raise ApiError(404, "가져온 성적 파일 목록에 없어요")
+    elif key is not None:
+        m = (app.store.data.get("downloads") or {}).get(key)
+        if not isinstance(m, dict):
+            raise ApiError(404, "받은 파일 목록에 없어요. 동기화한 뒤 다시 해 주세요")
+        name = m.get("filename") or "파일"
+        if not materials.readable(m):
+            raise ApiError(400, f"'{name}'은(는) 글자를 읽는 형식(PDF·엑셀·CSV·워드·파워포인트·한글·zip)이 아니에요")
+        if materials.on_disk(m, folder) is None:
+            raise ApiError(404, f"'{name}' 파일이 다운로드 폴더에 없어요(지웠으면 다음 동기화 때 다시 받아요)")
+    with app.reread_guard:
+        if _running(app):
+            raise ApiError(409, "받아 둔 파일을 이미 다시 읽는 중이에요. 끝나면 다시 눌러 주세요")
+        if key is None:
+            with app.store.locked():
+                app.store.reload_if_changed()
+                rp = app.store.data.get("reprocess")
+                if not (isinstance(rp, dict) and rp.get("pending")):   # 업데이트 뒤 남은 것이 있으면 이어서
+                    app.store.data["reprocess"] = {"pending": True, "total": None, "done": 0, "at": iso(now_local()),
+                                                   "from": None, "to": None, "by": "user"}
+                app.store.write()
+        app.reread_error = None
+        app.reread_current = key or "all"
+        t = threading.Thread(target=_reread_job, args=(app, key, folder, app.session_gen), daemon=True,
+                             name="materials-reread")
+        app.reread_thread = t
+        t.start()
+    return app.state()
+
+
+def _reread_job(app, key: str | None, folder: Path, gen: int) -> None:
+    try:
+        changed = _reread_loop(app, key, folder, gen)
+    except Exception as e:  # noqa: BLE001 — 화면이 '읽는 중'에 멈춰 있지 않게(내용·경로 없이 종류만)
+        app.reread_error = f"받아 둔 파일을 다시 읽지 못했어요({type(e).__name__})"
+        changed = False
+    if changed:
+        app.emit("changed")
+
+
+def _reread_loop(app, key: str | None, folder: Path, gen: int) -> bool:
+    reader = core.default_pdf_reader()
+    changed = False
+    while True:
+        with app.lock:   # 동기화(do_sync)와 같은 잠금 — 동기화가 받는 중이면 끝날 때까지 기다린다
+            if app.session_gen != gen:
+                return changed
+            app.store.reload_if_changed()
+            d = app.store.data
+            hidden = hidden_courses(d)
+            mark = core._reprocess_mark(d)
+            if key is not None and key.startswith(IMPORT_PREFIX):
+                jobs = []   # 가져온 성적 파일(manualscores) — 아래 잠금 안에서 그 파일만 다시 읽는다
+            elif key is not None:
+                job = materials.reread_job(key, (d.get("downloads") or {}).get(key) or {}, folder)
+                jobs = [job] if job is not None else []
+            elif mark is None:
+                return changed
+            else:
+                jobs = materials.reread_jobs(d.get("downloads") or {}, folder, texts=d.get("pdf_texts") or {},
+                                             limit=REREAD_BATCH, pdf=reader is not None, everything=mark, hidden=hidden)
+            updates, texts, _ = materials.fetch(jobs, _no_download, pdf_reader=reader) if jobs else ({}, {}, [])
+            with app.store.locked():
+                app.store.reload_if_changed()
+                if app.session_gen != gen:   # 그 사이 로그아웃 — 지운 기록을 되살리지 않는다
+                    return changed
+                materials.apply(app.store.data, updates, texts, None)
+                imported = 0
+                if key is not None and key.startswith(IMPORT_PREFIX):
+                    imported = core.reread_imports(app.store, reader, keys={key})
+                rp = None
+                if key is None:
+                    before = int((app.store.data.get("reprocess") or {}).get("imports") or 0)
+                    rp = core.reprocess_progress(app.store, folder, pdf=reader is not None, reread=set(updates),
+                                                 pdf_reader=reader)   # 처음 묶음에서 가져온 성적 파일도(계약 29-1·29-3)
+                    imported = int((rp or {}).get("imports") or 0) - before
+                if updates or imported > 0:
+                    _refresh_items(app.store)
+                    changed = True
+                app.store.write()
+        if (key is not None or not jobs or not updates or rp is None or not rp.get("pending")
+                or "reprocess" not in app.store.data):
+            return changed
+
+
+def _no_download(att):
+    raise OSError("다시 읽기는 받지 않는다")
+
+
+def _refresh_items(store) -> None:
+    """다시 읽은 글로 항목(마감 찾기)을 다시 만든다 — 실행 기록·report는 그대로(core.refresh_items)."""
+    cache = store.data.get("cache")
+    if isinstance(cache, dict):
+        cache["pdf_texts"] = dict(store.data.get("pdf_texts") or {})
+        core.refresh_items(store)
+
+
+def wait_reread(app, timeout: float = 30.0) -> bool:
+    """테스트용: 다시 읽기 스레드가 끝날 때까지 기다린다. 끝났으면 True."""
+    t = getattr(app, "reread_thread", None)
+    if t is None:
+        return True
+    t.join(timeout)
+    return not t.is_alive()
+
+
+# ---------------------------------------------------------------- 능력(계약 28장) — 받아 둔 파일 다시 읽기
+
+def _b_reread(app, p):
+    return "/api/materials/reread", ({"key": p["file"]} if p.get("file") else {})
+
+
+def _m_reread(app, p, res):
+    if p.get("file"):
+        m = (app.store.data.get("downloads") or {}).get(p["file"]) or {}
+        return f"‘{m.get('filename') or '파일'}’을(를) 다시 읽기 시작했어요 — 끝나면 성적·마감에 반영돼요"
+    return "받아 둔 파일을 모두 다시 읽기 시작했어요(백그라운드) — 끝나면 성적·마감에 반영돼요"
+
+
+_caps.register(_caps.Capability(
+    "materials.reread", "materials", "받아 둔 파일 다시 읽기(성적·마감 다시 찾기)", ("POST", "/api/materials/reread"),
+    {"file": _caps.P("str", "받은 파일 이름(선택 — 없으면 받아 둔 파일 모두)", required=False, resolve="download")},
+    tier="direct", build=_b_reread, undoable=False))
+getattr(_caps, "_MESSAGES", {})["materials.reread"] = _m_reread
+
+# 공지·게시판 본문(HTML 표)의 점수표도 첨부 점수표처럼 성적 후보로(계약 29-3 ⑥ — 리드의 후보 공급자 연결)
+gradebook.register_candidates(grades.body_table_candidates)
 
 
 @router.route("POST", r"/api/materials/open")

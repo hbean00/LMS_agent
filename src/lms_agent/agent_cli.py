@@ -10,12 +10,14 @@
   chat(일반 대화 — 24-2: 페이스메이커 말투, 제안·인용 없음, '했다'는 말·과목 사실을 지어내지 않음). assist·answer·chat은
   같은 대화의 '이전 대화'(가림, 1,500자 이내 — 근거가 아님)를 함께 받는다(24-1).
   agent(에이전트 v2 루프의 한 차례 — 계약 26장: 바로 답하거나 도구를 부른다, 검사는 agent_loop가 inputs["validate"]로).
+  score_read(규칙이 못 읽은 성적 파일에서 내 점수 — 계약 29-2: 보낼 글은 aiscores.build_input이 가린 것 — 내 줄만 그대로,
+  다른 학생 줄은 모양만 — score는 내 줄의 수, mean·sd는 글이나 앱 통계, evidence는 보낸 글 그대로).
 - 실행(run_task): 고른 실행기로. claude는 `claude -p <고정된 짧은 지시> --output-format json` (+ 도구 끄기 `--tools ""`·
   세션 저장 안 함 — 옛 버전이 모르면 빼고 다시). 글은 **표준 입력(stdin)으로만** 보낸다(명령줄 인자 X). shell 없이, Windows에서는 창 없이
   (CREATE_NO_WINDOW), 빈 임시 폴더에서 실행해 CLI가 프로젝트 파일을 읽지 않게 한다. 호출한 쪽으로 예외를 던지지 않고
   AiResult{ok, data, error, attempts, duration_ms, cli, model}를 돌려준다.
 - 가리기(redact): 보내기 전에 이메일·전화번호·학번(가린 학번 포함)·링크·토큰처럼 보이는 긴 문자열·알려 준 이름·편지 서명을
-  지운다. 점수·토큰·이름은 보내지 않는다(성적 파일은 어떤 작업에도 넣지 않는다).
+  지운다. 점수·토큰·이름은 보내지 않는다(성적 파일은 score_read만 — aiscores가 다른 학생의 학번·이름·점수 줄을 뺀 글로).
 - 실행 기록: store.data["ai_runs"]에 작업·성공·시도 수·걸린 시간·보낸 글자 수·오류만(최근 50개). 지시문·글·답은 남기지 않는다.
 - 정책(AiSession): settings.ai_cli가 true일 때만, 동기화 한 번에 최대 MAX_CALLS_PER_SYNC회, 하루 MAX_CALLS_PER_DAY회.
   AI 결과는 "by": "ai"로 표시되고 근거(검증된 원문 인용)와 함께 보인다. 사용자가 되돌릴 수 있다.
@@ -31,6 +33,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -1480,6 +1483,198 @@ register(AiTask(
         "evidence": {"type": "string", "maxLength": 600}}},
     build_input=_text_builder(_DIST_FOCUS),
     post_validate=_dist_validate,
+))
+
+
+# ---- score_read: 규칙이 못 읽은 성적 파일에서 내 점수 찾기(계약 29-2)
+# 보낼 글은 aiscores.build_input이 만든다(내 학번 → [내 학번], 다른 학번 → [학번], 이름 → [이름], 다른 학생 줄은 모양만 —
+# 원문을 여기서 다시 쓰지 않는다). 검사: score는 내 줄(또는 앱 통계의 '내 값')에 있는 수, mean·sd는 보낸 글(제목·머리글·요약·내 줄)에
+# 적힌 값이나 앱 통계(±0.05), component는 평가 항목 이름 그대로 또는 null, evidence는 보낸 글에 그대로. 통과한 것만 결과로.
+
+SCORE_MAX_RESULTS = 12
+_SCORE_TOL = 0.005
+_STAT_TOL = 0.05
+_SCORE_PH = re.compile(r"\[내 학번\]|\[학번\]|\[이름\]|<수>")
+
+
+def _score_build(inputs: dict) -> tuple[str, list]:
+    prep = inputs.get("prepared")
+    if not isinstance(prep, dict):   # 준비물 없이 부르면 여기서 가린다(원문 글을 그대로 보내지 않는다)
+        from .aiscores import build_input
+        prep = build_input(inputs.get("rec") or {}, inputs.get("sid") or "", inputs.get("names"),
+                           components=inputs.get("components"), course=inputs.get("course"))
+        inputs["prepared"] = prep
+    if not prep.get("ok") or not prep.get("text"):
+        raise ValueError("내 줄을 찾지 못해 보낼 글이 없어요")
+    inputs["_names"] = {_norm_name(c): str(c) for c in inputs.get("components") or [] if str(c).strip()}
+    return str(prep["text"]), list(prep.get("notes") or [])
+
+
+def _near(v, xs, tol: float) -> bool:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return False
+    return any(x is not None and abs(f - float(x)) <= tol for x in xs)
+
+
+def _score_column(stats: list[dict], score: float, column) -> dict | None:
+    """그 점수의 열(앱 통계): AI가 준 열 이름이 맞고 내 값이 같은 열 → 내 값이 같은 열이 하나뿐이면 그 열."""
+    same = [c for c in stats if c.get("mine") is not None and abs(float(c["mine"]) - score) <= _SCORE_TOL]
+    if column:
+        want = _norm_name(column)
+        named = [c for c in same if _norm_name(c.get("name")) == want]
+        if len(named) == 1:
+            return named[0]
+    return same[0] if len(same) == 1 else None
+
+
+def _score_validate(obj: dict, sent: str, inputs: dict, final: bool):
+    prep = inputs.get("prepared") or {}
+    mine = [float(x) for x in prep.get("values") or []]
+    stated = [float(x) for x in prep.get("stated") or []]
+    stats = [c for c in prep.get("stats") or [] if isinstance(c, dict)]
+    comps = inputs.get("_names") or {}
+    out, errors, seen = [], [], {}
+    for i, s in enumerate(obj.get("scores") or []):
+        label = _flat(_SCORE_PH.sub(" ", unplace(str(s.get("label") or "")))).strip(" -·:/|")[:80]
+        where = f"scores[{i}] '{label or '?'}'"
+        if not label:
+            errors.append(f"{where}: label(평가 이름)이 비었습니다 / label is empty")
+            continue
+        score = s.get("score")
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+            errors.append(f"{where}: score는 숫자여야 합니다 / score must be a number")
+            continue
+        score = float(score)
+        if not (_near(score, mine, _SCORE_TOL) or _near(score, [c.get("mine") for c in stats], _SCORE_TOL)):
+            errors.append(f"{where}: score {score:g}는 내 줄([내 학번])에 적힌 숫자가 아닙니다 — 계산·추측하지 말고 내 줄의 "
+                          "숫자를 그대로 / score must be a number copied from the student's own row")
+            continue
+        ev = _flat(str(s.get("evidence") or ""))
+        if not _quoted(ev, sent):
+            errors.append(f"{where}: evidence가 입력 글에 그대로 없습니다 — 한 글자도 바꾸지 말고 복사 / evidence must be "
+                          "copied verbatim from the input")
+            continue
+        comp = s.get("component")
+        if isinstance(comp, str) and not comp.strip():
+            comp = None
+        if comp is not None:
+            comp = comps.get(_norm_name(comp))
+            if comp is None:
+                errors.append(f"{where}: component는 평가 항목 목록의 이름 그대로이거나 null이어야 합니다 / component must be "
+                              "one of the listed names or null")
+                continue
+        col = _score_column(stats, score, s.get("column"))
+        bad = None
+        for k in ("mean", "sd"):
+            v = s.get(k)
+            if v is None:
+                continue
+            app_vals = [col.get(k)] if col else [c.get(k) for c in stats]
+            if not (_near(v, stated, _STAT_TOL) or _near(v, app_vals, _STAT_TOL)):
+                bad = (f"{where}: {k} {float(v):g}는 글에 적혀 있지 않고 앱 통계와도 다릅니다 — 지어내지 말고 글이나 앱 통계의 값만 "
+                       f"/ {k} must be written in the text or match the app statistics")
+                break
+        if bad:
+            errors.append(bad)
+            continue
+        notes = []
+        r = {"label": label, "column": _flat(str(s.get("column") or ""))[:80] or (col or {}).get("name"),
+             "score": score, "max_score": None, "mean": s.get("mean"), "sd": s.get("sd"), "n": None, "rank": None,
+             "high": None, "low": None, "component": comp, "evidence": ev[:400],
+             "confidence": s.get("confidence") if s.get("confidence") in ("high", "medium", "low") else "medium"}
+        mx = s.get("max_score")
+        if mx is not None:
+            if float(mx) >= score and (_near(mx, stated, _SCORE_TOL) or (col and _near(mx, [col.get("max_score")], _SCORE_TOL))):
+                r["max_score"] = float(mx)
+            else:
+                notes.append("AI가 낸 만점은 글에 없어 뺐어요")
+        n = s.get("n")
+        if n is not None:
+            if (col and n == col.get("n")) or _near(n, stated, _SCORE_TOL):
+                r["n"] = int(n)
+            else:
+                notes.append("AI가 낸 인원은 글·통계와 달라 뺐어요")
+        rk = s.get("rank")
+        if rk is not None:
+            if (col and rk == col.get("rank")) or _near(rk, mine, _SCORE_TOL):
+                r["rank"] = int(rk)
+            else:
+                notes.append("AI가 낸 등수는 글·통계와 달라 뺐어요")
+        if col:   # 숫자 계산은 앱이 한다(계약 22장) — 그 열의 반 집계로 채운다
+            filled = []
+            for k, ck in (("n", "n"), ("rank", "rank"), ("high", "max"), ("low", "min"), ("mean", "mean"), ("sd", "sd"),
+                          ("max_score", "max_score")):
+                if r.get(k) is None and col.get(ck) is not None:
+                    r[k] = col[ck]
+                    filled.append(k)
+            if any(k in filled for k in ("mean", "sd")):
+                notes.append("평균·표준편차는 앱이 이 PC에서 계산했어요")
+        for k in ("mean", "sd"):
+            if r.get(k) is not None:
+                r[k] = round(float(r[k]), 3)
+        r["notes"] = notes
+        key = _norm_name(label)
+        if key in seen:
+            seen[key] += 1
+            r["label"] = f"{label} ({seen[key]})"
+        else:
+            seen[key] = 1
+        out.append(r)
+    if errors and not final:
+        raise _Invalid("; ".join(errors[:6]))
+    if (obj.get("scores") or []) and not out:
+        raise _Invalid("; ".join(errors[:6]))
+    note = _flat(_SCORE_PH.sub(" ", unplace(str(obj.get("note") or ""))))[:200] or None
+    return {"scores": out[:SCORE_MAX_RESULTS], "note": note, "skipped": errors}
+
+
+register(AiTask(
+    name="score_read",
+    purpose="규칙이 못 읽은 성적 파일(점수표·개인 성적표)에서 학생 본인의 점수를 평가마다 찾는다(가린 글 — 다른 학생 줄은 모양만)",
+    instructions=(
+        "작업: 아래는 성적 파일을 앱이 가린 글입니다. 학생 본인의 줄은 '[내 줄 / MY ROW]'로 시작하고 학번은 [내 학번]으로 "
+        "가렸습니다. 다른 학생의 줄은 모양만(학번 [학번], 이름 [이름], 숫자 <수>) 몇 줄 남겼고 나머지는 뺐습니다. "
+        "본인의 점수를 평가마다 뽑으세요.\n"
+        "Task: below is a grade file masked by the app. The student's own row starts with '[내 줄 / MY ROW]' and their ID "
+        "is shown as [내 학번]. Other students' rows are shape only ([학번], [이름], numbers <수>) or omitted. Extract the "
+        "student's own scores, one per assessment.\n"
+        "- score: 내 줄(또는 '앱이 계산한 열 통계'의 '내 값')에 적힌 숫자를 그대로. 더하거나 계산하거나 추측하지 마세요 "
+        "/ copy a number from the student's own row (or the app statistics' 'my value'); never add, compute or guess.\n"
+        "- label: 평가 이름(예: 'Lab0', '중간고사', 'Quiz 2') — 표 제목·머리글·파일 이름에서 / the assessment name from the "
+        "title, header or file name. column: 그 숫자가 있는 열 이름(머리글 그대로) / the column header.\n"
+        "- 세부 열(Prelab·Report)과 그 합계 열(Total)이 있으면 합계 하나만. 열마다 서로 다른 평가(Quiz 1, Midterm)면 평가마다 "
+        "하나씩 / if part columns add up to a total column, report only the total; if each column is a different "
+        "assessment, report each.\n"
+        "- max_score: 만점이 글에 적혀 있을 때만 / only when the maximum is written. mean·sd·n·rank: 글에 적힌 값이나 앱 통계의 "
+        "값만 / only values written in the text or in the app statistics.\n"
+        "- 결시·미응시·'-'·빈 칸은 0점이 아닙니다 — 넣지 마세요. 학점 글자(A+)는 점수가 아닙니다 / absent or blank is not zero; "
+        "letter grades are not scores.\n"
+        "- component: 평가 항목 목록의 이름 그대로, 모르면 null / copy a grading component name exactly, or null.\n"
+        "- evidence: 그 점수가 있는 줄(보통 내 줄)을 입력 글에서 한 글자도 바꾸지 말고 그대로 복사 / copy the line with the "
+        "score verbatim (usually the student's own row).\n"
+        "- confidence: high | medium | low. 내 점수를 찾지 못하면 {\"scores\": [], \"note\": \"이유 한 줄\"} / if none, "
+        "return empty scores with a one-line note.\n"
+        "- [학번]·[이름]·<수>는 가린 자리입니다. 추측하지 말고 다른 학생 정보를 답에 넣지 마세요 / masked placeholders: never "
+        "guess them; include no other student's data."),
+    schema={"type": "object", "required": ["scores"], "properties": {
+        "scores": {"type": "array", "maxItems": SCORE_MAX_RESULTS, "items": {
+            "type": "object", "required": ["label", "score", "evidence"], "properties": {
+                "label": {"type": "string", "minLength": 1, "maxLength": 80},
+                "column": {"type": "string", "maxLength": 80},
+                "score": {"type": "number", "minimum": -1000, "maximum": 100000},
+                "max_score": {"type": "number", "minimum": 0, "maximum": 100000},
+                "mean": {"type": "number", "minimum": -1000, "maximum": 100000},
+                "sd": {"type": "number", "minimum": 0, "maximum": 100000},
+                "n": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "rank": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "component": {"type": "string", "maxLength": 80},
+                "evidence": {"type": "string", "minLength": 4, "maxLength": 600},
+                "confidence": {"type": "string", "enum": ["high", "medium", "low"]}}}},
+        "note": {"type": "string", "maxLength": 300}}},
+    build_input=_score_build,
+    post_validate=_score_validate,
 ))
 
 

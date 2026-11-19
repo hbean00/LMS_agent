@@ -9,9 +9,12 @@
 계약 10장 "첨부 자료(materials) — B". 기록(downloads·pdf_texts)에는 어느 글에서 받았는지(board_id·post)와 canvas_file_id를 남긴다.
 
 - plan(): 수집 결과(cache["boards"])에서 아직 안 받은 첨부만 고르고 안전한 저장 위치를 정한다(네트워크 없음).
-  받아 둔 표·문서·zip 중 아직 안 읽었거나 옛 규칙(sheet_version·doc_version·읽기 판)으로 읽은 것은 디스크에서 다시 읽는 일
-  ("reread": True)로 더한다(한 번에 SHEET_REREAD_MAX개, 다운로드 폴더 안·크기 한도 안만) — 전에 받아 둔 엑셀·한글·zip도
-  다음 동기화에서 읽힌다.
+  받아 둔 표·문서·zip·PDF 중 아직 안 읽었거나 옛 규칙(sheet_version·doc_version·pdf_version·읽기 판)으로 읽었거나
+  글 기록(pdf_texts — texts를 줄 때)이 빠진 것은 디스크에서 다시 읽는 일("reread": True)로 더한다(한 번에 SHEET_REREAD_MAX개,
+  다운로드 폴더 안·크기 한도 안만) — 전에 받아 둔 엑셀·한글·zip·PDF도 다음 동기화에서 읽힌다. PDF는 읽는 함수가 있을 때만(pdf=True).
+- 앱 버전이 바뀌면(migrate) store.data["reprocess"] = {pending, total, done, at, …}: plan(reprocess=at)이 읽을 수 있는 받아 둔 파일을
+  모두(동기화당 REPROCESS_MAX개) 다시 읽고, 읽은 기록에 reprocessed = at을 남긴다. reprocess_update가 진행을 세고 다 읽으면 지운다
+  (마지막 결과는 reprocess_last) — 계약 29-3.
 - fetch(): 실제로 받는다. 받는 함수(get_bytes)와 PDF 읽는 함수(pdf_reader)는 넘겨받는다(테스트는 가짜). 다시 읽기는 받지 않는다.
 - apply()/run(): 결과를 state.json의 downloads·pdf_texts·materials_errors에 합친다.
 
@@ -28,6 +31,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import docs as _docs
+from . import pdftext as _pdftext
 from . import sheets as _sheets
 from .learningx import safe_name
 from .timeutil import iso, now_local, parse_iso
@@ -35,6 +39,10 @@ from .timeutil import iso, now_local, parse_iso
 APP_FOLDER = "LMS Agent"
 MAX_BYTES = 50_000_000            # 파일당 50MB
 PDF_TEXT_LIMIT = 60_000           # pdf_texts에 남기는 글자 수
+PDF_VERSION = 1                   # PDF 기록 만드는 판(이 모듈). 올리면 받아 둔 PDF를 다음 동기화들에서 다시 읽는다
+PDF_READER = int(getattr(_pdftext, "VERSION", 1) or 1)    # PDF 읽기 판(pdftext.VERSION) — 올라가도 다시 읽는다
+REPROCESS_MAX = 200               # 앱 버전이 바뀐 뒤(reprocess) 한 번의 동기화에서 다시 읽는 파일 수
+PDF_EXTS = (".pdf",)
 SHEET_VERSION = 1                 # 표 기록 만드는 판(이 모듈). 올리면 받아 둔 표 파일을 다음 동기화들에서 다시 읽는다
 SHEET_READER = int(getattr(_sheets, "VERSION", 1) or 1)   # 표 읽기 판(sheets.VERSION) — 올라가도 다시 읽는다
 SHEET_REREAD_MAX = 20             # 한 번의 동기화에서 디스크에서 다시 읽는 표·문서 파일 수
@@ -183,12 +191,13 @@ def _file_id(cid: str, att: dict):
 
 
 def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path,
-         texts: dict | None = None) -> list[dict]:
+         texts: dict | None = None, pdf: bool = False, reprocess: str | None = None, hidden=()) -> list[dict]:
     """받아야 할 첨부 목록. 같은 key·같은 크기이고 파일이 (지금 폴더 안에) 그대로 있으면 건너뛴다.
     파일을 지웠거나, 교수가 파일을 바꿨거나(크기 다름), 저장 폴더를 바꿨으면 다시 받는다.
     한 파일이 여러 글에 붙거나 링크돼 있으면(같은 key, 또는 같은 과목·같은 Canvas 파일 id — 예: 공지와 과제 설명에 같은 PDF)
     한 번만 받는다: 이미 받아 둔 쪽이 있으면 그것, 없으면 게시판 순서상 처음 글(LearningX → 공지 → 과제 → 강의계획서).
-    끝에 받아 둔 표 파일 다시 읽기(reread_jobs, texts = pdf_texts를 주면 표 기록이 빠진 것도)를 더한다."""
+    끝에 받아 둔 파일 다시 읽기(reread_jobs — texts = pdf_texts를 주면 글·표 기록이 빠진 것도, pdf = PDF 읽는 함수가 있음,
+    reprocess = 앱 버전이 바뀐 뒤 모두 다시 읽기의 표시, hidden = 제외한 과목 id)를 더한다."""
     folder = Path(folder)
     taken: set = set()
     jobs: list[dict] = []
@@ -235,7 +244,8 @@ def plan(boards: list[dict], downloads: dict, short_names: dict, folder: Path,
                     "board_id": board_id, "post": post.get("id"), "canvas_file_id": att.get("canvas_file_id"),
                     "posted_at": _posted_at(post), "attachment": att,
                 })
-    return jobs + reread_jobs(downloads, folder, skip=planned, texts=texts)
+    return jobs + reread_jobs(downloads, folder, skip=planned, texts=texts, pdf=pdf, everything=reprocess,
+                              hidden=hidden)
 
 
 def _int(v) -> int:
@@ -277,11 +287,86 @@ def _doc_due(key: str, m: dict, texts: dict | None) -> bool:
     return False
 
 
-def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = None,
-                limit: int = SHEET_REREAD_MAX) -> list[dict]:
-    """받아 둔 표·문서·zip 파일을 디스크에서 다시 읽는 일(네트워크 없음): 최근 글의 파일부터 limit개. 파일이 지금 다운로드 폴더 안에
-    그대로 있고 MAX_BYTES 이하일 때만. skip = 이번에 받기로 한 key(받으면서 읽는다)."""
+def _name_of(m: dict) -> str:
+    return str(m.get("filename") or m.get("path") or "").lower()
+
+
+def _is_pdf_entry(m: dict) -> bool:
+    name = _name_of(m)
+    return name.endswith(PDF_EXTS) or (m.get("read_kind") == "pdf" and not name.endswith(SHEET_EXTS + DOC_EXTS))
+
+
+def readable(m: dict | None, pdf: bool = True) -> bool:
+    """받은 기록이 글자·칸을 읽는 형식인지(PDF·엑셀·CSV·워드·파워포인트·한글·zip) — 이름(또는 읽은 형식)으로. 그림·영상 등은 아님."""
+    if not isinstance(m, dict):
+        return False
+    name = _name_of(m)
+    if name.endswith(SHEET_EXTS) or name.endswith(DOC_EXTS):
+        return True
+    return bool(pdf) and _is_pdf_entry(m)
+
+
+def _pdf_due(key: str, m: dict, texts: dict | None) -> bool:
+    """받아 둔 PDF를 (다시) 읽어야 하나(계약 29-3): 받기만 하고 읽지 않았거나(PDF 읽기 없이 받음), 옛 판으로 읽었거나
+    (pdf_version·pdf_reader가 없거나 낮음 — v0.8.3까지 받은 PDF는 모두), 글을 읽었다는데 pdf_texts에 기록이 없음(texts를 줄 때만)."""
+    if not _is_pdf_entry(m):
+        return False
+    if m.get("pdf_ok") is None and m.get("read_kind") != "pdf":
+        return True
+    if _int(m.get("pdf_version")) < PDF_VERSION or _int(m.get("pdf_reader")) < PDF_READER:
+        return True
+    if texts is not None and m.get("pdf_ok"):
+        rec = texts.get(key)
+        return not isinstance(rec, dict) or not str(rec.get("text") or "").strip()
+    return False
+
+
+def on_disk(m: dict | None, folder) -> int | None:
+    """받은 기록의 파일이 지금 다운로드 폴더 안에(링크를 풀어서) 그대로 있고 MAX_BYTES 이하이면 그 크기, 아니면 None."""
+    path = (m or {}).get("path") if isinstance(m, dict) else None
+    try:
+        if not path or not inside(path, folder) or not os.path.isfile(path):
+            return None
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    return size if size <= MAX_BYTES else None
+
+
+def reread_job(key: str, m: dict, folder, mark: str | None = None) -> dict | None:
+    """받아 둔 파일 하나를 디스크에서 다시 읽는 일(폴더 안·크기 한도 안이 아니면 None). mark = reprocess 표시(읽은 뒤 reprocessed에)."""
     folder = Path(folder)
+    size = on_disk(m, folder)
+    if size is None:
+        return None
+    path = m["path"]
+    job = {"key": key, "reread": True, "dest": str(path), "root": str(folder),
+           "filename": str(m.get("filename") or Path(path).name), "size": size,
+           "course_id": str(m.get("course_id") or ""), "post_key": m.get("post_key"),
+           "board_id": m.get("board_id"), "post": m.get("post"), "canvas_file_id": m.get("canvas_file_id"),
+           "posted_at": m.get("posted_at"), "entry": dict(m)}
+    if mark:
+        job["reprocess"] = mark
+    return job
+
+
+def _due(key: str, m: dict, texts: dict | None, pdf: bool, everything: str | None) -> bool:
+    if everything and readable(m, pdf) and m.get("reprocessed") != everything:
+        return True
+    return _sheet_due(key, m, texts) or _doc_due(key, m, texts) or (bool(pdf) and _pdf_due(key, m, texts))
+
+
+def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = None,
+                limit: int | None = None, pdf: bool = False, everything: str | None = None, hidden=()) -> list[dict]:
+    """받아 둔 표·문서·zip·PDF 파일을 디스크에서 다시 읽는 일(네트워크 없음): 최근 글의 파일부터 limit개
+    (기본 SHEET_REREAD_MAX, 모두 다시 읽기면 REPROCESS_MAX). 파일이 지금 다운로드 폴더 안에 그대로 있고 MAX_BYTES 이하일 때만.
+    skip = 이번에 받기로 한 key(받으면서 읽는다), pdf = PDF 읽는 함수가 있음(없으면 PDF는 넣지 않음),
+    everything = 모두 다시 읽기(reprocess)의 표시 — 그 표시로 아직 안 읽은(reprocessed가 다른) 읽을 수 있는 파일을 모두,
+    hidden = 제외한 과목 id(받지도 다시 읽지도 않음)."""
+    folder = Path(folder)
+    if limit is None:
+        limit = REPROCESS_MAX if everything else SHEET_REREAD_MAX
+    hidden = {str(h) for h in hidden or ()}
     out: list[dict] = []
 
     def newest(kv):
@@ -291,21 +376,35 @@ def reread_jobs(downloads: dict, folder: Path, skip=(), texts: dict | None = Non
     for key, m in sorted(((k, m) for k, m in (downloads or {}).items() if isinstance(m, dict)), key=newest):
         if len(out) >= limit:
             break
-        if key in skip or not (_sheet_due(key, m, texts) or _doc_due(key, m, texts)):
+        if key in skip or str(m.get("course_id") or "") in hidden or not _due(key, m, texts, pdf, everything):
             continue
-        path = m.get("path")
-        try:
-            if not path or not inside(path, folder) or not os.path.isfile(path) or os.path.getsize(path) > MAX_BYTES:
-                continue
-            size = os.path.getsize(path)
-        except OSError:
-            continue
-        out.append({"key": key, "reread": True, "dest": str(path), "root": str(folder),
-                    "filename": str(m.get("filename") or Path(path).name), "size": size,
-                    "course_id": str(m.get("course_id") or ""), "post_key": m.get("post_key"),
-                    "board_id": m.get("board_id"), "post": m.get("post"), "canvas_file_id": m.get("canvas_file_id"),
-                    "posted_at": m.get("posted_at"), "entry": dict(m)})
+        job = reread_job(key, m, folder, everything)
+        if job is not None:
+            out.append(job)
     return out
+
+
+def reprocess_update(data: dict, folder, reread=(), pdf: bool = True, hidden=(), now: datetime | None = None) -> dict | None:
+    """모두 다시 읽기(data["reprocess"], 계약 29-3)의 진행: 이번에 다시 읽은 것(reread — downloads의 reprocessed가 그 표시인 key)을 done에
+    더하고, 남은 것(지금 폴더 안에 있는 읽을 수 있는 파일 중 아직 안 읽은 것)으로 total을 고친다. 남은 것이 없으면 지우고
+    data["reprocess_last"] = {total, done, at, finished_at, from, to, by}. 표시가 없으면 None, 있으면 지금 진행(남은 수 "left" 포함)."""
+    rp = data.get("reprocess")
+    if not isinstance(rp, dict) or not rp.get("pending"):
+        return None
+    mark = str(rp.get("at") or "")
+    downloads = data.get("downloads") or {}
+    n = sum(1 for k in set(reread or ()) if isinstance(downloads.get(k), dict) and downloads[k].get("reprocessed") == mark)
+    left = len(reread_jobs(downloads, folder, texts=data.get("pdf_texts") or {}, limit=10 ** 9, pdf=pdf,
+                           everything=mark or None, hidden=hidden))
+    rp["done"] = _int(rp.get("done")) + n
+    rp["total"] = rp["done"] + left
+    rp["left"] = left
+    if left == 0:
+        data.pop("reprocess", None)
+        data["reprocess_last"] = {"total": rp["total"], "done": rp["done"], "at": rp.get("at"),
+                                  "finished_at": iso(now or now_local()), "from": rp.get("from"), "to": rp.get("to"),
+                                  "by": rp.get("by") or "update", "imports": _int(rp.get("imports"))}
+    return rp
 
 
 # ------------------------------------------------------------ 받기
@@ -493,15 +592,46 @@ def _reread(job: dict, max_bytes: int, at: str, pdf_reader: Callable | None = No
     if len(data) > max_bytes:
         return None
     entry = dict(job.get("entry") or {})
+    if job.get("reprocess"):
+        entry["reprocessed"] = job["reprocess"]   # 모두 다시 읽기(계약 29-3)에서 읽었음
     name = job.get("filename") or path.name
-    if not str(name).lower().endswith(SHEET_EXTS):
-        got = _read_doc(data, name, pdf_reader)
-        recs, extra = _doc_records({**job, "filename": name}, got)
-        _apply_doc(entry, got, at, recs, extra)
-        return entry, recs
-    got = _sheet_or_marker(data, name)
-    _apply_sheet(entry, got, at)
-    return entry, ({job["key"]: _sheet_record(job, got)} if got["ok"] else {})
+    low = str(name).lower()
+    if low.endswith(SHEET_EXTS):
+        got = _sheet_or_marker(data, name)
+        _apply_sheet(entry, got, at)
+        return entry, ({job["key"]: _sheet_record(job, got)} if got["ok"] else {})
+    if not low.endswith(DOC_EXTS) and (low.endswith(PDF_EXTS) or data[:5] == b"%PDF-"):
+        rec = _apply_pdf(entry, {**job, "filename": name}, data, pdf_reader or _default_pdf_reader, at)
+        return entry, ({job["key"]: rec} if rec is not None else {})
+    got = _read_doc(data, name, pdf_reader)
+    recs, extra = _doc_records({**job, "filename": name}, got)
+    _apply_doc(entry, got, at, recs, extra)
+    return entry, recs
+
+
+def _default_pdf_reader(data: bytes) -> dict:
+    r = _pdftext.extract_text(data)
+    return {"text": r.text, "notes": list(r.notes), "ok": r.ok}
+
+
+def _apply_pdf(entry: dict, job: dict, data: bytes, pdf_reader: Callable, at: str) -> dict | None:
+    """PDF 읽기(받을 때·다시 읽을 때 공통): 받은 기록에 pdf_ok·pdf_notes·read_*·pdf_version·pdf_reader·pdf_read_at,
+    글자가 있으면 pdf_texts 기록을 돌려준다(없으면 None)."""
+    try:
+        text, notes, ok = _read_pdf(pdf_reader, data)
+    except Exception:
+        text, notes, ok = "", ["PDF를 읽지 못했습니다"], False
+    ok = bool(text.strip()) if ok is None else bool(ok and text.strip())
+    if not ok and not notes:
+        notes = ["PDF에서 글자를 찾지 못했습니다(스캔본일 수 있습니다)"]
+    entry["pdf_ok"], entry["pdf_notes"] = ok, notes
+    entry.update(read_ok=ok, read_notes=_docs.pdf_notes(ok, notes), read_kind="pdf",
+                 pdf_version=PDF_VERSION, pdf_reader=PDF_READER, pdf_read_at=at)
+    if not ok:
+        return None
+    return {"text": text[:PDF_TEXT_LIMIT], "course_id": job.get("course_id"), "filename": job.get("filename"),
+            "post_key": job.get("post_key"), "board_id": job.get("board_id"), "post": job.get("post"),
+            "canvas_file_id": job.get("canvas_file_id"), "posted_at": job.get("posted_at")}
 
 
 def _sheet_or_marker(data: bytes, name: str) -> dict | None:
@@ -571,18 +701,9 @@ def fetch(jobs: list[dict], get_bytes: Callable, max_bytes: int = MAX_BYTES, pdf
         }
         is_pdf = name.lower().endswith(".pdf") or bytes(data[:5]) == b"%PDF-"
         if is_pdf and pdf_reader is not None:
-            try:
-                text, notes, ok = _read_pdf(pdf_reader, bytes(data))
-            except Exception:
-                text, notes, ok = "", ["PDF를 읽지 못했습니다"], False
-            ok = bool(text.strip()) if ok is None else bool(ok and text.strip())
-            if not ok and not notes:
-                notes = ["PDF에서 글자를 찾지 못했습니다(스캔본일 수 있습니다)"]
-            entry["pdf_ok"], entry["pdf_notes"] = ok, notes
-            entry.update(read_ok=ok, read_notes=_docs.pdf_notes(ok, notes), read_kind="pdf")
-            if ok:
-                texts[job["key"]] = {"text": text[:PDF_TEXT_LIMIT], "course_id": job["course_id"], "filename": name,
-                                     "post_key": job["post_key"], **place, "posted_at": job.get("posted_at")}
+            rec = _apply_pdf(entry, {**job, "filename": name}, bytes(data), pdf_reader, at)
+            if rec is not None:
+                texts[job["key"]] = rec
         elif not is_pdf:
             got = _sheet_or_marker(bytes(data), name)
             if got is not None:
@@ -605,9 +726,10 @@ def short_names_of(cache: dict | None) -> dict:
     return {str(c["id"]): short_course_name(c.get("name")) for c in (cache or {}).get("courses") or []}
 
 
-def apply(data: dict, updates: dict, texts: dict, errors: list[str]) -> None:
+def apply(data: dict, updates: dict, texts: dict, errors: list[str] | None) -> None:
     """fetch 결과를 store.data에 합친다. 다시 받은 PDF에서 글자를 못 찾았으면 예전 글자는 지운다
-    (zip을 다시 받거나 읽었으면 이번에 없는 안 파일 기록도 지운다). 읽음 표시(read_*)가 없는 옛 기록에는 아는 만큼 채운다."""
+    (zip을 다시 받거나 읽었으면 이번에 없는 안 파일 기록도 지운다). 읽음 표시(read_*)가 없는 옛 기록에는 아는 만큼 채운다.
+    errors가 None이면(받지 않고 다시 읽기만 — /api/materials/reread) 지난 동기화의 받기 오류를 그대로 둔다."""
     downloads = data.setdefault("downloads", {})
     pdf_texts = data.setdefault("pdf_texts", {})
     children: dict = {}
@@ -623,7 +745,8 @@ def apply(data: dict, updates: dict, texts: dict, errors: list[str]) -> None:
                 pdf_texts.pop(k, None)
     pdf_texts.update(texts)
     backfill_read_flags(downloads)
-    data["materials_errors"] = list(errors)
+    if errors is not None:
+        data["materials_errors"] = list(errors)
 
 
 def backfill_read_flags(downloads: dict) -> None:
@@ -650,11 +773,14 @@ def backfill_read_flags(downloads: dict) -> None:
 
 def run(data: dict, folder: Path, get_bytes: Callable, pdf_reader: Callable | None = None,
         max_bytes: int = MAX_BYTES, now: datetime | None = None) -> dict:
-    """한 번에: cache["boards"] → plan(+ 받아 둔 표 파일 다시 읽기) → fetch → apply. 저장(store.save)은 부르는 쪽이 한다.
-    보고: planned·downloaded = 이번에 내려받은 것, pdf_texts = 이번에 만든 글·표 기록, reread = 다시 읽은 표 파일(있을 때만)."""
+    """한 번에: cache["boards"] → plan(+ 받아 둔 파일 다시 읽기 — PDF는 pdf_reader가 있을 때만) → fetch → apply. 저장(store.save)은
+    부르는 쪽이 한다. 보고: planned·downloaded = 이번에 내려받은 것, pdf_texts = 이번에 만든 글·표 기록, reread = 다시 읽은 파일(있을 때만),
+    reprocessed = 모두 다시 읽기(data["reprocess"])로 읽은 수(있을 때만)."""
     cache = data.get("cache") or {}
+    rp = data.get("reprocess")
+    mark = str(rp.get("at") or "1") if isinstance(rp, dict) and rp.get("pending") else None
     jobs = plan(cache.get("boards") or [], data.get("downloads") or {}, short_names_of(cache), Path(folder),
-                texts=data.get("pdf_texts") or {})
+                texts=data.get("pdf_texts") or {}, pdf=pdf_reader is not None, reprocess=mark)
     updates, texts, errors = fetch(jobs, get_bytes, max_bytes=max_bytes, pdf_reader=pdf_reader, now=now)
     apply(data, updates, texts, errors)
     again = {j["key"] for j in jobs if j.get("reread")}
@@ -662,4 +788,8 @@ def run(data: dict, folder: Path, get_bytes: Callable, pdf_reader: Callable | No
               "errors": errors}
     if again & set(updates):
         report["reread"] = len(again & set(updates))
+    before = _int((data.get("reprocess") or {}).get("done")) if mark else 0
+    rp = reprocess_update(data, folder, again & set(updates), pdf=pdf_reader is not None, now=now) if mark else None
+    if rp is not None and rp["done"] > before:
+        report["reprocessed"] = rp["done"] - before
     return report

@@ -20,6 +20,7 @@ from .features import load_all
 from .store import Store
 
 MAX_BODY = 200_000
+DRAIN_MAX = 32_000_000   # 거절할 때 비울 본문의 상한(성적 파일 가져오기 한도보다 조금 크게)
 
 load_all()
 
@@ -136,8 +137,14 @@ def make_handler(app: App):
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 return
-            if 0 < n <= MAX_BODY:
-                self.rfile.read(n)
+            # 한도를 조금 넘은 본문(예: 다른 경로로 보낸 큰 요청)도 비워야 거절 응답이 그대로 간다 — 아주 큰 것만 읽지 않고 닫는다
+            if 0 < n <= DRAIN_MAX:
+                left = n
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
 
         def _host_ok(self) -> bool:
             # DNS 리바인딩 막기: 다른 이름으로 들어온 요청은 받지 않는다
@@ -147,9 +154,11 @@ def make_handler(app: App):
         def _token_ok(self) -> bool:
             return secrets.compare_digest(self.headers.get("X-LMS-Agent") or "", app.token)
 
-        def _body(self) -> dict:
+        def _body(self, limit: int = MAX_BODY) -> dict:
+            """요청 본문(JSON). 경로 처리기가 max_body를 가지면 그만큼까지(성적 파일 가져오기 — 계약 29-1), 아니면 MAX_BODY.
+            세션 값 검사를 지난 뒤에만 읽는다(_dispatch)."""
             n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
+            if n > limit:
                 raise ValueError("요청이 너무 큽니다")
             self._body_read = True
             data = json.loads((self.rfile.read(n) if n else b"{}").decode("utf-8") or "{}")
@@ -169,7 +178,7 @@ def make_handler(app: App):
                     if route.auth and not self._token_ok():
                         return self._error(403, "화면을 새로 고침하세요(세션 값이 맞지 않습니다)")
                     if body is None:
-                        body = self._body()
+                        body = self._body(int(getattr(route.handler, "max_body", MAX_BODY) or MAX_BODY))
                     result = route.handler(app, body, **groups)
                     if result is None:  # 이 경로가 맡지 않음 → 다음 후보
                         continue

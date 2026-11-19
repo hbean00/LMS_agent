@@ -1354,6 +1354,58 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
 .gt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 14.5px; }
 .gt-acts .linkish, .gt-acts a { font-size: 14.5px; }
 .gt-foot { margin-top: 4px; }
+/* ---------- 성적: 점수 직접 넣기 · 성적 파일 가져오기 · AI로 성적 찾기 · 받아 둔 파일 다시 읽기(계약 29) ---------- */
+.ms-form { margin-top: 10px; }
+.ms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px 10px; }
+.ms-f { display: grid; align-content: start; gap: 4px; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--graphite); }
+.ms-f.ms-wide { grid-column: span 2; }
+select.gin { padding: 0 4px 0 8px; }
+.ms-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.ms-acts .help { flex: 1 1 16em; font-size: 13.5px; }
+.ms-form .inline-error { margin-top: 8px; }
+.ms-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--rule); }
+.ms-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.ms-item.is-editing { margin: 0 -8px; padding: 10px 8px; border-radius: 8px; background: var(--blush); }
+.ms-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; font-size: 15.5px; }
+.ms-l { font-weight: 700; overflow-wrap: anywhere; word-break: normal; }
+.ms-v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ms-s { font-size: 14px; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.ms-meta { grid-column: 1; font-size: 13.5px; color: var(--graphite); overflow-wrap: anywhere; word-break: normal; }
+.ms-meta.is-warn { color: var(--burgundy); font-weight: 600; }
+.ms-btns { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: 12px; }
+.ms-btns .linkish { font-size: 14.5px; }
+.imp-drop { display: grid; justify-items: center; gap: 6px; margin-top: 10px; padding: 16px 12px; border: 1.5px dashed var(--control); border-radius: 10px; background: var(--paper); text-align: center; }
+.imp-drop.is-over { border-color: var(--burgundy); background: var(--blush); }
+.imp-q { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; font-size: 15.5px; }
+.imp-busy { display: inline-flex; align-items: center; gap: 8px; font-size: 15.5px; font-weight: 600; overflow-wrap: anywhere; word-break: normal; }
+.imp-drop + .inline-error { margin-top: 8px; }
+.imp-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.imp-row { min-width: 0; padding: 12px 0; border-top: 1px solid var(--rule); }
+.imp-row:first-child { border-top: 0; }
+.imp-row:focus { outline: none; }
+.imp-row:focus-visible { outline: 2px solid var(--burgundy); outline-offset: 2px; }
+.imp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.imp-name { font-weight: 700; overflow-wrap: anywhere; word-break: normal; }
+.imp-meta { font-size: 13.5px; color: var(--graphite); }
+.imp-why { margin-top: 4px; font-size: 14.5px; color: var(--graphite); }
+.imp-why.is-stop { color: var(--burgundy); font-weight: 600; }
+.imp-cands { list-style: none; margin: 6px 0 0; padding: 0 0 0 12px; display: grid; gap: 4px; border-left: 2px solid var(--rule-strong); font-size: 14.5px; }
+.imp-cands li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; font-variant-numeric: tabular-nums; }
+.imp-cands .help { font-size: 13.5px; }
+.imp-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 14.5px; }
+.imp-acts .linkish { font-size: 14.5px; }
+.ai-look-st { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; font-size: 14.5px; }
+.ai-look .btn { margin-top: 10px; }
+.gt-ai { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 4px; font-size: 14.5px; }
+.gt-ai b { font-weight: 600; }
+.rr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 10px 0 4px; }
+.rr-bar .help { flex: 1 1 16em; }
+@media (max-width: 480px) {
+  .ms-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ms-f.ms-wide { grid-column: 1 / -1; }
+  .ms-item { grid-template-columns: minmax(0, 1fr); }
+  .ms-btns { grid-column: 1; grid-row: auto; }
+}
 </style>
 </head>
 <body>
@@ -1732,12 +1784,15 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   };
   const DEFAULT_GRADES = ['A+', 'A0', 'B+', 'B0', 'C+', 'C0', 'D+', 'D0', 'F'];
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
-  const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력', board: '게시판', pdf: '첨부 PDF', canvas: 'Canvas 과제', canvas_grade: 'Canvas 성적부' };
+  const SOURCE = { announcement: '공지', inbox: '메시지', assignment: '과제 설명', syllabus: '강의계획서', manual: '직접 입력', board: '게시판', pdf: '첨부 PDF', canvas: 'Canvas 과제', canvas_grade: 'Canvas 성적부',
+    manual_score: '직접 입력', ai_score: 'AI가 찾은 점수', upload: '가져온 파일' };
   // 출처 이름 + ‘제목’(제목이 출처 이름과 같으면 한 번만 — Canvas 성적부 후보의 source_title은 'Canvas 성적부', 계약 27-1)
   const srcText = (type, title) => {
     const s = SOURCE[type] || '글';
     return title && String(title) !== s ? s + ' ‘' + title + '’' : s;
   };
+  // 점수 후보·세부 점수의 출처: 성적 파일 가져오기로 넣은 파일(key "pdf:import:…", 계약 29-1)은 '첨부 PDF'가 아니라 '가져온 파일'
+  const candSrc = (c) => (c && /^pdf:import:/.test(String(c.key || '')) ? srcText('upload', c.source_title) : srcText(c && c.source_type, c && c.source_title));
   const METHOD = { lms: 'LMS 제출', email: '이메일 제출', paper: '종이 제출', unknown: '제출 방법 확인 필요' };
   const CONF = { high: '높음', medium: '보통', low: '낮음' };
 
@@ -2239,7 +2294,8 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   const refresh = () => api('GET', '/api/state').then(applyState, () => {});
   // 켤 때 자동 동기화·구글 반영이 도는 동안 2초마다 상태를 다시 읽는다
   let pollTimer = null;
-  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || (gread() && gread().fetching) || updWorking() || agRunning() || aiTestRunning()));
+  const serverBusy = () => !!(state && (state.syncing || gstate().pushing || (gread() && gread().fetching) || updWorking() || agRunning() || aiTestRunning()
+    || aiLookupRunning() || reprocRunning()));   // AI로 성적 찾기·받아 둔 파일 다시 읽기(계약 29)도 백그라운드
   function pollWhileBusy() {
     if (!serverBusy() || pollTimer || syncing) return;
     pollTimer = setTimeout(() => {
@@ -4435,8 +4491,9 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
           : isNum(c.estimate.top) ? h('span', { class: 'tab-grade', title: '기본 비율이라면 ' + c.estimate.grade }, '상위 ' + pct(c.estimate.top)) : null) : null,
         h('span', { class: 'tab-dirty', hidden: !(dr && dr.dirty) }, '저장 전'));
     })));
-    const main = h('div', null, estimateBlock(gc, d), isPF(gc) ? null : neededBlock(gc), editorBlock(gc, d));
-    const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G), studentIdBlock(G, !!sb));
+    const main = h('div', null, estimateBlock(gc, d), isPF(gc) ? null : neededBlock(gc), editorBlock(gc, d),
+      manualBlock(gc), importBlock(gc, G));   // 점수 직접 넣기·성적 파일 가져오기(계약 29-1)
+    const side = h('aside', { 'aria-label': '우선순위와 점수 후보' }, prioritiesBlock(G), candidatesBlock(G), aiLookupBlock(gc), studentIdBlock(G, !!sb));
     body.appendChild(h('div', { class: 'g-grid' }, main, side));
     const gt = gradeTraceBlock(G);   // 맨 아래, 접힌 채로(계약 27-3)
     if (gt) body.appendChild(gt);
@@ -4771,7 +4828,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const d = parseDate(c.posted_at);
     return h('div', { class: 'cand' },
       h('div', { class: 'side-meta' }, h('span', { style: 'font-weight:600;color:var(--ink)' }, c.course_short || '과목 미상'),
-        h('span', null, srcText(c.source_type, c.source_title)), d ? h('span', null, fmtShort(d)) : null,
+        h('span', null, candSrc(c)), d ? h('span', null, fmtShort(d)) : null,
         c.url ? extLink(c.url, '원문') : null),
       c.sentence ? h('blockquote', null, c.sentence) : null,
       h('div', { class: 'vals' }, c.label ? h('span', null, '항목 ', h('b', null, c.label)) : null, valsOf(c)),
@@ -4979,7 +5036,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         has('sd') ? h('span', null, '표준편차 ' + fmtNum(m.sd)) : null,
         has('rank') ? h('span', null, (has('n') ? fmtNum(m.n, 0) + '명 중 ' : '') + fmtNum(m.rank, 0) + '등') : has('n') ? h('span', null, fmtNum(m.n, 0) + '명') : null),
       linkChip(gc, m, L.name),
-      h('span', { class: 'mem-src' }, srcText(m.source_type, m.source_title), d ? ' · ' + fmtShort(d) : '',
+      h('span', { class: 'mem-src' }, candSrc(m), d ? ' · ' + fmtShort(d) : '',
         m.url ? [' · ', extLink(m.url, '원문')] : null, m.link_reason ? ' · 연결 근거: ' + m.link_reason : null));
   }
   function linkChip(gc, m, cur) {
@@ -5003,7 +5060,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
   // ---------------------------------------------------------------- 성적 파일 진단(계약 27-3): 파일·출처마다 어디서 멈췄는지
   // 서버(gradetrace)가 단계(stages)와 멈춘 곳 한 줄(stop)을 만든다. 여기서는 보여 주고, 다음 할 일 단추만 붙인다
   const GT_STATE = { done: '지나감', stop: '여기서 멈춤', todo: '아직', na: '해당 없음' };
-  const GT_SRC = { announcement: '공지', assignment: '과제', syllabus: '강의계획서', board: '게시판', canvas_grade: 'Canvas 성적부' };
+  const GT_SRC = { announcement: '공지', assignment: '과제', syllabus: '강의계획서', board: '게시판', canvas_grade: 'Canvas 성적부', upload: '가져온 파일' };
   const GT_FILTERS = [['all', '전체'], ['stop', '멈춘 것'], ['ok', '추정에 반영']];
   const gtUi = { filter: 'all' };
   const traceRows = (G) => (G && Array.isArray(G.trace) ? G.trace.filter((r) => r && typeof r === 'object') : []);
@@ -5071,12 +5128,24 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       acts.push(h('button', { type: 'button', class: 'linkish', 'data-key': k + 'open', 'aria-label': (r.file || '파일') + ' 열기', on: { click: (e) => openMaterial(r.material_key, e.currentTarget, r.file) } }, '파일 열기'));
     }
     if (r.material_key) acts.push(h('button', { type: 'button', class: 'linkish', 'data-key': k + 'mat', on: { click: () => gtToMaterial(r) } }, '자료에서 보기'));
+    // 규칙이 내 점수를 못 낸 줄: AI로 한 번 더(계약 29-2), 받아 둔 파일은 지금 규칙으로 다시 읽기(계약 29-3)
+    const ai = gtAi(r);
+    // AI가 이미 본 같은 글(none·found)은 다시 묻지 않는다(서버도 같은 해시면 건너뜀) — 아직 안 물었거나(pending·없음) 실패했을 때만
+    if (GT_AI_STAGES.indexOf(r.stage) >= 0 && r.kind !== 'canvas_grade' && r.course_id && aiOn() && !aiLookupRunning()
+        && (!ai || !ai.status || ai.status === 'pending' || ai.status === 'error')) {
+      acts.push(h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': k + 'ai', 'aria-label': (r.file || '파일') + ' AI로 성적 찾기',
+        on: { click: (e) => aiLookupPost({ course_id: String(r.course_id), key: traceKey(r) }, e.currentTarget) } }, ai && ai.status === 'error' ? 'AI로 다시 찾기' : 'AI로 찾기'));
+    }
+    if (r.material_key && GT_REREAD_STAGES.indexOf(r.stage) >= 0 && matState() && !reprocRunning()) {
+      acts.push(h('button', { type: 'button', class: 'linkish', 'data-key': k + 'reread', 'aria-label': (r.file || '파일') + ' 다시 읽기',
+        on: { click: (e) => rereadPost({ key: r.material_key }, e.currentTarget) } }, '다시 읽기'));
+    }
     const ext = extLink(r.url, r.kind === 'canvas_grade' ? 'Canvas에서 보기' : '글 보기');
     if (ext) acts.push(ext);
     return acts.length ? h('div', { class: 'gt-acts' }, acts) : null;
   }
   function gtRow(G, r, i) {
-    const src = GT_SRC[r.source] || '';
+    const src = GT_SRC[isImportRow(r) ? 'upload' : r.source] || '';
     const where = r.post_title ? (src ? src + ' ' : '') + '‘' + r.post_title + '’' : src;
     const stages = Array.isArray(r.stages) ? r.stages : [];
     const notes = Array.isArray(r.notes) ? r.notes.filter(Boolean).slice(0, 3) : [];
@@ -5091,6 +5160,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
         : ok ? h('p', { class: 'gt-ok' }, h('b', null, '추정에 반영됨'), r.linked ? ' · ' + r.linked + (LINK_BY[r.link_by] ? ' (' + LINK_BY[r.link_by] + ')' : '') : '') : null,
       gtCand(r.candidate),
       r.stop && r.linked ? h('p', { class: 'gt-cand' }, '연결된 항목 ', h('b', null, r.linked)) : null,
+      gtAiLine(r),
       notes.length ? h('ul', { class: 'gt-notes' }, notes.map((n) => h('li', null, String(n)))) : null,
       gtActions(G, r, i));
   }
@@ -5120,6 +5190,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
       h('p', { class: 'help' }, '성적이 될 만한 파일과 Canvas 성적부 점수를 하나씩 따라가요. 못 받은 건지, 받았는데 점수표로 못 읽은 건지, 내 줄이 없는 건지, 평가 항목에 연결이 안 된 건지 어디서 멈췄는지 보여 줘요.'),
       sum.error ? h('p', { class: 'inline-error' }, String(sum.error)) : null,
       rows.length ? h('div', { class: 'gt-bar' }, seg) : null,
+      rereadBar('gt'),
       rows.length ? list : h('p', { class: 'empty' }, '성적이 될 만한 파일·점수를 아직 찾지 못했어요. 동기화하면 점수표 첨부와 Canvas 성적부 점수를 여기서 확인할 수 있어요.'),
       hid ? h('p', { class: 'help gt-foot' }, '제외한 과목의 ' + hid + '개는 뺐어요.') : null,
       h('p', { class: 'help gt-foot' }, '터미널에서 ', h('code', null, 'lms-agent grades-check'), '로 같은 표를 글로 볼 수 있어요. 학번·다른 학생 정보·주소가 없어 그대로 보내도 돼요.')
@@ -5128,6 +5199,387 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     const head = h('h2', { class: 'sec-h', id: 'gt-h' }, '성적 파일 진단',
       h('span', { class: 'sec-n' + (nStop ? ' warn' : '') }, rows.length ? '파일·출처 ' + rows.length + '개 · 반영 ' + nOk + (nStop ? ' · 멈춤 ' + nStop : '') : '아직 없음'));
     return h('section', { class: 'g-sec gt', id: 'grade-trace', 'aria-labelledby': 'gt-h' }, group('gtrace', head, body));
+  }
+
+  // ---------------------------------------------------------------- 성적: 점수 직접 넣기 · 성적 파일 가져오기 · AI로 성적 찾기 · 받아 둔 파일 다시 읽기(계약 29)
+  // 서버 칸: state.manual_scores(29-1), state.grades.ai_lookup·trace[].ai(29-2), state.materials.reprocess(29-3).
+  // 예전 서버이거나 칸이 아직 없으면 그 부분만 숨기거나 빈 값으로 본다(경로가 없으면 서버 오류 문구를 그대로 알림)
+  const msState = () => (state && state.manual_scores && typeof state.manual_scores === 'object' ? state.manual_scores : null);
+  function msRows(cid) {
+    const M = msState();
+    const r = M && M.courses && typeof M.courses === 'object' ? M.courses[String(cid)] : null;
+    return Array.isArray(r) ? r.filter((e) => e && typeof e === 'object' && e.id) : [];
+  }
+  function impRows(cid) {
+    const M = msState();
+    const r = M && M.imports && typeof M.imports === 'object' ? M.imports[String(cid)] : null;
+    return Array.isArray(r) ? r.filter((x) => x && typeof x === 'object' && x.key) : [];
+  }
+  const IMP_EXTS = ['.pdf', '.xlsx', '.xls', '.csv', '.tsv', '.docx', '.pptx', '.hwp', '.hwpx', '.zip'];
+  const IMP_KIND = { pdf: 'PDF', sheet: '표', docx: '워드', pptx: '파워포인트', hwp: '한글', hwpx: '한글', zip: 'zip', doc: '문서' };
+  function msLimits() {
+    const M = msState();
+    const L = M && M.limits && typeof M.limits === 'object' ? M.limits : {};
+    const exts = Array.isArray(L.exts) && L.exts.length ? L.exts.map((x) => String(x).toLowerCase()) : IMP_EXTS;
+    return { max: num(L.max_bytes) || 20000000, exts };
+  }
+  const isImportRow = (r) => /^f:import:/.test(String((r && r.id) || ''));
+  // 진단 줄의 출처 key(pdf_texts key): 서버가 주면 그것, 아니면 줄 id 'f:<key>#<후보 key>'에서
+  const traceKey = (r) => String(r.key || r.source_key || String(r.id || '').replace(/^[a-z]:/, '').split('#')[0]);
+  const msScore = (c) => (isNum(c.score) ? fmtNum(c.score) + (isNum(c.max_score) ? '/' + fmtNum(c.max_score) : '점') : '점수 없음');
+  function statsText(c) {
+    const out = [];
+    if (isNum(c.mean)) out.push('평균 ' + fmtNum(c.mean));
+    if (isNum(c.sd)) out.push('표준편차 ' + fmtNum(c.sd));
+    if (isNum(c.rank)) out.push((isNum(c.n) ? fmtNum(c.n, 0) + '명 중 ' : '') + fmtNum(c.rank, 0) + '등');
+    else if (isNum(c.n)) out.push(fmtNum(c.n, 0) + '명');
+    return out;
+  }
+
+  // ---- 점수 직접 넣기(29-1): 이름·내 점수·만점·평균·표준편차·인원·등수·평가 항목 → POST /api/grades/<id>/scores
+  const MS_NUMS = [['score', '내 점수', '예) 9'], ['max_score', '만점', '100'], ['mean', '평균', ''], ['sd', '표준편차', ''], ['n', '인원', ''], ['rank', '등수', '']];
+  const msDrafts = new Map();   // 과목 id → 입력 중인 칸(다시 그려도 남게). id가 있으면 그 점수를 고치는 중
+  const msBlank = () => ({ id: null, label: '', score: '', max_score: '', mean: '', sd: '', n: '', rank: '', component: '', err: '', busy: false });
+  function msDraft(cid) {
+    let d = msDrafts.get(cid);
+    if (!d) { d = msBlank(); msDrafts.set(cid, d); }
+    return d;
+  }
+  // 지금 연결: 직접 고른 연결(화면의 '항목 고르기'로 바꾼 것 포함)이면 그 항목, 아니면 저장된 component(없으면 자동)
+  const msLinkOf = (e) => (e.link_by === 'user' && e.linked ? String(e.linked) : e.component ? String(e.component) : '');
+  function manualBlock(gc) {
+    if (!msState()) return null;   // 직접 넣기가 없는 예전 서버
+    const cid = String(gc.course_id);
+    const d = msDraft(cid);
+    const rows = msRows(cid);
+    const comps = courseComps(cid);
+    const fk = (f) => 'ms-' + cid + '-' + f;
+    const field = (f, label, ph, wide) => h('label', { class: 'ms-f' + (wide ? ' ms-wide' : '') }, h('span', null, label),
+      h('input', { type: 'text', class: 'gin' + (f === 'label' ? '' : ' r'), id: fk(f), 'data-key': fk(f), value: d[f], placeholder: ph || null,
+        inputmode: f === 'label' ? null : f === 'n' || f === 'rank' ? 'numeric' : 'decimal', maxlength: f === 'label' ? '60' : '12',
+        autocomplete: 'off', spellcheck: 'false', 'aria-required': f === 'label' || f === 'score' ? 'true' : null,
+        'aria-invalid': d.err && d.errField === f ? 'true' : null, 'aria-describedby': d.err ? 'ms-err-' + cid : null,
+        on: { input: (e) => { d[f] = e.target.value; } } }));
+    const sel = h('select', { class: 'gin', id: fk('component'), 'data-key': fk('component'), disabled: !comps.length,
+      on: { change: (e) => { d.component = e.target.value; } } },
+      h('option', { value: '' }, comps.length ? '자동(이름으로 찾기)' : '평가 항목 없음'),
+      comps.map((c) => h('option', { value: c.name }, c.name + (isNum(c.weight) ? ' ' + pct(c.weight) : ''))));
+    sel.value = comps.some((c) => c.name === d.component) ? d.component : '';
+    const form = h('form', { class: 'ms-form', id: 'ms-form-' + cid, novalidate: true, 'aria-label': d.id ? '직접 넣은 점수 고치기' : '점수 직접 넣기',
+      on: { submit: (e) => { e.preventDefault(); msSave(gc); } } },
+      h('div', { class: 'ms-grid' }, field('label', '이름', '예) Lab 3', true), MS_NUMS.map((x) => field(x[0], x[1], x[2], false)),
+        h('label', { class: 'ms-f ms-wide' }, h('span', null, '평가 항목'), sel)),
+      h('div', { class: 'ms-acts' },
+        h('button', { type: 'submit', class: 'btn btn-primary btn-sm', 'data-key': 'ms-save-' + cid, disabled: d.busy },
+          d.busy ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '저장하는 중…'] : d.id ? '고친 점수 저장' : '점수 넣기'),
+        d.id ? h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'ms-cancel-' + cid,
+          on: { click: () => { msDrafts.set(cid, msBlank()); focusKey = fk('label'); render(); } } }, '고치기 취소') : null,
+        h('span', { class: 'help' }, '만점을 비우면 100점 만점으로 봐요. 평균·표준편차를 함께 넣으면 반에서의 위치 추정에 들어가요.')),
+      d.err ? h('p', { class: 'inline-error', role: 'alert', id: 'ms-err-' + cid }, d.err) : null);
+    return h('section', { class: 'g-sec', id: 'ms-sec', 'aria-labelledby': 'ms-h' },
+      h('h2', { class: 'sec-h', id: 'ms-h' }, '점수 직접 넣기', rows.length ? h('span', { class: 'sec-n' }, rows.length + '개') : null),
+      h('p', { class: 'help' }, '공지·파일에 없는 점수(메일·종이로 받은 점수, 직접 확인한 점수)를 넣어요. 평가 항목을 고르지 않으면 이름으로 자동 연결하고, 같은 평가 항목에 같은 이름의 점수가 있으면 나중에 넣은 것을 써요.'),
+      form,
+      rows.length ? h('ul', { class: 'ms-list', 'aria-label': (gc.short_name || '이 과목') + ' 직접 넣은 점수' }, rows.map((e) => msItem(gc, e, d))) : null);
+  }
+  function msItem(gc, e, d) {
+    const cid = String(gc.course_id);
+    const editing = d.id === e.id;
+    const at = parseDate(e.at);
+    const stats = statsText(e);
+    const linked = !!(e.linked || e.merged_into);
+    const link = e.merged_into ? 'Canvas 성적부의 같은 점수와 하나로 셌어요'
+      : e.linked ? '→ ' + e.linked + ' · ' + (e.link_by === 'user' ? '직접 고름' : e.link_by === 'ai' ? 'AI가 연결' : '이름으로 자동 연결')
+      : courseComps(cid).length ? '평가 항목에 연결 안 됨 — 고치기에서 평가 항목을 골라 주세요' : '평가 항목이 아직 없어 추정에 안 들어가요';
+    const nm = e.label || '점수';
+    return h('li', { class: 'ms-item' + (editing ? ' is-editing' : ''), 'data-key': 'ms-item-' + e.id },
+      h('div', { class: 'ms-main' }, h('b', { class: 'ms-l' }, nm), h('span', { class: 'ms-v' }, msScore(e)),
+        stats.length ? h('span', { class: 'ms-s' }, stats.join(' · ')) : null),
+      h('p', { class: 'ms-meta' + (linked ? '' : ' is-warn') }, link,
+        at ? ' · ' + fmtShort(at) + (e.by === 'agent' ? ' 에이전트가 넣음' : ' 넣음') : '', e.note ? ' · ' + e.note : ''),
+      h('div', { class: 'ms-btns' },
+        h('button', { type: 'button', class: 'linkish', 'data-key': 'ms-edit-' + e.id, 'aria-label': nm + ' 고치기', 'aria-pressed': editing ? 'true' : null,
+          on: { click: () => msEdit(gc, e) } }, editing ? '고치는 중' : '고치기'),
+        h('button', { type: 'button', class: 'linkish', 'data-key': 'ms-del-' + e.id, 'aria-label': nm + ' 지우기', on: { click: () => msDelete(gc, e) } }, '지우기')));
+  }
+  function msEdit(gc, e) {
+    const cid = String(gc.course_id);
+    msDrafts.set(cid, { id: e.id, label: str(e.label), score: str(e.score), max_score: str(e.max_score), mean: str(e.mean), sd: str(e.sd),
+      n: str(e.n), rank: str(e.rank), component: msLinkOf(e), err: '', busy: false });
+    focusKey = 'ms-' + cid + '-score';
+    render();
+    const f = $('ms-form-' + cid);
+    if (f) f.scrollIntoView({ block: 'center' });
+  }
+  // 되돌리기·다시 넣기용 본문: 그 점수의 모든 값 + 지금 연결(직접 고른 것만 — 자동이면 null)
+  function msFullBody(e, action) {
+    const b = { action, label: e.label };
+    if (action === 'update') b.id = e.id;
+    for (const f of ['score', 'max_score', 'mean', 'sd', 'n', 'rank', 'high', 'low', 'note']) b[f] = e[f] === undefined ? null : e[f];
+    b.component = e.link_by === 'user' && e.linked ? e.linked : e.component || null;
+    return b;
+  }
+  function msPost(cid, body, msg) {
+    return post('/api/grades/' + encodeURIComponent(cid) + '/scores', body).then((s) => { applyState(s); toast(msg); }, (err) => toast(err.message));
+  }
+  function msSave(gc) {
+    const cid = String(gc.course_id);
+    const d = msDraft(cid);
+    if (d.busy) return;
+    const fail = (msg, f) => { d.err = msg; d.errField = f; focusKey = 'ms-' + cid + '-' + f; render(); };
+    if (!d.label.trim()) return fail('점수 이름을 넣어 주세요(예: Lab 3).', 'label');
+    if (!str(d.score).trim()) return fail('내 점수를 넣어 주세요.', 'score');
+    const prev = d.id ? msRows(cid).find((e) => e.id === d.id) || null : null;
+    const body = { action: d.id ? 'update' : 'add', label: d.label.trim(), component: d.component || null };
+    if (d.id) body.id = d.id;
+    for (const x of MS_NUMS) body[x[0]] = toNum(d[x[0]]);
+    d.busy = true; d.err = ''; d.errField = '';
+    render();
+    post('/api/grades/' + encodeURIComponent(cid) + '/scores', body).then((s) => {
+      const r = s && s.manual_score_result && typeof s.manual_score_result === 'object' ? s.manual_score_result : {};
+      msDrafts.set(cid, msBlank());
+      focusKey = 'ms-' + cid + '-label';
+      applyState(s);
+      const row = msRows(cid).find((e) => e.id === (r.id || body.id)) || null;
+      const text = String(r.text || body.label);
+      const where = row && row.linked ? ' → ' + row.linked : '';
+      if (prev) toast(josaQ(text, '으로', '로') + ' 고쳤어요' + where, () => msPost(cid, msFullBody(prev, 'update'), '되돌렸어요 · ' + (prev.label || '')));
+      else toast(josaQ(text, '을', '를') + ' 넣었어요' + where + '. 추정을 다시 계산했어요', r.id ? () => msPost(cid, { action: 'delete', id: r.id }, '되돌렸어요 · ' + text) : null);
+    }, (err) => { d.busy = false; d.err = err.message; d.errField = ''; focusKey = 'ms-save-' + cid; render(); });
+  }
+  function msDelete(gc, e) {
+    const cid = String(gc.course_id);
+    const d = msDraft(cid);
+    const nm = e.label || '점수';
+    post('/api/grades/' + encodeURIComponent(cid) + '/scores', { action: 'delete', id: e.id }).then((s) => {
+      if (d.id === e.id) msDrafts.set(cid, msBlank());
+      focusKey = 'ms-' + cid + '-label';
+      applyState(s);
+      toast(josaQ(nm, '을', '를') + ' 지웠어요', () => msPost(cid, msFullBody(e, 'add'), '되돌렸어요 · ' + nm));
+    }, (err) => toast(err.message));
+  }
+
+  // ---- 성적 파일 가져오기(29-1): 고르기·끌어 놓기 → base64 → POST /api/grades/<id>/import → 읽은 결과(점수 후보 / 못 찾은 이유)
+  const impUi = { busy: '', name: '', err: '', errCid: '', last: '', confirm: '' };
+  const hasFiles = (e) => !!(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0);
+  // 성적 화면에서 끌어 놓기 칸을 놓쳐도 브라우저가 파일을 열어 앱 화면을 떠나지 않게
+  for (const ev of ['dragover', 'drop']) window.addEventListener(ev, (e) => { if (view === 'grades' && hasFiles(e)) e.preventDefault(); });
+  function importBlock(gc, G) {
+    if (!msState()) return null;
+    const cid = String(gc.course_id);
+    const L = msLimits();
+    const rows = impRows(cid).slice().sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
+    const busy = impUi.busy === cid;
+    const inp = h('input', { type: 'file', hidden: true, accept: L.exts.join(','), tabindex: '-1', 'aria-hidden': 'true', 'data-key': 'imp-input-' + cid,
+      on: { change: (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) importSend(gc, f); } } });
+    const pick = h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'imp-pick-' + cid, 'aria-describedby': 'imp-hint-' + cid,
+      on: { click: () => inp.click() } }, icon('file'), '파일 고르기');
+    const drop = h('div', { class: 'imp-drop', id: 'imp-drop-' + cid },
+      busy ? h('p', { class: 'imp-busy', role: 'status' }, h('span', { class: 'spin', 'aria-hidden': 'true' }), '‘' + impUi.name + '’ 읽는 중…')
+        : h('p', { class: 'imp-q' }, h('span', null, '점수표 파일을 여기로 끌어 놓거나'), pick),
+      h('p', { class: 'help', id: 'imp-hint-' + cid }, 'PDF·엑셀(xlsx·xls)·CSV·TSV·워드·파워포인트·한글(hwp·hwpx)·zip · ' + fmtNum(L.max / 1000000, 0) + 'MB까지 · 이 PC의 데이터 폴더에만 저장해요'),
+      inp);
+    const over = (on) => drop.classList.toggle('is-over', on);
+    drop.addEventListener('dragenter', (e) => { if (hasFiles(e)) { e.preventDefault(); over(true); } });
+    drop.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; over(true); } });
+    drop.addEventListener('dragleave', (e) => { if (!drop.contains(e.relatedTarget)) over(false); });
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      over(false);
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f && !impUi.busy) importSend(gc, f);
+    });
+    return h('section', { class: 'g-sec', id: 'imp-sec', 'aria-labelledby': 'imp-h' },
+      h('h2', { class: 'sec-h', id: 'imp-h' }, '성적 파일 가져오기', rows.length ? h('span', { class: 'sec-n' }, rows.length + '개') : null),
+      h('p', { class: 'help' }, '메일로 받았거나 이미 받아 둔 점수표를 이 과목에 넣어요. Canvas가 닫힌 지난 학기 과목도 돼요. 받은 첨부처럼 읽어서 내 줄을 찾아 점수 후보로 올려요.'),
+      drop,
+      impUi.err && impUi.errCid === cid ? h('p', { class: 'inline-error', role: 'alert' }, impUi.err) : null,
+      rows.length ? h('ul', { class: 'imp-list', 'aria-label': (gc.short_name || '이 과목') + ' 가져온 파일' }, rows.map((r) => impRow(gc, r, G))) : null);
+  }
+  const impTrace = (G, key) => traceRows(G).filter((x) => String(x.id || '').indexOf('f:' + key) === 0);
+  function impRow(gc, r, G) {
+    const cid = String(gc.course_id);
+    const at = parseDate(r.at);
+    const cands = Array.isArray(r.candidates) ? r.candidates.filter((c) => c && typeof c === 'object') : [];
+    const tr = impTrace(G, r.key);
+    const stop = tr.find((x) => x.stop) || null;
+    // 진단(서버 gradetrace)이 멈춘 곳을 더 자세히 알면 그것, 아니면 가져오기가 본 이유
+    const why = cands.length ? null : stop && r.status !== 'read_failed' && r.status !== 'no_sid' ? String(stop.stop) : String(r.reason || '점수를 찾지 못했어요');
+    const failed = Array.isArray(r.members) ? r.members.filter((m) => m && m.ok === false) : [];
+    const confirming = impUi.confirm === r.key;
+    const nm = r.filename || '파일';
+    const aiRow = tr.find((x) => gtAi(x) && gtAi(x).status) || null;
+    const aiSeen = !!(aiRow && (aiRow.ai.status === 'none' || aiRow.ai.status === 'found'));   // 같은 글은 AI가 다시 보지 않는다
+    const canAi = !cands.length && aiOn() && (r.status === 'not_table' || r.status === 'no_row') && !aiLookupRunning() && !aiSeen;
+    return h('li', { class: 'imp-row', 'data-key': 'imp-row-' + r.key, tabindex: '-1' },
+      h('div', { class: 'imp-head' }, icon('file'), h('b', { class: 'imp-name' }, nm),
+        h('span', { class: 'imp-meta' }, [IMP_KIND[r.kind] || '', fmtSize(r.size), at ? fmtShort(at) + ' 가져옴' : ''].filter(Boolean).join(' · '))),
+      cands.length
+        ? h('ul', { class: 'imp-cands', 'aria-label': nm + '에서 찾은 점수' }, cands.map((c) => h('li', null,
+          h('b', null, c.label || '점수'), h('span', null, msScore(c)), statsText(c).length ? h('span', { class: 'help' }, statsText(c).join(' · ')) : null,
+          h('span', { class: 'help' }, c.component ? '→ ' + c.component + (LINK_BY[c.link_by] ? ' (' + LINK_BY[c.link_by] + ')' : '') : '평가 항목에 연결 안 됨'))))
+        : h('p', { class: 'imp-why' + (r.status === 'no_sid' ? '' : ' is-stop') }, why),
+      failed.length ? h('ul', { class: 'gt-notes' }, failed.slice(0, 3).map((m) => h('li', null, String(m.name || '파일') + (m.note ? ': ' + m.note : '')))) : null,
+      aiRow ? gtAiLine(aiRow) : null,
+      h('div', { class: 'imp-acts' },
+        r.status === 'no_sid' ? h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'imp-sid-' + r.key, on: { click: gtFocusSid } }, '학번 넣기') : null,
+        canAi ? h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'imp-ai-' + r.key,
+          on: { click: (e) => aiLookupPost({ course_id: cid, key: r.key }, e.currentTarget) } }, 'AI로 찾기') : null,
+        confirming ? [
+          h('span', { class: 'help', id: 'imp-del-q-' + r.key }, '이 PC에 저장한 파일과 찾은 점수도 지워요.'),
+          h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'imp-del-yes-' + r.key, 'aria-describedby': 'imp-del-q-' + r.key,
+            on: { click: (e) => importDelete(gc, r, e.currentTarget) } }, '지우기'),
+          h('button', { type: 'button', class: 'btn btn-quiet btn-sm', 'data-key': 'imp-del-no-' + r.key,
+            on: { click: () => { impUi.confirm = ''; focusKey = 'imp-del-' + r.key; render(); } } }, '취소')]
+          : h('button', { type: 'button', class: 'linkish', 'data-key': 'imp-del-' + r.key, 'aria-label': nm + ' 지우기',
+            on: { click: () => { impUi.confirm = r.key; focusKey = 'imp-del-no-' + r.key; render(); } } }, '지우기')));
+  }
+  function importSend(gc, file) {
+    const cid = String(gc.course_id);
+    const L = msLimits();
+    const name = String(file.name || '');
+    const dot = name.lastIndexOf('.');
+    const ext = dot > 0 ? name.slice(dot).toLowerCase() : '';
+    const fail = (msg) => { impUi.err = msg; impUi.errCid = cid; focusKey = 'imp-pick-' + cid; render(); };
+    if (impUi.busy) return;
+    if (L.exts.indexOf(ext) < 0) return fail('이 형식(' + (ext || '확장자 없음') + ')은 가져올 수 없어요 — PDF·엑셀·CSV·TSV·워드·파워포인트·한글·zip 파일만 돼요.');
+    if (!file.size) return fail('빈 파일이에요.');
+    if (file.size > L.max) return fail(fmtNum(L.max / 1000000, 0) + 'MB보다 큰 파일은 가져올 수 없어요.');
+    impUi.busy = cid; impUi.name = name; impUi.err = ''; impUi.confirm = '';
+    render();
+    const done = () => { impUi.busy = ''; };
+    const fr = new FileReader();
+    fr.onerror = () => { done(); fail('파일을 읽지 못했어요. 다시 골라 주세요.'); };
+    fr.onload = () => {
+      const url = String(fr.result || '');
+      post('/api/grades/' + encodeURIComponent(cid) + '/import', { filename: name, data: url.slice(url.indexOf(',') + 1) }).then((s) => {
+        done();
+        const r = s && s.import_result && typeof s.import_result === 'object' ? s.import_result : null;
+        impUi.last = r && r.key ? String(r.key) : '';
+        applyState(s);
+        const row = impUi.last ? byKey('imp-row-' + impUi.last) : null;
+        if (row) { row.scrollIntoView({ block: 'center' }); flashEl(row); row.focus({ preventScroll: true }); }
+        const n = r && Array.isArray(r.candidates) ? r.candidates.length : 0;
+        toast(n ? josaQ(name, '에서', '에서') + ' 점수 ' + n + '개를 찾았어요' : josaQ(name, '을', '를') + ' 가져왔어요' + (r && r.reason ? ' — ' + r.reason : ''));
+      }, (err) => { done(); fail(err.message); });
+    };
+    fr.readAsDataURL(file);
+  }
+  function importDelete(gc, r, btn) {
+    const cid = String(gc.course_id);
+    if (btn) btn.disabled = true;
+    post('/api/grades/' + encodeURIComponent(cid) + '/import/delete', { key: r.key }).then((s) => {
+      impUi.confirm = '';
+      focusKey = 'imp-pick-' + cid;
+      applyState(s);
+      toast(josaQ(r.filename || '가져온 파일', '을', '를') + ' 지웠어요');
+    }, (err) => { if (btn) btn.disabled = false; toast(err.message); });
+  }
+
+  // ---- AI로 성적 찾기(29-2): 과목마다·진단 줄마다 POST /api/grades/ai-lookup {course_id?, key?} — 백그라운드, state.grades.ai_lookup
+  const aiOn = () => { const A = aiState(); const L = aiLookup(); return !!((A && A.enabled) || (L && L.enabled)); };
+  // state.grades.ai_lookup = {enabled, student_id_set, running, job{status, course_id, key, total, done, found, message, current…},
+  //   last_at, done, found, pending, errors[{key, file, course_id, error, at}]}(aiscores.lookup_state)
+  function aiLookup() {
+    const G = state && state.grades;
+    const a = (G && G.ai_lookup) || (state && state.ai_lookup);
+    return a && typeof a === 'object' ? a : null;
+  }
+  const aiLookupRunning = () => { const a = aiLookup(); return !!(a && a.running); };
+  const aiJob = () => { const a = aiLookup(); return a && a.job && typeof a.job === 'object' ? a.job : null; };
+  const GT_AI_STAGES = ['score_table', 'my_row', 'candidate'];
+  const GT_REREAD_STAGES = ['read', 'score_table', 'my_row', 'candidate'];
+  const gtAi = (r) => (r && r.ai && typeof r.ai === 'object' ? r.ai : null);
+  const AI_ST = { found: 'AI가 찾음', none: 'AI로도 내 점수를 찾지 못했어요', error: 'AI가 읽지 못했어요', pending: 'AI로 찾아볼 수 있어요' };
+  function gtAiLine(r) {
+    const ai = gtAi(r);
+    const job = aiJob();
+    const now = aiLookupRunning() && job && job.current && String(job.current) === traceKey(r);   // 지금 AI가 이 파일을 읽는 중
+    if (!now && (!ai || !AI_ST[ai.status])) return null;
+    if (now) return h('p', { class: 'gt-ai', role: 'status' }, h('span', { class: 'spin', 'aria-hidden': 'true' }), h('b', null, 'AI가 읽는 중'));
+    const res = Array.isArray(ai.results) ? ai.results.filter((x) => x && typeof x === 'object') : [];
+    const at = parseDate(ai.at);
+    return h('p', { class: 'gt-ai' },
+      h('b', null, AI_ST[ai.status]),
+      ai.status === 'found' && res.length ? h('span', { class: 'tnum' }, res.slice(0, 3).map((x) => (x.label || '점수') + ' ' + msScore(x)).join(', ') + (res.length > 3 ? ' 외 ' + (res.length - 3) + '개' : '')) : null,
+      (ai.status === 'error' || ai.status === 'none') && (ai.note || ai.error) ? h('span', { class: 'help' }, String(ai.note || ai.error).slice(0, 120)) : null,
+      at && ai.status !== 'pending' ? h('span', { class: 'help' }, fmtShort(at)) : null);
+  }
+  function aiLookupPost(body, btn) {
+    if (btn) btn.disabled = true;
+    post('/api/grades/ai-lookup', body).then((s) => {
+      if (s && typeof s === 'object' && Array.isArray(s.items)) applyState(s); else refresh();
+      const job = s && s.job && typeof s.job === 'object' ? s.job : null;
+      if (job && job.status === 'done') toast(String(job.message || 'AI로 찾아볼 파일이 없어요'));
+      else toast('AI가 ' + (job && num(job.total) ? '점수 파일 ' + num(job.total) + '개를' : body.key ? '이 파일을' : '이 과목의 점수 파일을') + ' 읽기 시작했어요. 찾으면 점수 후보에 보여요');
+    }, (err) => { if (btn) btn.disabled = false; toast(err.status === 404 && /경로/.test(err.message) ? '이 버전에는 아직 AI로 성적 찾기가 없어요' : err.message); });
+  }
+  function aiLookupBlock(gc) {
+    if (!aiState()) return null;   // AI 설정 칸이 없는 예전 서버
+    const cid = String(gc.course_id);
+    const L = aiLookup();
+    const job = aiJob();
+    const run = aiLookupRunning();
+    const G = state.grades || {};
+    const sidOk = L && typeof L.student_id_set === 'boolean' ? L.student_id_set : !!G.student_id_set;
+    const errs = L && Array.isArray(L.errors) ? L.errors.filter(Boolean).slice(0, 2).map((x) => (typeof x === 'object' ? (x.file ? x.file + ': ' : '') + String(x.error || '') : String(x))) : [];
+    const last = L ? parseDate(L.last_at) : null;
+    const counts = L ? [num(L.done) ? 'AI가 본 파일 ' + num(L.done) + '개' : '', num(L.found) ? '점수를 찾은 파일 ' + num(L.found) + '개' : '',
+      num(L.pending) ? '아직 안 본 대상 ' + num(L.pending) + '개' : ''].filter(Boolean).join(' · ') : '';
+    const jobLine = run && job ? 'AI가 읽는 중' + (num(job.total) ? ' · ' + Math.min(num(job.done), num(job.total)) + '/' + num(job.total) + '개' : '')
+      : job && job.status === 'done' && job.message ? String(job.message) : '';
+    let body;
+    if (!aiOn()) {
+      body = [h('p', { class: 'help', style: 'margin-top:8px' }, 'AI 도움이 꺼져 있어요. 켜면 규칙이 내 점수를 못 찾은 점수표를 AI가 한 번 더 읽어요. '),
+        h('button', { type: 'button', class: 'linkish', 'data-key': 'ai-look-on', on: { click: () => go('#settings', () => goSettings('pane-ai'))() } }, '설정에서 AI 도움 켜기')];
+    } else if (!sidOk) {
+      body = [h('p', { class: 'help', style: 'margin-top:8px' }, '학번을 넣어야 AI가 점수표에서 내 줄을 찾을 수 있어요(학번은 가린 채로 보내요). '),
+        h('button', { type: 'button', class: 'linkish', 'data-key': 'ai-look-sid', on: { click: gtFocusSid } }, '학번 넣기')];
+    } else {
+      body = [
+        h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'ai-look-' + cid, disabled: run,
+          on: { click: (e) => aiLookupPost({ course_id: cid }, e.currentTarget) } }, run ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), 'AI가 읽는 중…'] : 'AI로 이 과목 성적 찾기'),
+        jobLine || counts || last || errs.length ? h('div', { class: 'ai-look-st', role: 'status' },
+          jobLine ? h('span', null, jobLine) : null,
+          counts || last ? h('span', { class: 'help' }, counts, last ? (counts ? ' · ' : '') + '마지막으로 물은 때 ' + fmtShortDT(last) : '') : null,
+          errs.map((x) => h('span', { class: 'inline-error' }, x.slice(0, 160)))) : null];
+    }
+    return h('section', { class: 'g-sec ai-look', 'aria-labelledby': 'ai-look-h' },
+      h('h2', { class: 'sec-h', id: 'ai-look-h' }, 'AI로 성적 찾기'),
+      h('p', { class: 'help' }, '규칙이 점수표에서 내 점수를 못 낸 파일을 AI가 읽어요. 내 학번·다른 학생의 학번·이름은 가린 뒤 보내고, 찾은 점수는 근거와 함께 점수 후보로 보여요(넣지 않음으로 뺄 수 있어요).'),
+      body);
+  }
+
+  // ---- 받아 둔 파일 다시 읽기(29-3): POST /api/materials/reread {key?} — 백그라운드, state.materials.reprocess {pending, total, done, at}
+  function reproc() {
+    const M = matState();
+    const r = M && M.reprocess;
+    return r && typeof r === 'object' ? r : null;
+  }
+  const reprocRunning = () => { const r = reproc(); return !!(r && r.running === true); };
+  function rereadPost(body, btn) {
+    if (btn) btn.disabled = true;
+    post('/api/materials/reread', body).then((s) => {
+      if (s && typeof s === 'object' && Array.isArray(s.items)) applyState(s); else refresh();
+      toast(body.key ? '이 파일을 지금 규칙으로 다시 읽어요' : '받아 둔 파일을 지금 규칙으로 다시 읽어요. 끝나면 성적에 반영돼요');
+    }, (err) => { if (btn) btn.disabled = false; toast(err.status === 404 && /경로/.test(err.message) ? '이 버전에는 아직 받아 둔 파일 다시 읽기가 없어요' : err.message); });
+  }
+  function rereadBar(where) {
+    if (!matState()) return null;
+    const R = reproc();
+    const run = reprocRunning();
+    const total = num(R && R.total), done = num(R && R.done);
+    // {pending, running, total, done, at(시작), finished_at, by("update"|"user"), current, error}(features/materials.reprocess_state)
+    const fin = R ? parseDate(R.finished_at) : null;
+    const line = run ? '다시 읽는 중' + (total ? ' · ' + Math.min(done, total) + '/' + total + '개' : '')
+      : R && R.pending ? (R.by === 'user' ? '받아 둔 파일' : '업데이트로 읽는 규칙이 바뀌어 받아 둔 파일') + (total ? ' ' + Math.max(0, total - done) + '개' : '') + '를 다음 동기화 때 다시 읽어요. 지금 읽으려면 누르세요'
+      : fin ? '마지막으로 다시 읽음 ' + fmtShortDT(fin) + (total ? ' · ' + total + '개' : '')
+      : '업데이트로 읽는 규칙이 바뀌면 이미 받은 파일도 다시 읽어야 성적에 들어가요.';
+    return h('div', { class: 'rr-bar' },
+      h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'rr-all-' + where, disabled: run, on: { click: (e) => rereadPost({}, e.currentTarget) } },
+        run ? [h('span', { class: 'spin', 'aria-hidden': 'true' }), '다시 읽는 중…'] : '받아 둔 파일 다시 읽기'),
+      h('span', { class: 'help', role: 'status' }, line),
+      R && R.error && !run ? h('span', { class: 'inline-error' }, String(R.error).slice(0, 160)) : null);
   }
 
   // ---------------------------------------------------------------- 학번(점수표에서 내 줄 찾기, 계약 14-7)
@@ -5216,7 +5668,7 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     }
     const row = d.components[idx];
     for (const k of ['score', 'max_score', 'mean', 'sd']) if (c[k] !== null && c[k] !== undefined) row[k] = String(c[k]);
-    row.source = srcText(c.source_type, c.source_title);
+    row.source = candSrc(c);
     d.dirty = true;
     gradeMsg.delete(target);
     focusKey = 'g-' + target + '-' + idx + '-' + (row.weight ? 'score' : 'weight');
@@ -5801,8 +6253,13 @@ textarea.ag-input { display: block; min-height: 58px; max-height: 32vh; padding:
     body.appendChild(h('div', { class: 'mat-tools' },
       h('button', { type: 'button', class: 'btn btn-line btn-sm', 'data-key': 'mat-folder', on: { click: (e) => openMaterial(null, e.currentTarget) } }, '폴더 열기'),
       h('span', { class: 'mat-folder', title: M.folder || '' }, (M.folder ? M.folder + '에 저장. ' : '') + (M.auto_download ? '동기화할 때 신규 첨부를 자동으로 받아요.' : '자동 저장이 꺼져 있어요.') + ' ', h('a', { href: '#settings' }, '설정'))));
+    // 성적 화면에서 가져온 파일(계약 29-1)은 받은 첨부가 아니라 이 목록에 없다 — 어디서 보는지만 알린다
+    const MS = msState();
+    const impN = MS && MS.imports && typeof MS.imports === 'object' ? Object.keys(MS.imports).reduce((a, k) => a + impRows(k).length, 0) : 0;
+    if (impN) body.appendChild(h('p', { class: 'help', style: 'margin-top:10px' }, '성적 화면의 ‘성적 파일 가져오기’로 넣은 파일 ' + impN + '개는 ', h('a', { href: '#grades' }, '성적'), ' 화면에서 볼 수 있어요.'));
     const errs = Array.isArray(M.errors) ? M.errors.filter(Boolean) : [];
     if (errs.length) body.appendChild(h('ul', { class: 'side-list', style: 'margin-top:12px' }, errs.map((e) => h('li', { class: 'inline-error' }, String(e)))));
+    if (items.length) body.appendChild(rereadBar('mat'));   // 받아 둔 파일 다시 읽기(계약 29-3)
     if (!items.length) {
       body.appendChild(h('div', { class: 'mat-empty' }, mascot('rest', 72, { slot: 'empty' }),
         h('p', { class: 'empty' }, M.auto_download ? '아직 받은 첨부가 없어요. 게시판에 첨부가 올라오면 동기화할 때 이 PC에 저장해 둘게요.' : '자동 저장이 꺼져 있어요. 설정에서 켜면 게시판 첨부를 이 PC에 받아 둡니다.')));

@@ -107,6 +107,17 @@ def candidate_key(cid, source_type, source_title, label, score) -> str:
     return f"txt:{source_type}:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
+# 다른 모듈이 더하는 점수 후보 공급자(계약 29장): fn(store, names) -> [후보 — 이 모듈의 후보와 같은 모양, 안정적인 "key"].
+# manualscores(직접 넣은 점수·가져온 파일)와 aiscores(AI가 찾은 점수)가 불러올 때 register_candidates로 등록한다.
+CANDIDATE_PROVIDERS: list = []
+
+
+def register_candidates(fn):
+    if fn not in CANDIDATE_PROVIDERS:
+        CANDIDATE_PROVIDERS.append(fn)
+    return fn
+
+
 USER_CUTOFFS = True   # 사용자가 절대평가 기준표를 넣을 수 있다(save_course "cutoffs", 계약 28-2)
 MAX_CANDIDATES = 300   # Canvas 성적부 점수까지 들어오면 학기 말에는 100개를 넘을 수 있다(잘리면 추정에서 빠짐)
 
@@ -140,6 +151,11 @@ def candidates(store, include_hidden: bool = False) -> list[dict]:
                         "sentence": f.sentence, "notes": f.notes,
                         "key": candidate_key(cid, typ, title, f.label, f.score)})
     out += score_file_candidates(store, names)
+    for provider in CANDIDATE_PROVIDERS:   # 직접 넣은 점수·가져온 파일(manualscores), AI가 찾은 점수(aiscores) — 계약 29장
+        try:
+            out += [c for c in provider(store, names) or [] if isinstance(c, dict) and c.get("key")]
+        except Exception:  # noqa: BLE001 — 한 공급자가 고장 나도 다른 후보는 보인다
+            continue
     canvas = canvas_grade_candidates(store, names)
     out = canvas + merge_canvas_duplicates(canvas, out)
     if not include_hidden:
@@ -326,10 +342,10 @@ def _score_results(key: str, rec: dict, sid: str) -> list:
             _SCORE_CACHE.clear()
         fn = rec.get("filename") or ""
         if sheet:
-            _SCORE_CACHE[ck] = (scorefile.parse_sheet_results(rec.get("sheets"), sid, filename=fn)
+            _SCORE_CACHE[ck] = (scorefile.parse_sheet_results(rec.get("sheets"), sid, filename=fn, ambiguous=True)
                                 if _is_score_rec(key, rec) else [])
-        else:
-            _SCORE_CACHE[ck] = (scorefile.parse_score_results(text, sid, filename=fn)
+        else:   # ambiguous=True: 가린 학번이 여러 줄과 맞으면 '애매함' 결과(score None — 계약 29-3 ⑤)
+            _SCORE_CACHE[ck] = (scorefile.parse_score_results(text, sid, filename=fn, ambiguous=True)
                                 if scorefile.is_score_file(fn, text) else [])
     return _SCORE_CACHE[ck]
 
@@ -367,7 +383,8 @@ def _score_candidate(key: str, rec: dict, r, cid, names: dict) -> dict:
             "label": r.label, "score": r.score, "max_score": r.max_score, "mean": r.mean, "sd": r.sd,
             "high": r.high, "low": r.low, "n": r.n, "rank": r.rank,
             "sentence": r.sentence, "notes": list(r.notes),
-            "key": ckey, "file_kind": "sheet" if _is_sheet(rec) else "pdf"}
+            "key": ckey, "file_kind": "sheet" if _is_sheet(rec) else "pdf",
+            **scorefile.result_extras(r)}   # ambiguous·letter·absent·personal(계약 29-3, 값이 있을 때만)
 
 
 def score_files(store) -> tuple[int, list[str]]:
@@ -869,6 +886,22 @@ def _label_order(m: dict):
     return (re.sub(r"\d+", "", lab).strip().lower(), int(n.group()) if n else -1, lab)
 
 
+_SINGLE_FAMS = ("final", "midterm")   # 한 학기에 한 번인 시험 — 번호 없는 이름이면 같은 시험(원본·재검·다시 공지)
+
+
+def _member_group(label) -> str:
+    """같은 평가로 볼 묶음 키(계약 29-3 ②, 리드): 번호 없는 기말·중간은 이름이 달라도 하나('2026 KECE Final'과
+    '463 기말고사 채점결과'는 같은 기말 — 재검 뒤 다시 올린 파일의 이름이 바뀌는 실제 경우). 번호가 있거나 다른 계열은 이름대로."""
+    from .extract import title_tokens
+    if any(n for _k, n in title_tokens(str(label or ""))):
+        return _label_key(label)
+    fams = lk.families(str(label or ""))
+    for f in _SINGLE_FAMS:
+        if f in fams:
+            return "fam:" + f
+    return _label_key(label)
+
+
 def members_of(cands, links) -> dict:
     """연결된 점수 후보 → 항목 이름별 세부 점수(계약 14-3). 같은 라벨이 여러 번(다시 공지)이면 가장 최근 것, 라벨 번호 순."""
     latest: dict = {}
@@ -876,9 +909,11 @@ def members_of(cands, links) -> dict:
         ln = links.get(c.get("key")) if c.get("key") else None
         if not ln or not ln.get("component") or c.get("score") is None:
             continue
-        k = (ln["component"], _label_key(c.get("label") or c.get("source_title")))
+        k = (ln["component"], _member_group(c.get("label") or c.get("source_title")))
         prev = latest.get(k)
-        if prev is None or _ts(c.get("posted_at")) > _ts(prev[0].get("posted_at")):
+        # 게시 시각이 같으면(한 공지에 원본과 재검·v2·수정본) 다시 낸 표시가 큰 쪽(scorefile.revision_of, 계약 29-3 ②)
+        if prev is None or (_ts(c.get("posted_at")), scorefile.revision_of(c.get("source_title"))) > \
+                (_ts(prev[0].get("posted_at")), scorefile.revision_of(prev[0].get("source_title"))):
             latest[k] = (c, ln)
     out: dict = {}
     for (comp, _lab), (c, ln) in latest.items():

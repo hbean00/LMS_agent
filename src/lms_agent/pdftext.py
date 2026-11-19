@@ -31,7 +31,11 @@ import zlib
 from dataclasses import dataclass, field
 from math import hypot
 
-__all__ = ["PdfTextResult", "extract_text", "PAGE_SEP"]
+__all__ = ["PdfTextResult", "extract_text", "PAGE_SEP", "VERSION"]
+
+# 읽는 규칙의 판. 글자를 꺼내는 방식이 바뀌면 올린다 → 받아 둔 PDF를 다음 동기화들에서 디스크에서 다시 읽는다
+# (materials.PDF_READER, 다운로드 기록의 pdf_reader — 계약 29-3). 1 = v0.8.4(판을 처음 둠 — 그 전에 읽은 PDF는 모두 다시 읽음).
+VERSION = 1
 
 PAGE_SEP = "\n\f\n"
 _MAX_FORM_DEPTH = 8

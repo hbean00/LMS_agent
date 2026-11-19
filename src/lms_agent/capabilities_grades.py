@@ -17,6 +17,8 @@ preview(app, params) → [{"label", "before", "after"}]는 바뀌는 칸만 짧�
 - 말한 묶음은 그 값으로, 묶음 안은 **지금 비율 모양대로** 나눈다(지금 비율 = 사용자 비율 > 강의 글 비율 > 기본 비율, 모두 0이면 기본 모양, 그래도 0이면 고르게).
   말하지 않은 학점은 남은 %(100 − 합)를 지금 비율 모양대로 나눈다. 합이 100을 넘으면 오류, 모든 학점을 말했는데 100이 안 되면 오류.
 - 소수 둘째 자리로 반올림, 합이 정확히 100이 되게(남는 0.01은 나눠 받은 학점 중 가장 큰 곳에). 결과는 화면과 같은 {9학점: %}.
+직접 넣은 점수(계약 29-1, 담당 S1 — MANUAL_IDS): grades.add_score(같은 과목에 같은 이름으로 직접 넣은 점수가 있으면 그것을 고침)·
+update_score·remove_score → POST /api/grades/<id>/scores {action add|update|delete, …, by "agent"}. 본문은 manualscores.apply를 사본에 미리 돌려 확인.
 절대평가(kind "absolute", 글자별 최저 점수 — 맨 글자 A 90은 A0 90, A+는 위 경계(100 또는 위 학점 기준)와의 가운데)는 검사·미리 보기까지 하지만
 지금 성적 화면·경로(/api/grades/<id>)가 사용자 기준표를 저장하지 못해 gradebook.USER_CUTOFFS가 참일 때만 본문에 "cutoffs"를 넣는다(아니면 한국어 오류).
 """
@@ -37,7 +39,7 @@ _IDX = {x: i for i, x in enumerate(GRADES)}
 _F = _IDX["F"]
 IDS = ("grades.set_weights", "grades.set_component", "grades.remove_component", "grades.set_score", "grades.set_dist",
        "grades.set_class_size", "grades.link_score", "grades.unlink_score", "grades.set_count", "items.set_component",
-       "grades.settings")
+       "grades.settings", "grades.add_score", "grades.update_score", "grades.remove_score")
 
 _BY_KO = {"rules": "자동", "ai": "AI", "user": "직접"}
 _BASIS_KO = {"stated": "명시", "hint": "단서", "user": "직접", "observed": "관찰"}
@@ -1065,6 +1067,208 @@ def _item_component(app, p: dict) -> dict:
     return _result(path, {"component": name}, [_line(label, now, f"{name}(직접)")])
 
 
+# ================================================================ 직접 넣은 점수(계약 29-1, 담당 S1 — POST /api/grades/<id>/scores)
+
+MANUAL_IDS = ("grades.add_score", "grades.update_score", "grades.remove_score")   # IDS 끝 셋(계약 29-1)
+_MS_NUM = (("score", "점수"), ("max_score", "만점"), ("mean", "평균"), ("sd", "표준편차"), ("n", "인원"), ("rank", "등수"),
+           ("high", "최고점"), ("low", "최저점"))
+_MS_FIELDS = tuple(f for f, _ in _MS_NUM) + ("label", "component", "note")
+
+
+def _scores_path(cid) -> str:
+    return f"/api/grades/{cid}/scores"
+
+
+def _manual_rows(store, cid: str) -> list:
+    from . import manualscores
+    return manualscores.entries(store, cid)
+
+
+def _ms_text(e: dict) -> str:
+    from . import manualscores
+    return manualscores.entry_text(e)
+
+
+def resolve_manual(store, cid: str, raw) -> dict:
+    """직접 넣은 점수 한 줄: id 그대로, 아니면 이름(대소문자·띄어쓰기·문장부호 무시, 부분 이름도)이 하나로 정해질 때."""
+    from .gradebook import _same_label
+    rows = _manual_rows(store, cid)
+    s = _flat(raw, 120)
+    if not rows:
+        raise ValueError(f"{_short(store, cid)}에 직접 넣은 점수가 없어요")
+    if not s:
+        raise ValueError(f"어느 점수인지 알려 주세요. 직접 넣은 점수: {', '.join(_ms_text(e) for e in rows[:8])}")
+    hit = [e for e in rows if e["id"] == s]
+    if not hit:
+        k = _same_label(s)
+        hit = [e for e in rows if k and _same_label(e.get("label")) == k] or \
+              [e for e in rows if k and k in _same_label(e.get("label"))]
+    if len(hit) == 1:
+        return hit[0]
+    if hit:
+        raise ValueError(f"'{_flat(s)}'에 맞는 직접 넣은 점수가 여럿이에요: "
+                         + "; ".join(f"{_ms_text(e)} (id {e['id']})" for e in hit[:5]) + " — id로 골라 주세요")
+    raise ValueError(f"{_short(store, cid)}에 직접 넣은 '{_flat(s)}' 점수가 없어요. 직접 넣은 점수: "
+                     + ", ".join(_ms_text(e) for e in rows[:8]))
+
+
+def _dry_manual(store, cid: str, body: dict) -> dict:
+    """경로(manualscores.apply)를 저장소 사본에 미리 돌린 결과 한 줄 — 경로가 거절하면 그 한국어 ValueError."""
+    from . import manualscores
+    keep = ("cache", "grades", "manual_scores", "grade_links", "course_prefs", "settings")
+    fake = types.SimpleNamespace(data=copy.deepcopy({k: store.data.get(k) for k in keep if k in store.data}))
+    return manualscores.apply(fake, cid, copy.deepcopy(body))
+
+
+def _ms_component(store, cid: str, p: dict):
+    """말한 평가 항목(별칭·계열 포함 — need_component) → 저장된 이름. 안 말했으면 None(이름 규칙)."""
+    raw = _p(p, "component")
+    return need_component(store, cid, _cfg(store, cid), raw) if _flat(raw) else None
+
+
+def _rules_link(store, cid: str, label: str) -> str:
+    """새 점수를 평가 항목을 정하지 않고 넣으면 어디로 갈지(이름 규칙·AI 기억 — 화면 후보와 같은 link_candidates)."""
+    from . import gradebook
+    cfg = _cfg(store, cid)
+    if not _comps(cfg):
+        return "평가 항목이 아직 없어 연결 안 됨"
+    fake = {"key": "manual:(신규)", "course_id": cid, "label": label, "source_title": "직접 입력"}
+    ln = gradebook.link_candidates(store, cid, _comps(cfg), [fake]).get(fake["key"]) or {}
+    return f"{ln['component']}(자동)" if ln.get("component") else "연결 안 됨 — 평가 항목을 정해 주세요"
+
+
+def _replaces_line(store, cid: str, label: str, keep_key: str | None) -> list:
+    """같은 이름의 다른 점수(파일·글·Canvas)가 있으면: 같은 평가 항목에서는 나중에 넣은 이 점수가 그것을 대신한다(members_of)."""
+    from .gradebook import _same_label
+    k = _same_label(label)
+    if not k:
+        return []
+    others = [c for c in _cands(store, cid) if c.get("source_type") != "manual_score" and c.get("key") != keep_key
+              and _same_label(c.get("label")) == k and c.get("score") is not None]
+    if not others:
+        return []
+    c = others[0]
+    return [_line("같은 이름의 점수", f"{_cand_text(c)} · {c.get('source_title') or c.get('source_type')}",
+                  "같은 평가 항목이면 직접 넣은 점수가 대신해요")]
+
+
+def _ms_value_text(f: str, v) -> str:
+    if v is None:
+        return "—"
+    return f"{int(v)}" if f in ("n", "rank") else _num_text(v)
+
+
+def _update_manual(app, p: dict, cid: str, e: dict, from_add: bool = False) -> dict:
+    store = app.store
+    body = {"action": "update", "id": e["id"], "by": "agent"}
+    for f in _MS_FIELDS:
+        if f == "component":
+            continue
+        if f in p and not (from_add and f == "label"):
+            body[f] = p[f]
+    comp = _ms_component(store, cid, p) if "component" in p else None
+    if "component" in p:
+        body["component"] = comp
+    after = _dry_manual(store, cid, body)
+    lines = []
+    if after.get("label") != e.get("label"):
+        lines.append(_line("점수 이름", e.get("label"), after.get("label")))
+    for f, ko in _MS_NUM:
+        if after.get(f) != e.get(f):
+            lines.append(_line(f"{after.get('label')} {ko}", _ms_value_text(f, e.get(f)), _ms_value_text(f, after.get(f))))
+    if after.get("note") != e.get("note"):
+        lines.append(_line(f"{after.get('label')} 메모", e.get("note"), after.get("note") or "지움"))
+    if "component" in body and after.get("component") != e.get("component"):
+        lines.append(_line(f"{after.get('label')} 평가 항목", f"{e['component']}(직접)" if e.get("component") else "자동",
+                           f"{comp}(직접)" if comp else _rules_link(store, cid, after.get("label"))))
+    if not lines:
+        raise ValueError(f"직접 넣은 '{_ms_text(e)}'은(는) 이미 그 값이에요 — 바꿀 것이 없어요")
+    if from_add:
+        lines.insert(0, _line("직접 넣은 점수", _ms_text(e), f"{_ms_text(after)}(같은 이름이라 고침)"))
+    return _result(_scores_path(cid), body, lines)
+
+
+def _add_score(app, p: dict) -> dict:
+    """grades.add_score: 점수 하나를 직접 넣는다(예: 'Lab 3 점수 9/10'). 같은 과목에 같은 이름으로 직접 넣은 점수가 있으면 그것을 고친다.
+    평가 항목을 말하면 그 항목에 직접 연결, 아니면 이름 규칙으로."""
+    from .gradebook import _same_label
+    store = app.store
+    cid = _grade_course(store, p)
+    label = _flat(_p(p, "label", "name"), 80)
+    if not label:
+        raise ValueError("점수 이름(label — 예: 'Lab 3', '중간고사')을 알려 주세요")
+    same = [e for e in _manual_rows(store, cid) if _same_label(e.get("label")) == _same_label(label)]
+    if len(same) == 1:
+        return _update_manual(app, p, cid, same[0], from_add=True)
+    comp = _ms_component(store, cid, p)
+    body = {"action": "add", "label": label, "by": "agent", "component": comp}
+    for f, _ko in _MS_NUM:
+        if p.get(f) not in (None, ""):
+            body[f] = p[f]
+    if p.get("note") not in (None, ""):
+        body["note"] = p["note"]
+    row = _dry_manual(store, cid, body)
+    lines = [_line("직접 넣은 점수", "없음", f"{_ms_text(row)} (신규)"),
+             _line(f"{row['label']} 평가 항목", None, f"{comp}(직접)" if comp else _rules_link(store, cid, row["label"]))]
+    extra = [f"{ko} {_ms_value_text(f, row[f])}" for f, ko in _MS_NUM[2:] if row.get(f) is not None]
+    if extra:
+        lines.append(_line(f"{row['label']} 반 통계", None, " · ".join(extra)))
+    return _result(_scores_path(cid), body, lines + _replaces_line(store, cid, label, None))
+
+
+def _update_score(app, p: dict) -> dict:
+    """grades.update_score: 직접 넣은 점수 하나의 값(말한 칸만 — null이면 그 칸을 비움)·이름·평가 항목을 고친다."""
+    store = app.store
+    cid = _grade_course(store, p)
+    e = resolve_manual(store, cid, _p(p, "entry", "id"))
+    if not any(f in p for f in _MS_FIELDS):
+        raise ValueError("무엇을 바꿀지(점수·만점·평균·표준편차·인원·등수·이름·평가 항목·메모) 알려 주세요")
+    return _update_manual(app, p, cid, e)
+
+
+def _remove_score(app, p: dict) -> dict:
+    """grades.remove_score: 직접 넣은 점수 하나를 지운다(그 점수의 직접 연결도)."""
+    store = app.store
+    cid = _grade_course(store, p)
+    e = resolve_manual(store, cid, _p(p, "entry", "id", "label"))
+    body = {"action": "delete", "id": e["id"]}
+    _dry_manual(store, cid, body)
+    return _result(_scores_path(cid), body, [_line("직접 넣은 점수", _ms_text(e), "지움")])
+
+
+def _manual_specs() -> list:
+    num = {f: _num_param(f"{ko}(선택)", min=0, nullable=True) for f, ko in _MS_NUM if f not in ("score", "n", "rank")}
+    stats = {**{k: v for k, v in num.items() if k != "max_score"},
+             "n": _num_param("인원(선택, 정수)", typ="int", min=1, max=100000, nullable=True),
+             "rank": _num_param("등수(선택, 정수)", typ="int", min=1, max=100000, nullable=True)}
+    entry = {"type": "str", "required": True, "resolve": None, "desc": "직접 넣은 점수의 이름(예: 'Lab 3') 또는 id"}
+    note = {"type": "str", "required": False, "resolve": None, "nullable": True, "max": 200, "desc": "메모(선택)"}
+    return [
+        ("grades.add_score", "grades", "점수 직접 넣기", ("POST", "/api/grades/{course_id}/scores"), _add_score, {
+            "course": _course_param(),
+            "label": {"type": "str", "required": True, "resolve": None, "max": 60,
+                      "desc": "점수 이름(예: 'Lab 3', 'Quiz 2', '중간고사') — 같은 이름으로 직접 넣은 점수가 있으면 그것을 고침"},
+            "score": _num_param("내 점수", required=True, min=0),
+            "max_score": _num_param("만점(선택, 없으면 100)", min=0.0001),
+            **stats,
+            "component": _comp_param("넣을 평가 항목(선택 — 없으면 이름으로 자동 연결)", required=False),
+            "note": note}),
+        ("grades.update_score", "grades", "직접 넣은 점수 고치기", ("POST", "/api/grades/{course_id}/scores"), _update_score, {
+            "course": _course_param(),
+            "entry": entry,
+            "label": {"type": "str", "required": False, "resolve": None, "max": 60, "desc": "바꿀 이름(선택)"},
+            "score": _num_param("내 점수(선택)", min=0),
+            "max_score": _num_param("만점(선택, null이면 지움 → 100점 만점)", min=0.0001, nullable=True),
+            **stats,
+            "component": {**_comp_param("평가 항목(선택, null이면 직접 연결을 지우고 이름으로 자동 연결)", required=False),
+                          "nullable": True},
+            "note": note}),
+        ("grades.remove_score", "grades", "직접 넣은 점수 지우기", ("POST", "/api/grades/{course_id}/scores"), _remove_score, {
+            "course": _course_param(),
+            "entry": entry}),
+    ]
+
+
 # ================================================================ 등록
 
 _REFUSE_SID = "학번은 개인정보라 에이전트가 바꾸지 않아요 — 설정 → 성적에서 직접 넣거나 지워 주세요"
@@ -1165,7 +1369,7 @@ def _specs() -> list:
 def register_all() -> None:
     """이 모듈의 능력을 capabilities.REGISTRY에 넣는다(여러 번 불러도 같음)."""
     from .capabilities import Capability, register
-    for cid, area, title, route, fn, params in _specs():
+    for cid, area, title, route, fn, params in _specs() + _manual_specs():
         build, preview = _wrap(fn)
         register(Capability(id=cid, area=area, title=title, route=route, params=params, tier="direct",
                             build=build, preview=preview, undoable=True, external=False))

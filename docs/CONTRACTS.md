@@ -1478,3 +1478,59 @@ AI가 켜져 있으면 assist(5)는 지금처럼 AI, question(6)은 22-2의 `ans
   설정 → 업데이트 '바뀐 점 보기', 직접 넣은 절대평가 기준 표시.
 - **리드**: 절대평가 사용자 기준표(gradebook·distribution), 추정 메모의 '절대평가 기준(강의계획서)' → '절대평가 기준'(출처는 학점 기준 표시가 말함), AI 없이도 '구글 캘린더 일정 반영해줘'.
 
+
+## 29. 성적 — 직접 넣기·파일 가져오기·AI로 철저히 찾기·받아 둔 파일 다시 읽기·코너 케이스 — v0.8.4 (사용자 요청 2026-11-19)
+
+요청: "성적 수동 입력하기 기능 추가와 성적조회 Claude CLI를 통해서 철저하게 하는 기능. Corner case를 없애기 위해 모든 조치. 업데이트가 되면서 이미 받은 파일들에 대해 성적 반영을 안 하는 문제".
+리드 진단: 표·문서는 읽기 판(sheet_version·doc_version)이 있어 규칙이 바뀌면 받아 둔 파일을 다시 읽지만 **PDF는 판이 없어 한 번 받은 PDF는 다시 읽지 않는다**.
+`core._download_new`가 `materials.plan`에 `texts`(pdf_texts)를 넘기지 않아 **글 기록이 빠진 파일도 다시 읽지 않는다**. 점수 해석 캐시는 메모리에만 있어 문제 아님.
+사용자의 실제 양식 둘(기말 채점결과 PDF 두 칸 표·KECE302 엑셀 '학번|기말고사' + 평균·중간값·표준편차 행)은 지금 로직으로 읽힌다(회귀 시험 `tests/test_score_layouts.py`).
+
+### 29-0. 파일 소유 (리드가 만든 연결: `gradebook.CANDIDATE_PROVIDERS`·`register_candidates`, `features/aiscores.py`·`features/manualscores.py` 빈 모듈 — FEATURES에 등록됨)
+| 담당 | 파일 | 테스트 |
+|---|---|---|
+| S1 직접 넣기·가져오기·화면 | `manualscores.py`(새), `features/manualscores.py`, `capabilities_grades.py`(자기 경로의 능력), `web/index.html`(**29장의 모든 화면** — S2·S3의 상태 칸·경로도 그린다) | `tests/test_manual_scores.py`(새) |
+| S2 AI로 찾기 | `aiscores.py`(새), `features/aiscores.py`, `agent_cli.py`(작업 `score_read`), `gradetrace.py`, `mock_ai.py` | `tests/test_aiscores.py`(새) |
+| S3 다시 읽기·코너 케이스 | `materials.py`, `core.py`, `migrate.py`, `pdftext.py`(VERSION만), `scorefile.py`, `grades.py`(글 속 점수 규칙), `features/materials.py` | `tests/test_reprocess.py`·`tests/test_score_corners.py`(새), `tests/test_score_layouts.py` |
+| 리드 | 문서·버전·바뀐 점(changelog)·통합·실제 데이터 확인 | 전체 |
+새 POST 경로는 능력이거나 제외 이유가 있어야 한다(28장 커버리지 시험) — 각자 자기 모듈에서 `capabilities.register(…)`(또는 `EXCLUDED_ROUTES[…] = 이유`)를 불러올 때 한다.
+
+### 29-1. 직접 넣기·파일 가져오기 (S1)
+- `store.data["manual_scores"][과목 id] = [{id "ms-<hex>", label, score, max_score?, mean?, sd?, n?, rank?, high?, low?, component(이름|None), note?, at, by("user"|"agent")}]`.
+  후보 공급자: `source_type "manual_score"`, `source_title "직접 입력"`, `key "manual:<id>"`, component가 있으면 그 평가 항목에 사용자 연결로(없으면 이름 규칙).
+- 가져오기: `POST /api/grades/{course_id}/import {filename, data(base64)}`(20MB, pdf·xlsx·xls·csv·tsv·docx·pptx·hwp·hwpx·zip) → `<데이터 폴더>/imports/<과목>/` 저장 →
+  지금 읽기(pdftext·sheets·docs, materials의 읽기 함수 재사용) → `pdf_texts["import:<과목>:<해시12>"]`(board_id "upload", `source "upload"`, filename, posted_at=가져온 시각) →
+  기존 점수표 해석이 그대로 읽는다. 지우기 `POST /api/grades/{course_id}/import/delete {key}`. 지난 학기처럼 Canvas가 닫힌 과목·메일로 받은 파일·이미 받아 둔 파일용.
+- `POST /api/grades/{course_id}/scores {action: "add"|"update"|"delete", …}`. 능력: `grades.add_score`·`grades.update_score`·`grades.remove_score`(direct, 되돌리기),
+  가져오기는 파일을 사용자가 고르는 것이라 `EXCLUDED_ROUTES`(이유).
+- 화면: 성적 화면 과목마다 '점수 직접 넣기'(이름·내 점수·만점·평균·표준편차·인원·등수·평가 항목)·목록(고치기·지우기), '성적 파일 가져오기'(고르기·끌어 놓기 → 읽은 결과·진단),
+  S2의 'AI로 성적 찾기'(과목·진단 행), S3의 '받아 둔 파일 다시 읽기'와 진행 표시.
+### 29-2. AI로 철저히 찾기 (S2)
+- 대상: 규칙이 내 점수를 못 낸 점수 관련 글·파일(진단 `stage`가 score_table·my_row·candidate, 또는 점수 낱말이 있는데 결과 없음, 가려진 학번이 여럿 맞음), 사용자가 고른 과목·파일 전부.
+- **보내는 글(개인정보)**: 내 학번 → `[내 학번]`, 다른 학번 모양(7자리 이상 숫자·글자 섞인 학번·가려진 학번) → `[학번]`, 학번 옆 이름 → `[이름]`. 제목·머리글·요약(평균 등) 줄은 그대로,
+  **내 줄** 그대로, 다른 학생 줄은 모양을 보이는 몇 줄만 숫자를 `<수>`로 바꿔서. 앱이 계산한 열 통계(n·평균·표준편차·최저·최고·내 값·내 등수)를 덧붙인다. 다른 학생의 점수를 줄마다 보내지 않는다.
+- 작업 `score_read`: `{"scores": [{label, column?, score, max_score?, mean?, sd?, n?, rank?, component?, evidence, confidence}], "note"}`. 검사: score는 내 줄(또는 앱 통계의 '내 값')에 있는 수,
+  mean·sd는 글에 적힌 값이나 앱 통계(±0.05), component는 있는 평가 항목 이름, evidence는 보낸 글에 그대로. 실패하면 다시 묻기 1번.
+- 저장 `store.data["ai_scores"][출처 key] = {hash, results, at, model, error}`(같은 해시면 다시 안 물음). 후보 `source_type "ai_score"`, `key "ai:<출처>#<label>"`, `decided_by "ai"`·이유 —
+  사용자가 '넣지 않음'으로 뺄 수 있다.
+- 언제: AI가 켜져 있으면 동기화 뒤 대상 3개까지(하루 한도 안), `POST /api/grades/ai-lookup {course_id?, key?}`(백그라운드, `state.grades.ai_lookup = {running, last_at, done, errors}`),
+  능력 `grades.ai_lookup`. 진단 행에 `ai: {status: found|none|error|pending, results, at}`.
+### 29-3. 다시 읽기·코너 케이스 (S3)
+- PDF 읽기 판(`pdftext.VERSION`)을 다운로드 기록에(`pdf_version`·`pdf_reader`), 판이 낮거나 글 기록이 없으면 디스크에서 다시 읽음(`core._download_new`가 texts를 넘김).
+- 앱 버전이 바뀌면(migrate) `store.data["reprocess"] = {pending, total, done, at}` → 다음 동기화들에서 받아 둔 읽을 수 있는 파일을 모두(동기화당 200개까지) 다시 읽고 끝나면 지움.
+  `POST /api/materials/reread {key?}`(하나 또는 전부, 다음 동기화 기다리지 않고 백그라운드), 능력 `materials.reread`, `state.materials.reprocess`.
+- 코너 케이스(각각 실패하는 시험을 먼저, 지어낸 값): ① '평균값 중간값 표준편차'/'Mean Median SD' 머리글 줄 + 값 줄 → 적힌 평균·표준편차 사용(메모) ② 재검·v2·수정본 → 같은 평가의 옛 파일은 추정에서 빠짐
+  ③ 개인 성적표(파일 이름이나 글에 내 학번 하나, 표 없음 — 'Total 87/100', '총점: 87') ④ 칸 속 '87/100'·'87%' ⑤ 가려진 학번이 여럿 맞으면 조용히 버리지 말고 '애매함' 결과(화면·AI가 씀)
+  ⑥ 공지·게시판 본문(HTML 표)에 든 점수표 ⑦ 결시·미응시·'-'와 0점 구분 ⑧ 학점 글자 열(A+)은 점수가 아니라 letter ⑨ 학번 구분자('2099-12-3456') ⑩ 머리글이 둘째 줄·학번보다 점수 열이 앞.
+
+### 29-4. 구현 결과 (v0.8.4, S1 직접 넣기·가져오기·화면, S2 AI로 찾기, S3 다시 읽기·코너 케이스 → 리드 통합)
+- **S1**: `manual_scores`(후보 `manual_score`, component를 고르면 사용자 연결), 가져오기 `score_imports` + `pdf_texts["import:…"]`(board_id "upload"), 상태 `state.manual_scores`,
+  응답의 `manual_score_result`·`import_result`, 능력 `grades.add_score|update_score|remove_score`, 가져오기 경로는 EXCLUDED_ROUTES. 화면: 점수 직접 넣기·성적 파일 가져오기(끌어 놓기)·
+  AI로 찾기·모두 다시 읽기. 리드: 서버 본문 한도를 경로별로(`handler.max_body`, 가져오기 약 26.7MB), 거절할 때 32MB까지 본문을 비워 응답이 끊기지 않게.
+- **S2**: `aiscores`(대상 고르기·가림·저장·후보 `ai_score`·상태), 작업 `score_read`, `POST /api/grades/ai-lookup`, 능력 `grades.ai_lookup`, 진단 행 `ai`·`found_by "ai"`, 가져온 파일 `source "upload"`.
+  가림: 내 학번 `[내 학번]`(구분자 포함), 다른 학번 모양 `[학번]`, 학번 있는 줄의 이름 `[이름]`, 다른 학생 줄은 5줄만 숫자를 `<수>`로, 앱이 계산한 열 통계. 동기화 뒤 3개까지(리드가 `core._after_sync`에 연결).
+- **S3**: PDF 읽기 판(`pdf_version`·`pdf_reader`), 글 기록이 없거나 판이 낮으면 다시 읽기(`core._download_new`가 texts를 넘김), 앱 버전이 바뀌면 `reprocess`(동기화당 200개), `POST /api/materials/reread`,
+  능력 `materials.reread`. `ScoreFileResult`에 `ambiguous`·`letter`·`absent`·`personal`(`result_extras`), 본문 점수표 후보 `body:announcement:<id>`. 코너 케이스 ①~⑩ 시험 28개.
+- **리드**: 번호 없는 기말·중간은 이름이 달라도 같은 시험으로 묶어 최근 것만(실제: '…463 기말고사 채점결과' → 재검 뒤 '…Final 결과_재검후'), 스냅숏 제외에 ai_scores·reprocess·score_imports.
+  실제 파일 재확인: 재검후 PDF 88점·적힌 평균 64.65·표준편차 21.86·80명 8등, KECE302 엑셀 87점·평균 70.0·표준편차 27.3·70명 28등.
+

@@ -862,6 +862,64 @@ def find_scores(text: str) -> list[ScoreFound]:
     return [f for f in map(_finish, groups) if f]
 
 
+# ---------------------------------------------------------------- 공지·게시판 본문의 점수표(계약 29-3 ⑥)
+
+_BODY_MEMO: dict = {}
+
+
+def body_table_candidates(store, names: dict | None = None) -> list[dict]:
+    """공지(cache.announcements[].message)·게시판 글(cache.boards[].posts[].content, 가상 게시판 제외) 본문의 HTML 표에 든 점수표에서
+    내 점수·반 집계 — 첨부 점수표와 같은 규칙(scorefile.body_score_results). 성적 후보 모양은 gradebook과 같고
+    key "body:announcement:<공지 id>"·"body:board:<게시판 id>-<글 id>"(평가가 여럿이면 "#<평가>"), file_kind "body",
+    source_type "announcement"|"board", source_title = 글 제목, url = 글 주소. 같은 표가 첨부 파일로도 있으면(같은 과목·내 점수·인원·
+    평균) 첨부 쪽만 둔다. gradebook.register_candidates로 등록된다(features/materials) — 다른 학생의 행·학번은 넣지 않는다."""
+    from . import gradebook, scorefile
+    from .core import short_course_name
+    from .timeutil import iso, parse_iso
+    sid = (store.data.get("settings") or {}).get("student_id")
+    if not sid:
+        return []
+    cache = store.data.get("cache") or {}
+    if names is None:
+        names = {c["id"]: c["name"] for c in cache.get("courses", [])}
+    posts = []
+    for n in cache.get("announcements") or []:
+        if isinstance(n, dict) and n.get("id") is not None:
+            cid = str(n.get("context_code") or "").replace("course_", "") or None
+            posts.append((cid, "announcement", str(n["id"]), n.get("title"), n.get("message"), n.get("posted_at"),
+                          n.get("html_url")))
+    for b in cache.get("boards") or []:
+        if not isinstance(b, dict) or b.get("source") == "canvas":   # 가상 게시판(공지·과제·강의계획서에 링크된 파일 모음)
+            continue
+        for p in b.get("posts") or []:
+            if isinstance(p, dict) and p.get("id") is not None:
+                posts.append((str(b.get("course_id") or "") or None, "board", f"{b.get('board_id')}-{p['id']}", p.get("title"),
+                              p.get("content"), p.get("created_at") or p.get("updated_at"), p.get("post_url")))
+    out = []
+    for cid, typ, pid, title, html, posted, url in posts:
+        if not isinstance(html, str) or not html:
+            continue
+        ck = (typ, pid, sid, title, len(html), hash(html))
+        if ck not in _BODY_MEMO:
+            if len(_BODY_MEMO) > 500:
+                _BODY_MEMO.clear()
+            _BODY_MEMO[ck] = scorefile.body_score_results(html, sid, title)
+        for r in _BODY_MEMO[ck]:
+            out.append({"course_id": cid, "course_short": short_course_name(names.get(cid)) if cid else None,
+                        "source_type": typ, "source_title": title, "posted_at": iso(parse_iso(posted)), "url": url,
+                        "label": r.label, "score": r.score, "max_score": r.max_score, "mean": r.mean, "sd": r.sd,
+                        "high": r.high, "low": r.low, "n": r.n, "rank": r.rank, "sentence": r.sentence, "notes": list(r.notes),
+                        "key": f"body:{typ}:{pid}" + (f"#{r.key}" if r.key else ""), "file_kind": "body",
+                        **scorefile.result_extras(r)})
+    if out:
+        def sig(c):
+            return (str(c.get("course_id")), c.get("score"), c.get("n"),
+                    round(float(c["mean"]), 1) if c.get("mean") is not None else None)
+        files = {sig(c) for c in gradebook.score_file_candidates(store, names)}
+        out = [c for c in out if sig(c) not in files]
+    return out
+
+
 # ---------------------------------------------------------------- 엑셀
 
 _SUMMARY = re.compile(r"^\s*(?:평균|표준\s*편차|합계|총계|최고(?:점)?|최저(?:점)?|최댓값|최솟값|중앙값|인원|"

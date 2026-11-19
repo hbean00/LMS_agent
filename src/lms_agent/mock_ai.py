@@ -1,5 +1,6 @@
 """데모용 가짜 AI CLI. 데모의 [AI로 정리]가 실제 AI 서비스로 글을 보내지 않고도 하네스 전체(가리기·검증·반영·기록)를
 그대로 지나가게 한다. agent_cli의 runner 자리에 들어간다: runner(args, input, timeout, cwd) → CompletedProcess.
+[AI로 성적 찾기](score_read, 계약 29-2)는 가린 글의 '[내 줄]'에서 합계 열의 내 값을 그대로 고른다.
 
 판단은 단순한 규칙이다(진짜 모델 아님): 같은 과제 후보가 여럿이면 가장 최근 근거를 승인하고 나머지는 제외,
 마감 낱말이 있는 단독 후보는 승인, 그 밖에는 보류. 근거는 보낸 글에서 그대로 잘라 쓴다(하네스 검증을 통과해야 하므로).
@@ -597,10 +598,61 @@ def _agent(text: str) -> dict:
     return {"say": ans["answer"], "calls": [], "done": True, "citations": ans["citations"]}
 
 
+# ---------------------------------------------------------------- score_read(성적 파일에서 내 점수, 계약 29-2)
+# 보낸 글(aiscores.build_input이 가린 것)의 '[내 줄 / MY ROW]'과 '앱이 계산한 열 통계'만 읽는다. 합계·총점 열(없으면 마지막 열)의
+# '내 값'을 그 줄에서 그대로 고르고, 평균·표준편차는 앱 통계 값 그대로(하네스 검사를 통과해야 하므로 지어내지 않는다).
+
+SCORE_MARK = "성적 파일(가린 글) / score file (masked):"   # aiscores.MARK
+SCORE_ROW = "[내 줄 / MY ROW] "                            # aiscores.MY_ROW
+_STAT = re.compile(r"^표 (\d+) · 열 '(.*)': n (\d+) · 평균/mean (\S+) · 표준편차/sd (\S+) · 최저/min \S+ · 최고/max \S+"
+                   r"(?: · 내 값/my value (\S+) · 내 등수/my rank (\d+)/\d+)?")
+_TOTALISH = re.compile(r"total|sum|합계|총점|총합|score|점수|final|최종", re.I)
+_LABEL_LINE = "파일 이름에서 본 평가 이름 / label from the file name: "
+
+
+def _num(s):
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _score_read(text: str) -> dict:
+    body = text.split("=== 입력 글 시작 / INPUT START ===", 1)[-1].split("=== 입력 글 끝", 1)[0]
+    rows = [ln for ln in body.splitlines() if ln.startswith(SCORE_ROW)]
+    if not rows:
+        return {"scores": [], "note": "보낸 글에 내 줄이 없어요"}
+    label = next((ln[len(_LABEL_LINE):].strip() for ln in body.splitlines() if ln.startswith(_LABEL_LINE)), None)
+    stats = []
+    for ln in body.splitlines():
+        m = _STAT.match(ln)
+        if m and m.group(6) is not None:
+            stats.append({"name": m.group(2), "mean": _num(m.group(4)), "sd": _num(m.group(5)), "mine": _num(m.group(6))})
+    nums = [float(x) for x in re.findall(r"(?<![\d.])\d+(?:\.\d+)?", rows[0][len(SCORE_ROW):])]
+    if stats:
+        col = next((c for c in reversed(stats) if _TOTALISH.search(c["name"])), stats[-1])
+        score, column, mean, sd = col["mine"], col["name"], col["mean"], col["sd"]
+    elif nums:
+        score, column, mean, sd = nums[-1], None, None, None
+    else:
+        return {"scores": [], "note": "내 줄에 숫자가 없어요"}
+    item = {"label": label or column or "점수", "score": score, "evidence": rows[0][:400], "confidence": "medium",
+            "component": None}
+    if column:
+        item["column"] = column
+    if mean is not None:
+        item["mean"] = mean
+    if sd is not None:
+        item["sd"] = sd
+    return {"scores": [item], "note": "데모의 가짜 AI가 내 줄에서 읽었어요"}
+
+
 def runner(args, input, timeout, cwd) -> subprocess.CompletedProcess:
-    """agent·triage_review·assist·answer·chat만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은 '찾지
-    못함'으로 답한다(데모는 규칙이 찾는다)."""
-    if AGENT_MARK in (input or ""):   # agent(에이전트 v2 루프 한 차례 — 계약 26-1)
+    """agent·triage_review·assist·answer·chat·score_read만 흉내 낸다. 다른 작업(평가 비중·마감 찾기·평가 항목 연결·개수·학점 비율)은
+    '찾지 못함'으로 답한다(데모는 규칙이 찾는다)."""
+    if SCORE_MARK in (input or ""):   # score_read(성적 파일에서 내 점수 — 계약 29-2). 파일 글에 다른 표시가 섞여도 먼저
+        model = json.dumps(_score_read(input), ensure_ascii=False)
+    elif AGENT_MARK in (input or ""):   # agent(에이전트 v2 루프 한 차례 — 계약 26-1)
         model = json.dumps(_agent(input), ensure_ascii=False)
     elif CHAT_MARK in (input or ""):   # chat(일반 대화 — 계약 24-2)
         model = json.dumps(_chat(input), ensure_ascii=False)
